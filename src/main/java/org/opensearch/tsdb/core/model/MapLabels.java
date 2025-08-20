@@ -23,10 +23,22 @@ public class MapLabels implements Labels {
     private final Map<String, String> labels;
     private long hash = Long.MIN_VALUE;
 
+    /**
+     * Constructs a new MapLabels instance with the specified label map.
+     * 
+     * @param labels the map containing label key-value pairs
+     */
     public MapLabels(Map<String, String> labels) {
         this.labels = labels;
     }
 
+    /**
+     * Creates a MapLabels instance from an array of strings representing key-value pairs.
+     * 
+     * @param labels array of strings in key-value pairs (e.g., "key1", "value1", "key2", "value2")
+     * @return a new MapLabels instance containing the specified labels
+     * @throws IllegalArgumentException if the number of strings is odd
+     */
     public static MapLabels fromStrings(String... labels) {
         if (labels.length % 2 != 0) {
             throw new IllegalArgumentException("Labels must be in pairs");
@@ -38,6 +50,13 @@ public class MapLabels implements Labels {
         return new MapLabels(labelMap);
     }
 
+    /**
+     * Creates a MapLabels instance from serialized byte data.
+     * 
+     * @param bytes the serialized label data
+     * @return a new MapLabels instance containing the deserialized labels
+     * @throws RuntimeException if deserialization fails
+     */
     public static MapLabels fromSerializedBytes(byte[] bytes) {
         Map<String, String> labelMap = new HashMap<>();
         try {
@@ -54,10 +73,20 @@ public class MapLabels implements Labels {
         return new MapLabels(labelMap);
     }
 
+    /**
+     * Creates an empty MapLabels instance.
+     * 
+     * @return an empty MapLabels instance
+     */
     public static MapLabels emptyLabels() {
         return new MapLabels(Map.of());
     }
 
+    /**
+     * Converts the labels to a key-value string format.
+     * 
+     * @return a string representation of the labels in key:value format
+     */
     @Override
     public String toKeyValueString() {
         StringBuilder sb = new StringBuilder();
@@ -74,16 +103,33 @@ public class MapLabels implements Labels {
         return sb.toString();
     }
 
+    /**
+     * Returns an unmodifiable view of the labels as a Map.
+     * 
+     * @return an unmodifiable map view of the labels
+     */
     @Override
     public Map<String, String> toMapView() {
         return Map.copyOf(labels);
     }
 
+    /**
+     * Checks if the labels collection is empty.
+     * 
+     * @return true if there are no labels, false otherwise
+     */
     @Override
     public boolean isEmpty() {
         return labels.isEmpty();
     }
 
+    /**
+     * Serializes the labels to a byte array.
+     * 
+     * @param bytes the output buffer to write the serialized data to
+     * @return the number of bytes written to the buffer
+     * @throws IOException if serialization fails
+     */
     @Override
     public int bytes(byte[] bytes) throws IOException {
         ByteArrayDataOutput out = new ByteArrayDataOutput(bytes);
@@ -94,16 +140,35 @@ public class MapLabels implements Labels {
         return out.getPosition();
     }
 
+    /**
+     * Retrieves the value for a specific label name.
+     * 
+     * @param name the label name to look up
+     * @return the label value, or an empty string if the label doesn't exist
+     */
     @Override
     public String get(String name) {
         return labels.getOrDefault(name, "");
     }
 
+    /**
+     * Checks if a label with the specified name exists.
+     * 
+     * @param name the label name to check
+     * @return true if a label with the given name exists, false otherwise
+     */
     @Override
     public boolean has(String name) {
         return labels.containsKey(name);
     }
 
+    /**
+     * Computes a stable hash value for the labels.
+     * FIXME: this is not stable yet, need to iterate on it
+     * <p>The hash is cached after the first computation for performance.</p>
+     * 
+     * @return a stable hash value for the labels
+     */
     @Override
     public long stableHash() {
         if (hash != Long.MIN_VALUE) {
@@ -124,25 +189,45 @@ public class MapLabels implements Labels {
         return combinedHash;
     }
 
+    /**
+     * Compares this MapLabels instance with another object for equality.
+     * 
+     * @param o the object to compare with
+     * @return true if the objects are equal, false otherwise
+     */
     @Override
     public boolean equals(Object o) {
         if (this == o) return true;
-        if (!(o instanceof MapLabels)) return false;
-        MapLabels other = (MapLabels) o;
+        if (!(o instanceof MapLabels other)) return false;
         return Objects.equals(this.labels, other.labels);
     }
 
+    /**
+     * Computes the hash code for this MapLabels instance.
+     * 
+     * @return the hash code for this instance
+     */
     @Override
     public int hashCode() {
         long stableHash = stableHash();
         return Long.hashCode(stableHash);
     }
 
+    /**
+     * Returns a string representation of this MapLabels instance.
+     * 
+     * @return a string representation of the labels
+     */
     @Override
     public String toString() {
         return toKeyValueString();
     }
 
+    /**
+     * Calculates the approximate RAM usage of this MapLabels instance.
+     * 
+     * @return the estimated number of bytes used in RAM
+     */
     @Override
     public long ramBytesUsed() {
         return RamUsageEstimator.shallowSizeOfInstance(MapLabels.class) + RamUsageEstimator.sizeOfObject(labels);

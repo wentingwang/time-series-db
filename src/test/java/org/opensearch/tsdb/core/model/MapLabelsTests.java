@@ -20,6 +20,7 @@ public class MapLabelsTests extends OpenSearchTestCase {
         assertEquals("v1", labels.get("k1"));
         assertEquals("v2", labels.get("k2"));
         assertEquals("", labels.get("nonexistent"));
+        assertEquals("k1:v1 k2:v2", labels.toString());
         assertTrue(labels.has("k1"));
         assertFalse(labels.has("nonexistent"));
         assertFalse(labels.isEmpty());

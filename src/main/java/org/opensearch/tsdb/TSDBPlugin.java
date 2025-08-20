@@ -7,6 +7,12 @@ package org.opensearch.tsdb;
 
 import org.opensearch.plugins.Plugin;
 
+/**
+ * Plugin for time-series database (TSDB) engine
+ */
 public class TSDBPlugin extends Plugin {
-    // Implement the relevant Plugin Interfaces here
+    /**
+     * Default constructor
+     */
+    public TSDBPlugin() {}
 }
