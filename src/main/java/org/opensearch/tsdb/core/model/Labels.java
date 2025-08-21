@@ -5,7 +5,6 @@
 
 package org.opensearch.tsdb.core.model;
 
-import java.io.IOException;
 import java.util.Map;
 
 /**
@@ -32,14 +31,6 @@ public interface Labels {
     boolean isEmpty();
 
     /**
-     * Serialize labels to byte array
-     * @param bytes output buffer
-     * @return number of bytes written
-     * @throws IOException if serialization fails
-     */
-    int bytes(byte[] bytes) throws IOException;
-
-    /**
      * Get stable hash of labels
      * @return stable hash value
      */
@@ -58,10 +49,4 @@ public interface Labels {
      * @return true if label exists
      */
     boolean has(String name);
-
-    /**
-     * Calculate the RAM bytes used by this Labels instance.
-     * @return the number of bytes used in RAM
-     */
-    long ramBytesUsed();
 }

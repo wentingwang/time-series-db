@@ -7,8 +7,6 @@ package org.opensearch.tsdb.core.model;
 
 import org.opensearch.test.OpenSearchTestCase;
 
-import java.io.IOException;
-import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -37,16 +35,6 @@ public class MapLabelsTests extends OpenSearchTestCase {
 
         assertEquals("value1", labels.get("key1"));
         assertTrue(labels.has("key1"));
-    }
-
-    public void testSerialization() throws IOException {
-        MapLabels original = MapLabels.fromStrings("k1", "v1", "k2", "v2");
-
-        byte[] bytes = new byte[16 * 1024];
-        int pos = original.bytes(bytes);
-        MapLabels deserialized = MapLabels.fromSerializedBytes(Arrays.copyOfRange(bytes, 0, pos));
-
-        assertEquals(original, deserialized);
     }
 
     public void testEmptyLabels() {

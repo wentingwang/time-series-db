@@ -5,12 +5,8 @@
 
 package org.opensearch.tsdb.core.model;
 
-import org.apache.lucene.store.ByteArrayDataInput;
-import org.apache.lucene.store.ByteArrayDataOutput;
-import org.apache.lucene.util.RamUsageEstimator;
 import org.opensearch.common.hash.MurmurHash3;
 
-import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.Map;
@@ -47,29 +43,6 @@ public class MapLabels implements Labels {
         for (int i = 0; i < labels.length; i += 2) {
             labelMap.put(labels[i], labels[i + 1]);
         }
-        return new MapLabels(labelMap);
-    }
-
-    /**
-     * Creates a MapLabels instance from serialized byte data.
-     * 
-     * @param bytes the serialized label data
-     * @return a new MapLabels instance containing the deserialized labels
-     * @throws RuntimeException if deserialization fails
-     */
-    public static MapLabels fromSerializedBytes(byte[] bytes) {
-        Map<String, String> labelMap = new HashMap<>();
-        try {
-            ByteArrayDataInput in = new ByteArrayDataInput(bytes);
-            while (in.getPosition() < bytes.length) {
-                String key = in.readString();
-                String value = in.readString();
-                labelMap.put(key, value);
-            }
-        } catch (IOException e) {
-            throw new RuntimeException("Failed to deserialize labels", e);
-        }
-
         return new MapLabels(labelMap);
     }
 
@@ -121,23 +94,6 @@ public class MapLabels implements Labels {
     @Override
     public boolean isEmpty() {
         return labels.isEmpty();
-    }
-
-    /**
-     * Serializes the labels to a byte array.
-     * 
-     * @param bytes the output buffer to write the serialized data to
-     * @return the number of bytes written to the buffer
-     * @throws IOException if serialization fails
-     */
-    @Override
-    public int bytes(byte[] bytes) throws IOException {
-        ByteArrayDataOutput out = new ByteArrayDataOutput(bytes);
-        for (Map.Entry<String, String> entry : labels.entrySet()) {
-            out.writeString(entry.getKey());
-            out.writeString(entry.getValue());
-        }
-        return out.getPosition();
     }
 
     /**
@@ -221,15 +177,5 @@ public class MapLabels implements Labels {
     @Override
     public String toString() {
         return toKeyValueString();
-    }
-
-    /**
-     * Calculates the approximate RAM usage of this MapLabels instance.
-     * 
-     * @return the estimated number of bytes used in RAM
-     */
-    @Override
-    public long ramBytesUsed() {
-        return RamUsageEstimator.shallowSizeOfInstance(MapLabels.class) + RamUsageEstimator.sizeOfObject(labels);
     }
 }
