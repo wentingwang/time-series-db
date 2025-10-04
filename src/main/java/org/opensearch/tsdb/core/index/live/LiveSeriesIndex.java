@@ -209,7 +209,7 @@ public class LiveSeriesIndex {
         try (BytesStreamOutput output = new BytesStreamOutput()) {
             output.writeVLong(liveSeries.size());
             for (MemSeries series : liveSeries) {
-                output.writeVLong(series.getReference());
+                output.writeLong(series.getReference());
                 output.writeVLong(series.getMaxSeqNo());
             }
             String liveSeriesMetadata = new String(Base64.getEncoder().encode(output.bytes().toBytesRef().bytes), StandardCharsets.UTF_8);
@@ -245,7 +245,7 @@ public class LiveSeriesIndex {
                         if (input.available() > 0) {
                             long numSeries = input.readVLong();
                             for (int i = 0; i < numSeries; i++) {
-                                long ref = input.readVLong();
+                                long ref = input.readLong();
                                 long seqNo = input.readVLong();
                                 seriesUpdater.update(ref, seqNo);
                             }

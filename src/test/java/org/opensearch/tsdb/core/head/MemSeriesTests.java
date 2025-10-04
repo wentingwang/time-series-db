@@ -125,6 +125,14 @@ public class MemSeriesTests extends OpenSearchTestCase {
         assertEquals("the newest chunk should be the third one", third, series.getHeadChunk());
         assertEquals("first chunk next now points to the third chunk", first.getNext(), third);
         assertEquals("third chunk prev now points to the first chunk", third.getPrev(), first);
+
+        series = createMemSeries(3);
+        first = series.getHeadChunk().oldest();
+        second = first.getNext();
+        third = second.getNext();
+        toDelete = Set.of(first, second, third);
+        series.dropClosedChunks(toDelete);
+        assertNull("no chunks should remain", series.getHeadChunk());
     }
 
     public void testGettersAndSetters() {
@@ -138,14 +146,7 @@ public class MemSeriesTests extends OpenSearchTestCase {
 
         // Test initial state of optional fields
         assertNull(series.getHeadChunk());
-        assertFalse(series.getPendingCleanup());
         assertEquals(0L, series.getMaxMMapTimestamp());
-
-        // Test setPendingCleanup and getPendingCleanup
-        series.setPendingCleanup(true);
-        assertTrue(series.getPendingCleanup());
-        series.setPendingCleanup(false);
-        assertFalse(series.getPendingCleanup());
 
         // Test setMaxMMapTimestamp and getMaxMMapTimestamp
         long testTimestamp = 12345L;

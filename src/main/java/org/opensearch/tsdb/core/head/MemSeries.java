@@ -23,7 +23,10 @@ import java.util.concurrent.locks.ReentrantLock;
  * MemSeries is an in-memory representation of a series. MemSeries manages the lifecycle of in-memory chunks.
  */
 public class MemSeries {
-    // Series reference, guaranteed to be unique
+    /**
+     * Series reference. This is a hash, but may differ from labels.stableHash() if the hash function changes between versions.
+     * The value is a hash created by the hash function used when the series was created.
+     */
     private final long reference;
 
     // Series Labels
@@ -35,7 +38,7 @@ public class MemSeries {
     // A doubly linked list of chunks in memory, points to the most recent chunk.
     private MemChunk headChunk;
 
-    // Max timestamp of an already indexed chunk
+    // Max timestamp of an already indexed chunk, this is NOT updated atomically when chunks are indexed.
     private long maxMMapTimestamp;
 
     // The timestamp at which to cut the next chunk
@@ -49,8 +52,6 @@ public class MemSeries {
 
     // The seqNo corresponding to the most recent operation appended to this series
     private long maxSeqNo;
-
-    private boolean pendingCleanup;
 
     /**
      * Constructs a new MemSeries instance.
@@ -91,7 +92,9 @@ public class MemSeries {
         boolean created = appendPreprocessor(seqNo, timestamp, Encoding.XOR, options);
         chunkAppender.append(timestamp, value);
         headChunk.setMaxTimestamp(timestamp);
-        pendingCleanup = false;
+        if (seqNo > this.maxSeqNo) {
+            this.maxSeqNo = seqNo;
+        }
         return created;
     }
 
@@ -110,22 +113,6 @@ public class MemSeries {
      */
     public MemChunk getHeadChunk() {
         return headChunk;
-    }
-
-    /**
-     * Checks if the series is pending cleanup.
-     * @return true if pending cleanup, false otherwise
-     */
-    public boolean getPendingCleanup() {
-        return pendingCleanup;
-    }
-
-    /**
-     * Sets the pending cleanup status of the series.
-     * @param pendingCleanup true to mark as pending cleanup, false otherwise
-     */
-    public void setPendingCleanup(boolean pendingCleanup) {
-        this.pendingCleanup = pendingCleanup;
     }
 
     /**
@@ -235,7 +222,6 @@ public class MemSeries {
         boolean created = false;
         if (headChunk == null) {
             // TODO: when supporting out-of-order samples, we need to create a special chunk
-            pendingCleanup = false; // ensure the series will not be concurrently removed if this is the first sample in a long time
             headChunk = createHeadChunk(seqNo, timestamp, encoding, options.chunkRange());
             created = true;
         }

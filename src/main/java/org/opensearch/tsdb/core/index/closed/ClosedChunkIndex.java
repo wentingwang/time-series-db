@@ -64,7 +64,7 @@ public class ClosedChunkIndex {
      */
     public ClosedChunkIndex(Path dir) throws IOException {
         if (!Files.exists(dir)) {
-            Files.createDirectory(dir);
+            Files.createDirectories(dir);
         }
 
         analyzer = new WhitespaceAnalyzer();
@@ -155,7 +155,7 @@ public class ClosedChunkIndex {
         try (BytesStreamOutput output = new BytesStreamOutput()) {
             output.writeVLong(liveSeries.size());
             for (MemSeries series : liveSeries) {
-                output.writeVLong(series.getReference());
+                output.writeLong(series.getReference());
                 output.writeVLong(series.getMaxMMapTimestamp());
             }
             String liveSeriesMetadata = new String(Base64.getEncoder().encode(output.bytes().toBytesRef().bytes), StandardCharsets.UTF_8);
@@ -191,7 +191,7 @@ public class ClosedChunkIndex {
                         if (input.available() > 0) {
                             long numSeries = input.readVLong();
                             for (int i = 0; i < numSeries; i++) {
-                                long ref = input.readVLong();
+                                long ref = input.readLong();
                                 long ts = input.readVLong();
                                 seriesUpdater.update(ref, ts);
                             }
