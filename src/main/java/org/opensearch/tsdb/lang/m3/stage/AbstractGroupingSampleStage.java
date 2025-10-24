@@ -1,0 +1,234 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * The OpenSearch Contributors require contributions made to
+ * this file be licensed under the Apache-2.0 license or a
+ * compatible open source license.
+ */
+package org.opensearch.tsdb.lang.m3.stage;
+
+import org.opensearch.core.common.io.stream.StreamOutput;
+import org.opensearch.search.aggregations.InternalAggregation;
+import org.opensearch.tsdb.core.model.ByteLabels;
+import org.opensearch.tsdb.core.model.Labels;
+import org.opensearch.tsdb.core.model.Sample;
+import org.opensearch.tsdb.query.aggregator.TimeSeries;
+import org.opensearch.tsdb.query.aggregator.TimeSeriesProvider;
+
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+/**
+ * Abstract base class for pipeline stages that support label grouping and calculation for each Sample.
+ * Provides common functionality for grouping time series by labels and applying
+ * aggregation functions within each group for each sample.
+ */
+public abstract class AbstractGroupingSampleStage extends AbstractGroupingStage {
+
+    /**
+     * Constructor for aggregation without label grouping.
+     */
+    protected AbstractGroupingSampleStage() {
+        super();
+    }
+
+    /**
+     * Constructor for aggregation with label grouping.
+     * @param groupByLabels List of label names to group by. TimeSeries with the same values for these labels will be aggregated together.
+     */
+    protected AbstractGroupingSampleStage(List<String> groupByLabels) {
+        super(groupByLabels);
+    }
+
+    /**
+     * Constructor for aggregation with single label grouping.
+     * @param groupByLabel Single label name to group by.
+     */
+    protected AbstractGroupingSampleStage(String groupByLabel) {
+        super(groupByLabel);
+    }
+
+    @Override
+    public List<TimeSeries> process(List<TimeSeries> input) {
+        return process(input, true);
+    }
+
+    /**
+     * Transform an input sample for aggregation. For most operations this is identity,
+     * but for average this converts FloatSample to SumCountSample.
+     * @param sample The input sample to transform
+     * @return Transformed sample ready for aggregation
+     */
+    protected abstract Sample transformInputSample(Sample sample);
+
+    /**
+     * Merge two samples of the same timestamp during aggregation.
+     * @param existing The existing aggregated sample
+     * @param newSample The new sample to merge in
+     * @return The merged sample
+     */
+    protected abstract Sample mergeReducedSamples(Sample existing, Sample newSample);
+
+    /**
+     * Process a group of time series using the template method pattern.
+     * This method handles the common aggregation logic while delegating
+     * operation-specific behavior to abstract methods.
+     *
+     * @param groupSeries List of time series in the same group
+     * @param groupLabels The labels for this group (null if no grouping)
+     * @return Single processed time series for this group
+     */
+    @Override
+    protected final TimeSeries processGroup(List<TimeSeries> groupSeries, Labels groupLabels) {
+        // Calculate expected number of unique timestamps based on time range and step
+        TimeSeries firstSeries = groupSeries.get(0);
+        long timeRange = firstSeries.getMaxTimestamp() - firstSeries.getMinTimestamp();
+        int expectedTimestamps = (int) (timeRange / firstSeries.getStep()) + 1;
+
+        // TODO: This pre-allocation assumes all time series are well-aligned with the same step size.
+        // Need to revisit if we want to support multi-resolution queries where different time series
+        // may have different step sizes or misaligned timestamps. In such cases, the calculation
+        // would need to account for the union of all possible timestamps across all series.
+
+        // Aggregate samples by timestamp using operation-specific logic
+        // Pre-allocate HashMap based on expected number of timestamps
+        Map<Long, Sample> timestampToAggregated = HashMap.newHashMap(expectedTimestamps);
+
+        for (TimeSeries series : groupSeries) {
+            for (Sample sample : series.getSamples()) {
+                Sample transformed = transformInputSample(sample);
+                long timestamp = transformed.getTimestamp();
+                timestampToAggregated.merge(timestamp, transformed, this::mergeReducedSamples);
+            }
+        }
+
+        // Create sorted samples - pre-allocate since we know the exact size
+        List<Sample> aggregatedSamples = new ArrayList<>(timestampToAggregated.size());
+        timestampToAggregated.entrySet()
+            .stream()
+            .sorted(Map.Entry.comparingByKey())
+            .forEach(entry -> aggregatedSamples.add(entry.getValue()));
+
+        // Assumption: All time series in a group have the same metadata (start time, end time, step)
+        // The result will inherit metadata from the first time series in the group
+        // TODO: Support misaligned time series inputs if there are real needs
+
+        // Return a single time series with the provided labels
+        return new TimeSeries(
+            aggregatedSamples,
+            groupLabels != null ? groupLabels : ByteLabels.emptyLabels(),
+            firstSeries.getMinTimestamp(),
+            firstSeries.getMaxTimestamp(),
+            firstSeries.getStep(),
+            firstSeries.getAlias()
+        );
+    }
+
+    @Override
+    protected final InternalAggregation reduceGrouped(
+        List<TimeSeriesProvider> aggregations,
+        TimeSeriesProvider firstAgg,
+        boolean isFinalReduce
+    ) {
+        // Combine samples by group across all aggregations
+        Map<ByteLabels, Map<Long, Sample>> groupToTimestampSample = new HashMap<>();
+
+        for (TimeSeriesProvider aggregation : aggregations) {
+            for (TimeSeries series : aggregation.getTimeSeries()) {
+                // For global case (no grouping), use empty labels
+                ByteLabels groupLabels = extractGroupLabelsDirect(series);
+                Map<Long, Sample> timestampToSample = groupToTimestampSample.computeIfAbsent(groupLabels, k -> new HashMap<>());
+
+                // Aggregate samples for this series into the group's timestamp map
+                aggregateSamplesIntoMap(series.getSamples(), timestampToSample);
+            }
+        }
+
+        // Create the final aggregated time series for each group
+        // Pre-allocate result list since we know exactly how many groups we have
+        List<TimeSeries> resultTimeSeries = new ArrayList<>(groupToTimestampSample.size());
+
+        for (Map.Entry<ByteLabels, Map<Long, Sample>> entry : groupToTimestampSample.entrySet()) {
+            ByteLabels groupLabels = entry.getKey();
+            Map<Long, Sample> timestampToSample = entry.getValue();
+
+            // Pre-allocate samples list since we know exactly how many timestamps we have
+            List<Sample> samples = new ArrayList<>(timestampToSample.size());
+            timestampToSample.entrySet().stream().sorted(Map.Entry.comparingByKey()).forEach(sampleEntry -> {
+                Sample sample = sampleEntry.getValue();
+                // Always keep original sample type - materialization happens later if needed
+                samples.add(sample);
+            });
+
+            Labels finalLabels = groupLabels.isEmpty() ? ByteLabels.emptyLabels() : groupLabels;
+
+            // Use metadata from the first aggregation
+            // Assumption: process() and reduce() always return non-empty time series with complete metadata
+            TimeSeries firstTimeSeries = firstAgg.getTimeSeries().get(0);
+            resultTimeSeries.add(
+                new TimeSeries(
+                    samples,
+                    finalLabels,
+                    firstTimeSeries.getMinTimestamp(),
+                    firstTimeSeries.getMaxTimestamp(),
+                    firstTimeSeries.getStep(),
+                    firstTimeSeries.getAlias()
+                )
+            );
+        }
+
+        // Apply sample materialization if this is the final reduce phase and materialization is needed
+        if (isFinalReduce && needsMaterialization()) {
+            for (int i = 0; i < resultTimeSeries.size(); i++) {
+                resultTimeSeries.set(i, materializeSamples(resultTimeSeries.get(i)));
+            }
+        }
+
+        TimeSeriesProvider result = firstAgg.createReduced(resultTimeSeries);
+        return (InternalAggregation) result;
+    }
+
+    /**
+     * Helper method to aggregate samples into an existing timestamp map.
+     */
+    private void aggregateSamplesIntoMap(List<Sample> samples, Map<Long, Sample> timestampToSample) {
+        for (Sample sample : samples) {
+            long timestamp = sample.getTimestamp();
+            Sample transformed = transformInputSample(sample);
+
+            timestampToSample.merge(timestamp, transformed, this::mergeReducedSamples);
+        }
+    }
+
+    /**
+     * Common writeTo implementation for all grouping stages.
+     */
+    public void writeTo(StreamOutput out) throws IOException {
+        // Write groupByLabels information
+        List<String> groupByLabels = getGroupByLabels();
+        if (!groupByLabels.isEmpty()) {
+            out.writeBoolean(true);
+            out.writeStringCollection(groupByLabels);
+        } else {
+            out.writeBoolean(false);
+        }
+    }
+
+    /**
+     * Common isGlobalAggregation implementation for all grouping stages.
+     */
+    public boolean isGlobalAggregation() {
+        return true;
+    }
+
+    /**
+     * Get all groupByLabels (for multi-label grouping).
+     * @return the list of groupByLabels, or empty list if no grouping
+     */
+    public List<String> getGroupByLabels() {
+        return groupByLabels;
+    }
+}

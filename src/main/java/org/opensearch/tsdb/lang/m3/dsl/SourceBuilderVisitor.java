@@ -22,6 +22,7 @@ import org.opensearch.tsdb.lang.m3.stage.AliasByTagsStage;
 import org.opensearch.tsdb.lang.m3.stage.AliasStage;
 import org.opensearch.tsdb.lang.m3.stage.AsPercentStage;
 import org.opensearch.tsdb.lang.m3.stage.AvgStage;
+import org.opensearch.tsdb.lang.m3.stage.CountStage;
 import org.opensearch.tsdb.lang.m3.stage.HistogramPercentileStage;
 import org.opensearch.tsdb.lang.m3.stage.KeepLastValueStage;
 import org.opensearch.tsdb.lang.m3.stage.MaxStage;
@@ -164,7 +165,7 @@ public class SourceBuilderVisitor extends M3PlanVisitor<SourceBuilderVisitor.Com
             case AggregationType.MIN -> new MinStage(planNode.getTags());
             case AggregationType.MAX -> new MaxStage(planNode.getTags());
             case AggregationType.MULTIPLY -> throw new UnsupportedOperationException("multiply aggregation not yet implemented");
-            case AggregationType.COUNT -> throw new UnsupportedOperationException("count aggregation not yet implemented");
+            case AggregationType.COUNT -> new CountStage(planNode.getTags());
         };
 
         stageStack.add(stage);

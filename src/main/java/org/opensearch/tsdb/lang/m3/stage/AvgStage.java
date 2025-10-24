@@ -57,7 +57,7 @@ import java.util.Map;
  * </ul>
  */
 @PipelineStageAnnotation(name = "avg")
-public class AvgStage extends AbstractGroupingStage {
+public class AvgStage extends AbstractGroupingSampleStage {
     /** The name identifier for this stage type. */
     public static final String NAME = "avg";
 

@@ -49,7 +49,7 @@ import java.util.Map;
  * </ul>
  */
 @PipelineStageAnnotation(name = "sum")
-public class SumStage extends AbstractGroupingStage {
+public class SumStage extends AbstractGroupingSampleStage {
     /** The name identifier for this stage type. */
     public static final String NAME = "sum";
 

@@ -48,7 +48,7 @@ import java.util.Map;
  * </ul>
  */
 @PipelineStageAnnotation(name = "max")
-public class MaxStage extends AbstractGroupingStage {
+public class MaxStage extends AbstractGroupingSampleStage {
     /** The name identifier for this stage type. */
     public static final String NAME = "max";
 

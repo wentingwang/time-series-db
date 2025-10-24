@@ -48,7 +48,7 @@ import java.util.Map;
  * </ul>
  */
 @PipelineStageAnnotation(name = "min")
-public class MinStage extends AbstractGroupingStage {
+public class MinStage extends AbstractGroupingSampleStage {
     /** The name identifier for this stage type. */
     public static final String NAME = "min";
 
