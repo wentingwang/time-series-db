@@ -10,18 +10,26 @@ package org.opensearch.tsdb.core.index.closed;
 import org.apache.logging.log4j.Logger;
 import org.apache.lucene.index.IndexCommit;
 import org.apache.lucene.index.ReaderManager;
+import org.opensearch.common.UUIDs;
 import org.opensearch.common.logging.Loggers;
+import org.opensearch.common.xcontent.XContentFactory;
 import org.opensearch.core.index.shard.ShardId;
+import org.opensearch.core.xcontent.DeprecationHandler;
+import org.opensearch.core.xcontent.MediaTypeRegistry;
+import org.opensearch.core.xcontent.NamedXContentRegistry;
+import org.opensearch.core.xcontent.XContentBuilder;
+import org.opensearch.core.xcontent.XContentParser;
+import org.opensearch.tsdb.MetadataStore;
 import org.opensearch.tsdb.core.head.MemChunk;
 import org.opensearch.tsdb.core.head.MemSeries;
 import org.opensearch.tsdb.core.model.Labels;
 import org.opensearch.tsdb.core.utils.Constants;
 
 import java.io.IOException;
-import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -34,15 +42,17 @@ import java.util.concurrent.locks.ReentrantLock;
  * and commits them in a safe manner.
  */
 public class ClosedChunkIndexManager {
+    // Key to store metadata in MetadataStore
+    private static final String METADATA_STORE_KEY = "INDEX_METADATA";
+
+    // Key to lookup index metadata within store metadata.
+    private static final String INDEX_METADATA_KEY = "indexes";
+
+    // File prefix for closed chunk index directories
+    private static final String BLOCK_PREFIX = "block";
 
     // Directory to store all closed chunk indexes under
     private static final String BLOCKS_DIR = "blocks";
-
-    // File prefix for closed chunk index directories
-    private static final String BLOCK_PREFIX = "block_";
-
-    // Glob pattern to match closed chunk index directories
-    private static final String BLOCK_FILE_GLOB = BLOCK_PREFIX + "*";
 
     private final Logger log;
 
@@ -57,13 +67,15 @@ public class ClosedChunkIndexManager {
 
     // Thread-safety when adding/replacing indexes
     private final ReentrantLock lock = new ReentrantLock();
+    private final MetadataStore metadataStore;
 
     /**
      * Constructor for ClosedChunkIndexManager
      * @param dir to store blocks under
+     * @param metadataStore to store index metadata
      * @param shardId ShardId for logging context
      */
-    public ClosedChunkIndexManager(Path dir, ShardId shardId) {
+    public ClosedChunkIndexManager(Path dir, MetadataStore metadataStore, ShardId shardId) {
         this.dir = dir.resolve(BLOCKS_DIR);
         try {
             Files.createDirectories(this.dir);
@@ -71,6 +83,7 @@ public class ClosedChunkIndexManager {
             throw new RuntimeException("Failed to create blocks directory: " + this.dir, e);
         }
 
+        this.metadataStore = metadataStore;
         this.log = Loggers.getLogger(ClosedChunkIndexManager.class, shardId);
         closedChunkIndexMap = new TreeMap<>();
         pendingChunksToSeriesMMapTimestamps = new HashMap<>();
@@ -82,19 +95,57 @@ public class ClosedChunkIndexManager {
      */
     private void openClosedChunkIndexes(Path dir) {
         lock.lock();
-        try (DirectoryStream<Path> stream = Files.newDirectoryStream(dir, BLOCK_FILE_GLOB)) {
-            for (Path path : stream) {
-                closedChunkIndexMap.put(
-                    Long.parseLong(path.getFileName().toString().substring(BLOCK_PREFIX.length())),
-                    new ClosedChunkIndex(path)
-                );
+        try {
+            var metadata = metadataStore.retrieve(METADATA_STORE_KEY);
+            if (metadata.isPresent()) {
+                List<ClosedChunkIndex.Metadata> indexMetadataList = parseIndexMetadata(metadata.get());
+                for (ClosedChunkIndex.Metadata indexMetadata : indexMetadataList) {
+                    closedChunkIndexMap.put(
+                        indexMetadata.maxTimestamp(),
+                        new ClosedChunkIndex(dir.resolve(indexMetadata.directoryName()), indexMetadata)
+                    );
+                }
             }
             log.info("Loaded {} blocks from {}", closedChunkIndexMap.size(), dir);
         } catch (IOException e) {
-            throw new RuntimeException("Failed to load closed chunk indexes", e);
+            throw new RuntimeException("Failed to deserialize Metadata", e);
         } finally {
             lock.unlock();
         }
+    }
+
+    private List<ClosedChunkIndex.Metadata> parseIndexMetadata(String metadata) {
+        if (metadata == null || metadata.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        List<ClosedChunkIndex.Metadata> metadataList = new ArrayList<>();
+        try {
+            var xContent = MediaTypeRegistry.JSON.xContent();
+            try (
+                XContentParser parser = xContent.createParser(
+                    NamedXContentRegistry.EMPTY,
+                    DeprecationHandler.THROW_UNSUPPORTED_OPERATION,
+                    metadata
+                )
+            ) {
+                Object indexes = parser.map().get(INDEX_METADATA_KEY);
+                if (indexes instanceof List<?>) {
+                    for (Object indexMetadata : (List<?>) indexes) {
+                        if (indexMetadata instanceof String str) {
+                            metadataList.add(ClosedChunkIndex.Metadata.unmarshal(str));
+                        } else {
+                            throw new IllegalArgumentException("Invalid metadata entry: " + indexes);
+                        }
+                    }
+                } else {
+                    throw new IllegalArgumentException("Invalid metadata entry: " + indexes);
+                }
+            }
+        } catch (IOException e) {
+            throw new RuntimeException("Error parsing index metadata", e);
+        }
+        return metadataList;
     }
 
     /**
@@ -142,10 +193,13 @@ public class ClosedChunkIndexManager {
     }
 
     private ClosedChunkIndex createNewIndex(long chunkTimestamp) throws IOException {
-        long newIndexTimeBoundary = rangeForTimestamp(chunkTimestamp, Constants.Time.DEFAULT_BLOCK_DURATION);
-        ClosedChunkIndex newIndex = new ClosedChunkIndex(dir.resolve(BLOCK_PREFIX + newIndexTimeBoundary));
-        closedChunkIndexMap.put(newIndexTimeBoundary, newIndex);
-        log.info("Created new block {}", newIndexTimeBoundary);
+        long newIndexMaxTime = rangeForTimestamp(chunkTimestamp, Constants.Time.DEFAULT_BLOCK_DURATION);
+        long newIndexMinTime = newIndexMaxTime - Constants.Time.DEFAULT_BLOCK_DURATION;
+        String dirName = String.join("_", BLOCK_PREFIX, Long.toString(newIndexMinTime), Long.toString(newIndexMaxTime), UUIDs.base64UUID());
+        ClosedChunkIndex.Metadata metadata = new ClosedChunkIndex.Metadata(dirName, newIndexMinTime, newIndexMaxTime);
+        ClosedChunkIndex newIndex = new ClosedChunkIndex(dir.resolve(dirName), metadata);
+        closedChunkIndexMap.put(newIndexMaxTime, newIndex);
+        log.info("Created new block dir:{}, range: [{},{}]", dirName, newIndexMinTime, newIndexMaxTime);
         return newIndex;
     }
 
@@ -168,8 +222,10 @@ public class ClosedChunkIndexManager {
     public void commitChangedIndexes(List<MemSeries> allSeries) {
         lock.lock();
         try {
+            List<String> indexMetadata = new ArrayList<>();
             // commit in ascending order, using closedChunkIndexMap rather than pendingChunksToSeriesMMapTimestamps.keySet()
             for (ClosedChunkIndex index : closedChunkIndexMap.values()) {
+                indexMetadata.add(index.getMetadata().marshal());
                 Map<MemSeries, Long> pendingSeriesMMapTimestamps = pendingChunksToSeriesMMapTimestamps.get(index);
                 if (pendingSeriesMMapTimestamps == null) {
                     continue;
@@ -183,7 +239,16 @@ public class ClosedChunkIndexManager {
                 index.commitWithMetadata(allSeries);
                 pendingChunksToSeriesMMapTimestamps.remove(index);
             }
+
+            try (XContentBuilder builder = XContentFactory.jsonBuilder()) {
+                builder.startObject();
+                builder.array(INDEX_METADATA_KEY, indexMetadata.toArray(new String[0]));
+                builder.endObject();
+                metadataStore.store(METADATA_STORE_KEY, builder.toString());
+            }
             assert pendingChunksToSeriesMMapTimestamps.isEmpty() : "pending data should be empty after commit";
+        } catch (IOException e) {
+            throw new RuntimeException(e);
         } finally {
             lock.unlock();
         }

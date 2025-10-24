@@ -31,7 +31,10 @@ import org.apache.lucene.store.MMapDirectory;
 import org.apache.lucene.util.BytesRef;
 import org.opensearch.ExceptionsHelper;
 import org.opensearch.common.io.stream.BytesStreamOutput;
+import org.opensearch.common.xcontent.XContentFactory;
 import org.opensearch.core.common.io.stream.BytesStreamInput;
+import org.opensearch.core.xcontent.MediaTypeRegistry;
+import org.opensearch.core.xcontent.XContentBuilder;
 import org.opensearch.tsdb.core.head.MemChunk;
 import org.opensearch.tsdb.core.head.MemSeries;
 import org.opensearch.tsdb.core.mapping.Constants;
@@ -56,13 +59,15 @@ public class ClosedChunkIndex {
     private final IndexWriter indexWriter;
     private final SnapshotDeletionPolicy snapshotDeletionPolicy;
     private final ReaderManager directoryReaderManager;
+    private final Metadata metadata;
 
     /**
      * Create a new ClosedChunkIndex in the given directory.
      * @param dir the directory to store the index
+     * @param metadata metadata of the index
      * @throws IOException if there is an error creating the index
      */
-    public ClosedChunkIndex(Path dir) throws IOException {
+    public ClosedChunkIndex(Path dir, Metadata metadata) throws IOException {
         if (!Files.exists(dir)) {
             Files.createDirectories(dir);
         }
@@ -70,6 +75,7 @@ public class ClosedChunkIndex {
         analyzer = new WhitespaceAnalyzer();
         directory = new MMapDirectory(dir);
         try {
+            this.metadata = metadata;
             IndexWriterConfig iwc = new IndexWriterConfig(analyzer);
 
             // Use SnapshotDeletionPolicy to allow taking snapshots during recovery
@@ -228,5 +234,54 @@ public class ClosedChunkIndex {
     public void release(IndexCommit snapshot) throws IOException {
         snapshotDeletionPolicy.release(snapshot);
         indexWriter.deleteUnusedFiles();
+    }
+
+    /**
+     * Returns index metadata
+     *
+     * @return An instance of {@code Metadata} of this index.
+     */
+    public Metadata getMetadata() {
+        return metadata;
+    }
+
+    /**
+     * A record class to store index metadata.
+     *
+     * @param directoryName name of the directory backing the index.
+     * @param minTimestamp  min timestamp of the index
+     * @param maxTimestamp  max timestamp of the index
+     */
+    public record Metadata(String directoryName, long minTimestamp, long maxTimestamp) {
+        public String marshal() throws IOException {
+            try (XContentBuilder builder = XContentFactory.jsonBuilder()) {
+                builder.startObject();
+                builder.field("version", 1);
+                builder.field("directory_name", directoryName);
+                builder.field("min_timestamp", minTimestamp);
+                builder.field("max_timestamp", maxTimestamp);
+                builder.endObject();
+                return builder.toString();
+            }
+        }
+
+        public static Metadata unmarshal(String value) {
+            try (
+                var parser = MediaTypeRegistry.JSON.xContent()
+                    .createParser(
+                        org.opensearch.core.xcontent.NamedXContentRegistry.EMPTY,
+                        org.opensearch.core.xcontent.DeprecationHandler.THROW_UNSUPPORTED_OPERATION,
+                        value
+                    )
+            ) {
+                Map<String, Object> map = parser.map();
+                String directoryName = (String) map.get("directory_name");
+                long minTimestamp = ((Number) map.get("min_timestamp")).longValue();
+                long maxTimestamp = ((Number) map.get("max_timestamp")).longValue();
+                return new Metadata(directoryName, minTimestamp, maxTimestamp);
+            } catch (IOException e) {
+                throw new RuntimeException("Failed to deserialize Metadata", e);
+            }
+        }
     }
 }

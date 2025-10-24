@@ -19,6 +19,8 @@ import org.apache.lucene.search.TopDocs;
 import org.apache.lucene.util.BytesRef;
 import org.opensearch.core.index.shard.ShardId;
 import org.opensearch.test.OpenSearchTestCase;
+import org.opensearch.tsdb.InMemoryMetadataStore;
+import org.opensearch.tsdb.MetadataStore;
 import org.opensearch.tsdb.core.chunk.Chunk;
 import org.opensearch.tsdb.core.chunk.ChunkIterator;
 import org.opensearch.tsdb.core.index.closed.ClosedChunk;
@@ -40,6 +42,7 @@ public class HeadTests extends OpenSearchTestCase {
     public void testHeadLifecycle() throws IOException, InterruptedException {
         ClosedChunkIndexManager closedChunkIndexManager = new ClosedChunkIndexManager(
             createTempDir("metrics"),
+            new InMemoryMetadataStore(),
             new ShardId("headTest", "headTestUid", 0)
         );
 
@@ -113,7 +116,7 @@ public class HeadTests extends OpenSearchTestCase {
     public void testHeadSeriesCleanup() throws IOException, InterruptedException {
         ShardId shardId = new ShardId("headTest", "headTestUid", 0);
         Path metricsPath = createTempDir("metricsStore");
-        ClosedChunkIndexManager closedChunkIndexManager = new ClosedChunkIndexManager(metricsPath, shardId);
+        ClosedChunkIndexManager closedChunkIndexManager = new ClosedChunkIndexManager(metricsPath, new InMemoryMetadataStore(), shardId);
         Head head = new Head(metricsPath, shardId, closedChunkIndexManager);
 
         Head.HeadAppender.AppendContext context = new Head.HeadAppender.AppendContext(new ChunkOptions(1000, 10));
@@ -155,7 +158,8 @@ public class HeadTests extends OpenSearchTestCase {
     public void testHeadRecovery() throws IOException, InterruptedException {
         ShardId shardId = new ShardId("headTest", "headTestUid", 0);
         Path metricsPath = createTempDir("metricsStore");
-        ClosedChunkIndexManager closedChunkIndexManager = new ClosedChunkIndexManager(metricsPath, shardId);
+        MetadataStore metadataStore = new InMemoryMetadataStore();
+        ClosedChunkIndexManager closedChunkIndexManager = new ClosedChunkIndexManager(metricsPath, metadataStore, shardId);
         Path headPath = createTempDir("testHeadRecovery");
 
         Head head = new Head(headPath, new ShardId("headTest", "headTestUid", 0), closedChunkIndexManager);
@@ -181,7 +185,7 @@ public class HeadTests extends OpenSearchTestCase {
         head.close();
         closedChunkIndexManager.close();
 
-        ClosedChunkIndexManager newClosedChunkIndexManager = new ClosedChunkIndexManager(metricsPath, shardId);
+        ClosedChunkIndexManager newClosedChunkIndexManager = new ClosedChunkIndexManager(metricsPath, metadataStore, shardId);
         Head newHead = new Head(headPath, new ShardId("headTest", "headTestUid", 0), newClosedChunkIndexManager);
 
         // MemSeries are correctly loaded and updated from commit data
@@ -224,7 +228,7 @@ public class HeadTests extends OpenSearchTestCase {
     public void testHeadGetOrCreateSeries() throws IOException {
         ShardId shardId = new ShardId("headTest", "headTestUid", 0);
         Path metricsPath = createTempDir("testGetOrCreateSeries");
-        ClosedChunkIndexManager closedChunkIndexManager = new ClosedChunkIndexManager(metricsPath, shardId);
+        ClosedChunkIndexManager closedChunkIndexManager = new ClosedChunkIndexManager(metricsPath, new InMemoryMetadataStore(), shardId);
         Head head = new Head(metricsPath, shardId, closedChunkIndexManager);
         Labels labels = ByteLabels.fromStrings("k1", "v1", "k2", "v2");
 
@@ -248,7 +252,7 @@ public class HeadTests extends OpenSearchTestCase {
     public void testHeadGetOrCreateSeriesHandlesHashFunctionChange() throws IOException {
         ShardId shardId = new ShardId("headTest", "headTestUid", 0);
         Path metricsPath = createTempDir("testGetOrCreateSeries");
-        ClosedChunkIndexManager closedChunkIndexManager = new ClosedChunkIndexManager(metricsPath, shardId);
+        ClosedChunkIndexManager closedChunkIndexManager = new ClosedChunkIndexManager(metricsPath, new InMemoryMetadataStore(), shardId);
         Head head = new Head(metricsPath, shardId, closedChunkIndexManager);
         Labels labels = ByteLabels.fromStrings("k1", "v1", "k2", "v2");
 
@@ -272,7 +276,7 @@ public class HeadTests extends OpenSearchTestCase {
     public void testGetOrCreateSeriesConcurrent() throws Exception {
         ShardId shardId = new ShardId("headTest", "headTestUid", 0);
         Path metricsPath = createTempDir("testGetOrCreateSeriesConcurrent");
-        ClosedChunkIndexManager closedChunkIndexManager = new ClosedChunkIndexManager(metricsPath, shardId);
+        ClosedChunkIndexManager closedChunkIndexManager = new ClosedChunkIndexManager(metricsPath, new InMemoryMetadataStore(), shardId);
         Head head = new Head(metricsPath, shardId, closedChunkIndexManager);
         long hash = 123L;
 
@@ -431,7 +435,7 @@ public class HeadTests extends OpenSearchTestCase {
     public void testNewAppender() throws IOException {
         ShardId shardId = new ShardId("headTest", "headTestUid", 0);
         Path metricsPath = createTempDir("testNewAppender");
-        ClosedChunkIndexManager closedChunkIndexManager = new ClosedChunkIndexManager(metricsPath, shardId);
+        ClosedChunkIndexManager closedChunkIndexManager = new ClosedChunkIndexManager(metricsPath, new InMemoryMetadataStore(), shardId);
         Head head = new Head(metricsPath, shardId, closedChunkIndexManager);
 
         // Test that newAppender returns non-null
@@ -450,7 +454,7 @@ public class HeadTests extends OpenSearchTestCase {
     public void testSeriesCreatorThreadExecutesRunnableFirst() throws Exception {
         ShardId shardId = new ShardId("headTest", "headTestUid", 0);
         Path metricsPath = createTempDir("testSeriesCreatorThread");
-        ClosedChunkIndexManager closedChunkIndexManager = new ClosedChunkIndexManager(metricsPath, shardId);
+        ClosedChunkIndexManager closedChunkIndexManager = new ClosedChunkIndexManager(metricsPath, new InMemoryMetadataStore(), shardId);
         Head head = new Head(metricsPath, shardId, closedChunkIndexManager);
 
         // Use high thread count and iterations to reliably induce contention

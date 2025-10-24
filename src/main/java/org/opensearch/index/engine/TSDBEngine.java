@@ -36,6 +36,7 @@ import org.opensearch.index.translog.TranslogManager;
 import org.opensearch.index.translog.TranslogOperationHelper;
 import org.opensearch.index.translog.listener.TranslogEventListener;
 import org.opensearch.search.suggest.completion.CompletionStats;
+import org.opensearch.tsdb.MetadataStore;
 import org.opensearch.tsdb.core.head.Appender;
 import org.opensearch.tsdb.core.head.Head;
 import org.opensearch.tsdb.core.index.closed.ClosedChunkIndexManager;
@@ -54,6 +55,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -86,6 +88,7 @@ public class TSDBEngine extends Engine {
     private Head head;
     private Path metricsStorePath;
     private ReferenceManager<OpenSearchDirectoryReader> metricsReaderManager;
+    private final MetadataStore metadataStore;
 
     private volatile SegmentInfos lastCommittedSegmentInfos;
 
@@ -117,14 +120,14 @@ public class TSDBEngine extends Engine {
             this.metricsStorePath = path;
         }
 
-        Files.createDirectories(metricsStorePath);
-        closedChunkIndexManager = new ClosedChunkIndexManager(metricsStorePath, engineConfig.getShardId());
-        head = new Head(metricsStorePath, engineConfig.getShardId(), closedChunkIndexManager);
-
         store.incRef();
         boolean success = false;
         try {
             lastCommittedSegmentInfos = store.readLastCommittedSegmentsInfo();
+            Files.createDirectories(metricsStorePath);
+            metadataStore = new CheckpointedMetadataStore();
+            closedChunkIndexManager = new ClosedChunkIndexManager(metricsStorePath, metadataStore, engineConfig.getShardId());
+            head = new Head(metricsStorePath, engineConfig.getShardId(), closedChunkIndexManager);
             this.localCheckpointTracker = createLocalCheckpointTracker();
             String translogUUID = Objects.requireNonNull(lastCommittedSegmentInfos.getUserData().get(Translog.TRANSLOG_UUID_KEY));
             this.translogManager = new InternalTranslogManager(
@@ -1023,6 +1026,14 @@ public class TSDBEngine extends Engine {
     }
 
     /**
+     * Returns metadata store, visible for testing only.
+     * @return an instance of {@link  MetadataStore}
+     */
+    MetadataStore getMetadataStore() {
+        return metadataStore;
+    }
+
+    /**
      * IndexCommit implementation for TSDBEngine that aggregates snapshots from all individual indexes.
      *
      * <p>This class provides a unified view of index commits across:
@@ -1105,6 +1116,47 @@ public class TSDBEngine extends Engine {
         @Override
         public boolean isDeleted() {
             return false;
+        }
+    }
+
+    private class CheckpointedMetadataStore implements MetadataStore {
+
+        /**
+         * {@inheritDoc}
+         */
+        @Override
+        public void store(String key, String value) throws IOException {
+            segmentInfosLock.lock();
+            try {
+                assert lastCommittedSegmentInfos != null;
+
+                // Update user data with current state
+                Map<String, String> userData = new HashMap<>(lastCommittedSegmentInfos.getUserData());
+                userData.put(key, value);
+                lastCommittedSegmentInfos.setUserData(userData, false);
+                lastCommittedSegmentInfos.commit(store.directory());
+                store.directory().sync(lastCommittedSegmentInfos.files(true));
+                store.directory().syncMetaData();
+            } finally {
+                segmentInfosLock.unlock();
+            }
+        }
+
+        /**
+         * {@inheritDoc}
+         */
+        @Override
+        public Optional<String> retrieve(String key) {
+            segmentInfosLock.lock();
+            try {
+                assert lastCommittedSegmentInfos != null;
+                if (lastCommittedSegmentInfos.getUserData().get(key) != null) {
+                    return Optional.of(lastCommittedSegmentInfos.getUserData().get(key));
+                }
+                return Optional.empty();
+            } finally {
+                segmentInfosLock.unlock();
+            }
         }
     }
 }

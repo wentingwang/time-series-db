@@ -7,6 +7,8 @@
  */
 package org.opensearch.index.engine;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.apache.lucene.index.NoMergePolicy;
 import org.apache.lucene.index.Term;
 import org.opensearch.cluster.ClusterState;
@@ -27,12 +29,14 @@ import org.opensearch.index.seqno.SequenceNumbers;
 import org.opensearch.index.store.Store;
 import org.opensearch.index.translog.Translog;
 import org.opensearch.test.IndexSettingsModule;
+import org.opensearch.tsdb.core.index.closed.ClosedChunkIndex;
 import org.opensearch.tsdb.core.model.ByteLabels;
 import org.opensearch.tsdb.core.model.Labels;
 import org.junit.After;
 import org.junit.Before;
 
 import java.io.IOException;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicLong;
 
 import static org.opensearch.index.seqno.SequenceNumbers.UNASSIGNED_SEQ_NO;
@@ -146,6 +150,26 @@ public class TSDBEngineTests extends EngineTestCase {
                 0
             )
         );
+    }
+
+    public void testMetadataStoreRetrieve() throws Exception {
+        var metadata = List.of(
+            new ClosedChunkIndex.Metadata("86BE47D0-90A3-4F46-A577-D26D35351F24", 0, 72000000),
+            new ClosedChunkIndex.Metadata("86BE47D0-90A3-4F46-A577-D26D35351F25", 72000000, 144000000),
+            new ClosedChunkIndex.Metadata("86BE47D0-90A3-4F46-A577-D26D35351F26", 144000000, 216000000)
+        );
+
+        try {
+            metricsEngine.getMetadataStore().store("INDEX_METADATA_KEY", new ObjectMapper().writeValueAsString(metadata));
+        } catch (IOException e) {
+            fail("Exception should not have been thrown");
+        }
+
+        var mayBeMetadata = metricsEngine.getMetadataStore().retrieve("INDEX_METADATA_KEY");
+        assertTrue(mayBeMetadata.isPresent());
+        var mapper = new ObjectMapper();
+        assertEquals(metadata, mapper.readValue(mayBeMetadata.get(), new TypeReference<List<ClosedChunkIndex.Metadata>>() {
+        }));
     }
 
     public void testBasicIndexing() throws IOException {

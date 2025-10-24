@@ -52,7 +52,10 @@ public class ClosedChunkIndexTests extends OpenSearchTestCase {
     public void testCreateDir() {
         Path tempDir = createTempDir("testCreateDir");
         try {
-            ClosedChunkIndex closedChunkIndex = new ClosedChunkIndex(Path.of(tempDir.toString(), "subdir"));
+            ClosedChunkIndex closedChunkIndex = new ClosedChunkIndex(
+                Path.of(tempDir.toString(), "subdir"),
+                new ClosedChunkIndex.Metadata(Path.of(tempDir.toString(), "subdir").getFileName().toString(), 0, 0)
+            );
             closedChunkIndex.close();
         } catch (IOException e) {
             fail("IOException should not be thrown when creating index in a valid directory: " + e.getMessage());
@@ -60,7 +63,8 @@ public class ClosedChunkIndexTests extends OpenSearchTestCase {
     }
 
     public void testAddAndRead() throws IOException {
-        ClosedChunkIndex closedChunkIndex = new ClosedChunkIndex(createTempDir("testAddAndRead"));
+        var dir = createTempDir("testAddAndRead");
+        ClosedChunkIndex closedChunkIndex = new ClosedChunkIndex(dir, new ClosedChunkIndex.Metadata(dir.getFileName().toString(), 0, 0));
 
         Labels labels1 = ByteLabels.fromStrings("k1", "v1", "k2", "v2");
         Labels labels2 = ByteLabels.fromStrings("k1", "v1", "k3", "v3");
@@ -94,7 +98,10 @@ public class ClosedChunkIndexTests extends OpenSearchTestCase {
 
     public void testCommitWithMetadataAndLoad() throws IOException {
         Path tempDir = createTempDir("testCommitWithMetadataAndLoad");
-        ClosedChunkIndex closedChunkIndex = new ClosedChunkIndex(tempDir);
+        ClosedChunkIndex closedChunkIndex = new ClosedChunkIndex(
+            tempDir,
+            new ClosedChunkIndex.Metadata(tempDir.getFileName().toString(), 0, 0)
+        );
         Labels labels1 = ByteLabels.fromStrings("k1", "v1", "k2", "v2");
         closedChunkIndex.addNewChunk(labels1, buildMemChunk(5, 0, 90));
 
@@ -108,7 +115,10 @@ public class ClosedChunkIndexTests extends OpenSearchTestCase {
         closedChunkIndex.commitWithMetadata(liveSeries);
         closedChunkIndex.close();
 
-        ClosedChunkIndex reopenedIndex = new ClosedChunkIndex(tempDir);
+        ClosedChunkIndex reopenedIndex = new ClosedChunkIndex(
+            tempDir,
+            new ClosedChunkIndex.Metadata(tempDir.getFileName().toString(), 0, 0)
+        );
         Map<Labels, List<ClosedChunk>> chunks = getChunks(reopenedIndex, buildQuery("/.*/", 0, Long.MAX_VALUE));
         assertEquals("Should find both persisted chunks", 1, chunks.size());
         assertTrue("Should contain chunk for labels1", chunks.containsKey(labels1));
@@ -127,7 +137,10 @@ public class ClosedChunkIndexTests extends OpenSearchTestCase {
 
     public void testSnapshotDeletionPolicy() throws IOException {
         Path tempDir = createTempDir("testSnapshotDeletionPolicy");
-        ClosedChunkIndex closedChunkIndex = new ClosedChunkIndex(tempDir);
+        ClosedChunkIndex closedChunkIndex = new ClosedChunkIndex(
+            tempDir,
+            new ClosedChunkIndex.Metadata(tempDir.getFileName().toString(), 0, 0)
+        );
         Labels labels1 = ByteLabels.fromStrings("k1", "v1", "k2", "v2");
         Labels labels2 = ByteLabels.fromStrings("k1", "v1", "k3", "v3");
         closedChunkIndex.addNewChunk(labels1, buildMemChunk(5, 0, 90));
@@ -165,7 +178,8 @@ public class ClosedChunkIndexTests extends OpenSearchTestCase {
     }
 
     public void testForceMerge() throws IOException {
-        ClosedChunkIndex closedChunkIndex = new ClosedChunkIndex(createTempDir("testForceMerge"));
+        var dir = createTempDir("testForceMerge");
+        ClosedChunkIndex closedChunkIndex = new ClosedChunkIndex(dir, new ClosedChunkIndex.Metadata(dir.getFileName().toString(), 0, 0));
         Labels labels1 = ByteLabels.fromStrings("k1", "v1", "k2", "v2");
         Labels labels2 = ByteLabels.fromStrings("k1", "v1", "k3", "v3");
         Labels labels3 = ByteLabels.fromStrings("k1", "v1", "k4", "v4");
@@ -201,7 +215,8 @@ public class ClosedChunkIndexTests extends OpenSearchTestCase {
     }
 
     public void testDocumentsSortedByLabelsHashAndTime() throws IOException {
-        ClosedChunkIndex closedChunkIndex = new ClosedChunkIndex(createTempDir("testDocumentsSortedByLabelsHashAndTime"));
+        var dir = createTempDir("testDocumentsSortedByLabelsHashAndTime");
+        ClosedChunkIndex closedChunkIndex = new ClosedChunkIndex(dir, new ClosedChunkIndex.Metadata(dir.getFileName().toString(), 0, 0));
 
         // Create labels with different hash values to test sorting
         Labels labels1 = ByteLabels.fromStrings("metric", "cpu_usage", "host", "server1");
@@ -396,11 +411,14 @@ public class ClosedChunkIndexTests extends OpenSearchTestCase {
         Path fileInsteadOfDir = invalidDir.resolve("subdir");
         Files.createFile(fileInsteadOfDir);
 
-        expectThrows(FileAlreadyExistsException.class, () -> { new ClosedChunkIndex(fileInsteadOfDir); });
+        expectThrows(FileAlreadyExistsException.class, () -> {
+            new ClosedChunkIndex(fileInsteadOfDir, new ClosedChunkIndex.Metadata(fileInsteadOfDir.getFileName().toString(), 0, 0));
+        });
     }
 
     public void testForceMergeException() throws IOException {
-        ClosedChunkIndex closedChunkIndex = new ClosedChunkIndex(createTempDir("testForceMergeException"));
+        var dir = createTempDir("testForceMergeException");
+        ClosedChunkIndex closedChunkIndex = new ClosedChunkIndex(dir, new ClosedChunkIndex.Metadata(dir.getFileName().toString(), 0, 0));
 
         // Close the index first to make forceMerge throw IOException
         closedChunkIndex.close();

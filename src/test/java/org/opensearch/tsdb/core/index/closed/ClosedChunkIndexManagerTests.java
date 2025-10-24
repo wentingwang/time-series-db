@@ -18,6 +18,8 @@ import org.apache.lucene.search.ScoreDoc;
 import org.apache.lucene.search.TopDocs;
 import org.opensearch.core.index.shard.ShardId;
 import org.opensearch.test.OpenSearchTestCase;
+import org.opensearch.tsdb.InMemoryMetadataStore;
+import org.opensearch.tsdb.MetadataStore;
 import org.opensearch.tsdb.core.chunk.Chunk;
 import org.opensearch.tsdb.core.chunk.ChunkAppender;
 import org.opensearch.tsdb.core.chunk.ChunkIterator;
@@ -43,7 +45,8 @@ public class ClosedChunkIndexManagerTests extends OpenSearchTestCase {
 
     public void testClosedChunkIndexManagerLoad() throws IOException {
         Path tempDir = createTempDir("testClosedChunkIndexManagerLoad");
-        ClosedChunkIndexManager manager = new ClosedChunkIndexManager(tempDir, new ShardId("index", "uuid", 0));
+        MetadataStore metadataStore = new InMemoryMetadataStore();
+        ClosedChunkIndexManager manager = new ClosedChunkIndexManager(tempDir, metadataStore, new ShardId("index", "uuid", 0));
 
         Labels labels1 = ByteLabels.fromStrings("label1", "value1");
         MemSeries series1 = new MemSeries(0, labels1);
@@ -58,27 +61,30 @@ public class ClosedChunkIndexManagerTests extends OpenSearchTestCase {
         assertEquals("MaxMMapTimestamp updated after commit", 7800000, series1.getMaxMMapTimestamp());
         manager.close();
 
-        ClosedChunkIndexManager reopenedManager = new ClosedChunkIndexManager(tempDir, new ShardId("index", "uuid", 0));
+        ClosedChunkIndexManager reopenedManager = new ClosedChunkIndexManager(tempDir, metadataStore, new ShardId("index", "uuid", 0));
         assertEquals("Two indexes were created", 2, reopenedManager.getNumBlocks());
         reopenedManager.close();
     }
 
     public void testAddChunk() throws IOException {
         Path tempDir = createTempDir("testAddChunk");
-        ClosedChunkIndexManager manager = new ClosedChunkIndexManager(tempDir, new ShardId("index", "uuid", 0));
+        MetadataStore metadataStore = new InMemoryMetadataStore();
+        ClosedChunkIndexManager manager = new ClosedChunkIndexManager(tempDir, metadataStore, new ShardId("index", "uuid", 0));
 
+        var blockDirs = new ArrayList<Path>();
         // Add chunk and verify first index is created
         Labels labels1 = ByteLabels.fromStrings("label1", "value1");
         MemSeries series1 = new MemSeries(0, labels1);
         manager.addMemChunk(series1, getMemChunk(5, 0, 1500));
         manager.addMemChunk(series1, getMemChunk(5, 1600, 2500));
-        Path firstBlockDir = tempDir.resolve("blocks").resolve("block_7200000");
-        assertTrue(Files.exists(firstBlockDir));
+        addIndexDirectories(tempDir.resolve("blocks"), blockDirs);
+
+        assertEquals(1, blockDirs.size());
 
         // Add chunk and verify second index is created
         manager.addMemChunk(series1, getMemChunk(5, 7200000, 7800000));
-        Path secondBlockDir = tempDir.resolve("blocks").resolve("block_14400000");
-        assertTrue(Files.exists(secondBlockDir));
+        addIndexDirectories(tempDir.resolve("blocks"), blockDirs);
+        assertEquals(2, blockDirs.size());
 
         // Add an old chunk, it should be added to the first index
         manager.addMemChunk(series1, getMemChunk(5, 2600, 4500));
@@ -87,8 +93,14 @@ public class ClosedChunkIndexManagerTests extends OpenSearchTestCase {
         manager.close();
 
         // Independently verify chunks in both indexes
-        ClosedChunkIndex first = new ClosedChunkIndex(firstBlockDir);
-        ClosedChunkIndex second = new ClosedChunkIndex(secondBlockDir);
+        ClosedChunkIndex first = new ClosedChunkIndex(
+            blockDirs.get(0),
+            new ClosedChunkIndex.Metadata(blockDirs.get(0).getFileName().toString(), 0, 7200000)
+        );
+        ClosedChunkIndex second = new ClosedChunkIndex(
+            blockDirs.get(1),
+            new ClosedChunkIndex.Metadata(blockDirs.get(1).getFileName().toString(), 7200000, 14400000)
+        );
 
         List<ClosedChunk> firstChunks = getChunks(first);
         assertEquals(3, firstChunks.size());
@@ -110,7 +122,11 @@ public class ClosedChunkIndexManagerTests extends OpenSearchTestCase {
 
     public void testUpdateSeriesFromCommitData() throws IOException {
         Path tempDir = createTempDir("testUpdateSeriesFromCommitData");
-        ClosedChunkIndexManager manager = new ClosedChunkIndexManager(tempDir, new ShardId("index", "uuid", 0));
+        ClosedChunkIndexManager manager = new ClosedChunkIndexManager(
+            tempDir,
+            new InMemoryMetadataStore(),
+            new ShardId("index", "uuid", 0)
+        );
 
         Labels labels1 = ByteLabels.fromStrings("label1", "value1");
         Labels labels2 = ByteLabels.fromStrings("label2", "value2");
@@ -138,7 +154,12 @@ public class ClosedChunkIndexManagerTests extends OpenSearchTestCase {
 
     public void testOnlyCommitChangedIndexes() throws IOException {
         Path tempDir = createTempDir("testOnlyCommitChangedIndexes");
-        ClosedChunkIndexManager manager = new ClosedChunkIndexManager(tempDir, new ShardId("index", "uuid", 0));
+        ClosedChunkIndexManager manager = new ClosedChunkIndexManager(
+            tempDir,
+            new InMemoryMetadataStore(),
+            new ShardId("index", "uuid", 0)
+        );
+        var blockDirs = new ArrayList<Path>();
 
         Labels labels1 = ByteLabels.fromStrings("label1", "value1");
         Labels labels2 = ByteLabels.fromStrings("label2", "value2");
@@ -146,14 +167,16 @@ public class ClosedChunkIndexManagerTests extends OpenSearchTestCase {
         MemSeries series2 = new MemSeries(200, labels2);
 
         manager.addMemChunk(series1, getMemChunk(5, 0, 1500));
+        addIndexDirectories(tempDir.resolve("blocks"), blockDirs);
         manager.addMemChunk(series1, getMemChunk(5, 7200000, 7800000));
+        addIndexDirectories(tempDir.resolve("blocks"), blockDirs);
 
         List<MemSeries> allSeries = List.of(series1, series2);
         manager.commitChangedIndexes(allSeries);
 
         // Get files from both blocks after first commit
-        Path firstBlockDir = tempDir.resolve("blocks").resolve("block_7200000");
-        Path secondBlockDir = tempDir.resolve("blocks").resolve("block_14400000");
+        Path firstBlockDir = tempDir.resolve("blocks").resolve(blockDirs.get(0).getFileName());
+        Path secondBlockDir = tempDir.resolve("blocks").resolve(blockDirs.get(1).getFileName());
 
         Set<String> firstBlockFilesBefore = getFileNames(firstBlockDir);
         Set<String> secondBlockFilesBefore = getFileNames(secondBlockDir);
@@ -177,7 +200,11 @@ public class ClosedChunkIndexManagerTests extends OpenSearchTestCase {
 
     public void testGetReaderManagers() throws IOException {
         Path tempDir = createTempDir("testGetReaderManagers");
-        ClosedChunkIndexManager manager = new ClosedChunkIndexManager(tempDir, new ShardId("index", "uuid", 0));
+        ClosedChunkIndexManager manager = new ClosedChunkIndexManager(
+            tempDir,
+            new InMemoryMetadataStore(),
+            new ShardId("index", "uuid", 0)
+        );
 
         assertEquals("Initially no reader managers", 0, manager.getReaderManagers().size());
 
@@ -200,7 +227,11 @@ public class ClosedChunkIndexManagerTests extends OpenSearchTestCase {
 
     public void testSnapshotAllIndexes() throws IOException {
         Path tempDir = createTempDir("testSnapshotAllIndexes");
-        ClosedChunkIndexManager manager = new ClosedChunkIndexManager(tempDir, new ShardId("index", "uuid", 0));
+        ClosedChunkIndexManager manager = new ClosedChunkIndexManager(
+            tempDir,
+            new InMemoryMetadataStore(),
+            new ShardId("index", "uuid", 0)
+        );
 
         ClosedChunkIndexManager.SnapshotResult emptyResult = manager.snapshotAllIndexes();
         assertEquals("No snapshots initially", 0, emptyResult.indexCommits().size());
@@ -345,7 +376,7 @@ public class ClosedChunkIndexManagerTests extends OpenSearchTestCase {
 
     // Helper method to find a file in any of the block directories
     private Path findFileInBlockDirs(Path tempDir, String fileName) throws IOException {
-        try (var stream = Files.newDirectoryStream(tempDir.resolve("blocks"), "block_*")) {
+        try (var stream = Files.newDirectoryStream(tempDir.resolve("blocks"), "*")) {
             for (Path blockDir : stream) {
                 Path filePath = blockDir.resolve(fileName);
                 if (Files.exists(filePath)) {
@@ -354,5 +385,15 @@ public class ClosedChunkIndexManagerTests extends OpenSearchTestCase {
             }
         }
         return null;
+    }
+
+    private void addIndexDirectories(Path blockDir, List<Path> indexDirs) throws IOException {
+        try (var stream = Files.newDirectoryStream(blockDir, "*")) {
+            for (Path indexDir : stream) {
+                if (!indexDirs.contains(indexDir) && indexDir.getFileName().toString().startsWith("block")) {
+                    indexDirs.add(indexDir);
+                }
+            }
+        }
     }
 }

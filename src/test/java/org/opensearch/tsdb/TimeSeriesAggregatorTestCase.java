@@ -120,7 +120,10 @@ public abstract class TimeSeriesAggregatorTestCase extends AggregatorTestCase {
         java.nio.file.Path tempDir = createTempDir();
 
         // Create ClosedChunkIndex with the Path constructor - it manages its own directory
-        ClosedChunkIndex closedChunkIndex = new ClosedChunkIndex(tempDir);
+        ClosedChunkIndex closedChunkIndex = new ClosedChunkIndex(
+            tempDir,
+            new ClosedChunkIndex.Metadata(tempDir.getFileName().toString(), 0, 0)
+        );
 
         try {
             // Let test add chunks using the ClosedChunkIndex API
