@@ -82,7 +82,28 @@ public class TimeshiftPlanNodeTests extends BasePlanNodeTests {
     public void testTimeshiftPlanNodeHandlesNegativeDuration() {
         TimeshiftPlanNode node = new TimeshiftPlanNode(1, "-120s");
 
-        assertEquals(Duration.ofSeconds(120).negated(), node.getDuration());
+        assertEquals("Negative duration should be converted to positive", Duration.ofSeconds(120), node.getDuration());
+    }
+
+    public void testTimeshiftPlanNodeConvertsNegativeDurationToAbsolute() {
+        // Test various negative durations
+        TimeshiftPlanNode node1 = new TimeshiftPlanNode(1, "-2h");
+        assertEquals(Duration.ofHours(2), node1.getDuration());
+
+        TimeshiftPlanNode node2 = new TimeshiftPlanNode(2, "-30m");
+        assertEquals(Duration.ofMinutes(30), node2.getDuration());
+
+        TimeshiftPlanNode node3 = new TimeshiftPlanNode(3, "-1d");
+        assertEquals(Duration.ofDays(1), node3.getDuration());
+    }
+
+    public void testTimeshiftPlanNodePreservesPositiveDuration() {
+        // Test that positive durations remain unchanged
+        TimeshiftPlanNode node1 = new TimeshiftPlanNode(1, "2h");
+        assertEquals(Duration.ofHours(2), node1.getDuration());
+
+        TimeshiftPlanNode node2 = new TimeshiftPlanNode(2, "30m");
+        assertEquals(Duration.ofMinutes(30), node2.getDuration());
     }
 
     public void testTimeshiftPlanNodeFactoryMethodThrowsOnNoArguments() {

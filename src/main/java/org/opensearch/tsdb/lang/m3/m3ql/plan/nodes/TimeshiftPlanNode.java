@@ -45,11 +45,13 @@ public class TimeshiftPlanNode extends M3PlanNode {
     }
 
     /**
-     * Returns the duration for the time shift.
-     * @return Duration object representing the time shift period
+     * Returns the absolute duration for the time shift.
+     * Negative durations are converted to positive values.
+     * @return Duration object representing the absolute time shift period
      */
     public Duration getDuration() {
-        return M3Duration.valueOf(duration);
+        Duration d = M3Duration.valueOf(duration);
+        return d.isNegative() ? d.negated() : d;
     }
 
     /**

@@ -380,6 +380,29 @@ public class SourceBuilderVisitorTests extends OpenSearchTestCase {
     }
 
     /**
+     * Test that negative timeshift duration works correctly for fetch time range adjustment.
+     * TimeshiftPlanNode.getDuration() converts negative to positive, so visitor gets positive value.
+     */
+    public void testTimeshiftPlanNodeWithNegativeDurationAdjustsFetchTimeRange() {
+        TimeshiftPlanNode planNode = new TimeshiftPlanNode(1, "-2h");
+        planNode.addChild(createMockFetchNode(2));
+
+        SourceBuilderVisitor.ComponentHolder result = visitor.visit(planNode);
+        SearchSourceBuilder builder = result.toSearchSourceBuilder();
+
+        Collection<AggregationBuilder> aggregations = builder.aggregations().getAggregatorFactories();
+        assertEquals(1, aggregations.size());
+
+        TimeSeriesUnfoldAggregationBuilder unfoldAgg = (TimeSeriesUnfoldAggregationBuilder) aggregations.iterator().next();
+
+        // -2h = 7200000ms (converted to positive by TimeshiftPlanNode.getDuration())
+        // startTime (1000000) - 7200000 = -6200000
+        // endTime (2000000) - 7200000 = -5200000
+        assertEquals("Start time should be adjusted by timeshift", -6200000L, unfoldAgg.getMinTimestamp());
+        assertEquals("End time should be adjusted by timeshift", -5200000L, unfoldAgg.getMaxTimestamp());
+    }
+
+    /**
      * Test TransformNullPlanNode with correct number of children (1).
      */
     public void testTransformNullPlanNodeWithOneChild() {
