@@ -57,13 +57,10 @@ TOKEN : {
   | < STRING_LITERAL: ("\"") (~["\""])* ("\"") >
 }
 
-<LITERAL_MODE> SKIP : {
-    "\n" | "\r" | "\r\n"
-}
-
 // Special tokens for literal arguments that preserve spaces and need to handle quotes/comments, etc.
 <LITERAL_MODE> TOKEN : {
-    < LITERAL_QUOTED_STRING: "\"" (~["\""])* "\"" >
+    < LITERAL_RETURN: "\n" | "\r" | "\r\n" >
+  | < LITERAL_QUOTED_STRING: "\"" (~["\""])* "\"" >
   | < LITERAL_UNCLOSED_STRING: "\"" (~["\"", "\n", "\r", "|", ";"])* >
   | < LITERAL_COMMENT: "#" (~["\n", "\r"])* >
   | < LITERAL_REGULAR_TEXT: (~["|", ";", "\"", "#", "\n", "\r", " ", "\t", "{", "}", "(", ")", "!", "=", ":", ","])+ >
@@ -216,6 +213,7 @@ void AliasArgument(M3ASTNode parentNode) :
 {
     (
         LOOKAHEAD({
+            getToken(1).kind != LITERAL_RETURN &&
             getToken(1).kind != LITERAL_COMMENT &&
             getToken(1).kind != PIPE &&
             getToken(1).kind != SEMICOLON &&
@@ -242,8 +240,10 @@ void AliasArgument(M3ASTNode parentNode) :
             parentNode.addChildNode(new ValueNode(result));
         }
     }
-    (t = <LITERAL_COMMENT> { /* Consume but ignore comments in alias */ })*
-    (t = <LITERAL_SPACE> { /* Consume but ignore trailing spaces */ })*
+    // To safely transition out of LITERAL_MODE, consume tokens equivalent to SKIP
+    (t = <LITERAL_RETURN> { /* Consume but ignore trailing new lines after alias */ })*
+    (t = <LITERAL_COMMENT> { /* Consume but ignore trailing comments after alias */ })*
+    (t = <LITERAL_SPACE> { /* Consume but ignore trailing spaces after alias */ })*
 
 }
 
@@ -320,6 +320,7 @@ void TagValueArgument(M3ASTNode parentNode) :
 {
     (
         LOOKAHEAD({
+            getToken(1).kind != LITERAL_RETURN &&
             getToken(1).kind != LITERAL_COMMENT &&
             getToken(1).kind != LITERAL_SPACE &&
             getToken(1).kind != PIPE &&
@@ -347,6 +348,8 @@ void TagValueArgument(M3ASTNode parentNode) :
             parentNode.addChildNode(new TagValueNode(result));
         }
     }
-    (t = <LITERAL_COMMENT> { /* Consume but ignore comments */ })*
+    // To safely transition out of LITERAL_MODE, consume tokens equivalent to SKIP
+    (t = <LITERAL_RETURN> { /* Consume but ignore trailing new lines */ })*
+    (t = <LITERAL_COMMENT> { /* Consume but ignore trailing comments */ })*
     (t = <LITERAL_SPACE> { /* Consume but ignore trailing spaces */ })*
 }
