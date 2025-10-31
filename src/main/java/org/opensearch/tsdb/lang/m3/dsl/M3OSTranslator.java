@@ -57,7 +57,7 @@ public class M3OSTranslator {
         planRoot = M3PlanOptimizer.optimize(planRoot);
 
         // 4. Convert to SearchSourceBuilder
-        return new SourceBuilderVisitor(params).process(planRoot).toSearchSourceBuilder();
+        return new SourceBuilderVisitor(params).process(planRoot).toSearchSourceBuilder().profile(params.profile());
     }
 
     /**
@@ -68,7 +68,7 @@ public class M3OSTranslator {
      * @param step Step interval for aggregations in the specified time unit
      * @param pushdown Enable pushdown optimizations
      */
-    public record Params(TimeUnit timeUnit, long startTime, long endTime, long step, boolean pushdown) {
+    public record Params(TimeUnit timeUnit, long startTime, long endTime, long step, boolean pushdown, boolean profile) {
 
         /**
          * Validation for params.
@@ -86,8 +86,8 @@ public class M3OSTranslator {
          * @param step Step interval for aggregations in default time unit
          * @param pushdown Enable pushdown optimizations
          */
-        public Params(long startTime, long endTime, long step, boolean pushdown) {
-            this(Constants.Time.DEFAULT_TIME_UNIT, startTime, endTime, step, pushdown);
+        public Params(long startTime, long endTime, long step, boolean pushdown, boolean profile) {
+            this(Constants.Time.DEFAULT_TIME_UNIT, startTime, endTime, step, pushdown, profile);
         }
     }
 }

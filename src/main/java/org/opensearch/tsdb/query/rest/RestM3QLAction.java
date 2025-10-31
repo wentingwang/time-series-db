@@ -83,6 +83,7 @@ public class RestM3QLAction extends BaseRestHandler {
     private static final String PARTITIONS_PARAM = "partitions";
     private static final String EXPLAIN_PARAM = "explain";
     private static final String PUSHDOWN_PARAM = "pushdown";
+    private static final String PROFILE_PARAM = "profile";
 
     // Default parameter values
     private static final String DEFAULT_START_TIME = "now-5m";
@@ -158,7 +159,7 @@ public class RestM3QLAction extends BaseRestHandler {
             final SearchRequest searchRequest = buildSearchRequest(params, searchSourceBuilder);
             final String finalAggName = AggregationNameExtractor.getFinalAggregationName(searchSourceBuilder);
 
-            return channel -> client.search(searchRequest, new PromMatrixResponseListener(channel, finalAggName));
+            return channel -> client.search(searchRequest, new PromMatrixResponseListener(channel, finalAggName, params.profile));
 
         } catch (Exception e) {
             return channel -> {
@@ -205,8 +206,9 @@ public class RestM3QLAction extends BaseRestHandler {
         // Parse flags
         boolean explain = request.paramAsBoolean(EXPLAIN_PARAM, false);
         boolean pushdown = request.paramAsBoolean(PUSHDOWN_PARAM, true);
+        boolean profile = request.paramAsBoolean(PROFILE_PARAM, false);
 
-        return new RequestParams(query, startMs, endMs, stepMs, indices, explain, pushdown);
+        return new RequestParams(query, startMs, endMs, stepMs, indices, explain, pushdown, profile);
     }
 
     /**
@@ -259,7 +261,8 @@ public class RestM3QLAction extends BaseRestHandler {
             params.startMs,
             params.endMs,
             params.stepMs,
-            params.pushdown
+            params.pushdown,
+            params.profile
         );
         return M3OSTranslator.translate(params.query, translatorParams);
     }
@@ -309,6 +312,7 @@ public class RestM3QLAction extends BaseRestHandler {
     /**
      * Internal record holding parsed request parameters.
      */
-    private record RequestParams(String query, long startMs, long endMs, long stepMs, String[] indices, boolean explain, boolean pushdown) {
+    protected record RequestParams(String query, long startMs, long endMs, long stepMs, String[] indices, boolean explain, boolean pushdown,
+        boolean profile) {
     }
 }

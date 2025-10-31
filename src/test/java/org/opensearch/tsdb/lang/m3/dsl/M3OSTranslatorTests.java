@@ -75,7 +75,7 @@ public class M3OSTranslatorTests extends OpenSearchTestCase {
         try {
             SearchSourceBuilder searchSourceBuilder = M3OSTranslator.translate(
                 query,
-                new M3OSTranslator.Params(Constants.Time.DEFAULT_TIME_UNIT, START_TIME, END_TIME, STEP, true)
+                new M3OSTranslator.Params(Constants.Time.DEFAULT_TIME_UNIT, START_TIME, END_TIME, STEP, true, false)
             );
             assertEquals("DSL does not match for test case: " + testCaseName, expected, makePretty(searchSourceBuilder.toString()));
         } catch (Exception e) {

@@ -100,6 +100,16 @@ public class RestM3QLActionTests extends OpenSearchTestCase {
         );
     }
 
+    /**
+     * Helper method to assert that we set profile flag
+     * @param searchRequest
+     */
+    private void assertSetProfile(SearchRequest searchRequest) {
+        assertNotNull("SearchRequest should not be null", searchRequest);
+        assertNotNull("SearchRequest source should not be null", searchRequest.source());
+        assertTrue(searchRequest.source().profile());
+    }
+
     // ========== Handler Registration Tests ==========
 
     public void testGetName() {
@@ -509,6 +519,22 @@ public class RestM3QLActionTests extends OpenSearchTestCase {
         FakeRestRequest request = new FakeRestRequest.Builder(xContentRegistry()).withMethod(RestRequest.Method.POST)
             .withPath("/_m3ql")
             .withParams(Map.of("query", "fetch service:api"))
+            .withContent(new BytesArray(jsonBody), XContentType.JSON)
+            .build();
+        FakeRestChannel channel = new FakeRestChannel(request, true, 1);
+
+        action.handleRequest(request, channel, mockClient);
+
+        assertThat(channel.capturedResponse().status(), equalTo(RestStatus.OK));
+    }
+
+    public void testSetProfile() throws Exception {
+        // Setup mock to assert URL param query is used and contains time_series_unfold
+        NodeClient mockClient = setupMockClientWithAssertion(this::assertSetProfile);
+        String jsonBody = "{}";
+        FakeRestRequest request = new FakeRestRequest.Builder(xContentRegistry()).withMethod(RestRequest.Method.POST)
+            .withPath("/_m3ql")
+            .withParams(Map.of("query", "fetch service:api", "profile", "true"))
             .withContent(new BytesArray(jsonBody), XContentType.JSON)
             .build();
         FakeRestChannel channel = new FakeRestChannel(request, true, 1);

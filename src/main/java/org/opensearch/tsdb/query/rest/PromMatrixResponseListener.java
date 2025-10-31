@@ -15,6 +15,7 @@ import org.opensearch.rest.RestChannel;
 import org.opensearch.rest.RestResponse;
 import org.opensearch.rest.action.RestToXContentListener;
 import org.opensearch.tsdb.query.aggregator.TimeSeries;
+import org.opensearch.tsdb.query.utils.ProfileInfoMapper;
 import org.opensearch.tsdb.query.utils.TimeSeriesOutputMapper;
 
 import java.io.IOException;
@@ -94,6 +95,8 @@ public class PromMatrixResponseListener extends RestToXContentListener<SearchRes
 
     private final String finalAggregationName;
 
+    private final boolean profile;
+
     /**
      * Creates a new matrix response listener.
      *
@@ -101,9 +104,10 @@ public class PromMatrixResponseListener extends RestToXContentListener<SearchRes
      * @param finalAggregationName the name of the final aggregation to extract (must not be null)
      * @throws NullPointerException if finalAggregationName is null
      */
-    public PromMatrixResponseListener(RestChannel channel, String finalAggregationName) {
+    public PromMatrixResponseListener(RestChannel channel, String finalAggregationName, boolean profile) {
         super(channel);
         this.finalAggregationName = Objects.requireNonNull(finalAggregationName, "finalAggregationName cannot be null");
+        this.profile = profile;
     }
 
     /**
@@ -146,6 +150,9 @@ public class PromMatrixResponseListener extends RestToXContentListener<SearchRes
             TimeSeriesOutputMapper.extractAndTransformToPromMatrix(response.getAggregations(), finalAggregationName)
         );
         builder.endObject();
+        if (profile) {
+            ProfileInfoMapper.extractProfileInfo(response, builder);
+        }
         builder.endObject();
     }
 

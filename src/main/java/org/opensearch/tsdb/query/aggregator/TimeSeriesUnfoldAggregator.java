@@ -20,6 +20,7 @@ import org.opensearch.search.aggregations.LeafBucketCollectorBase;
 import org.opensearch.search.aggregations.bucket.BucketsAggregator;
 import org.opensearch.search.internal.SearchContext;
 import org.opensearch.tsdb.core.chunk.ChunkIterator;
+import org.opensearch.tsdb.core.index.live.LiveSeriesIndexLeafReader;
 import org.opensearch.tsdb.core.model.ByteLabels;
 import org.opensearch.tsdb.core.model.FloatSample;
 import org.opensearch.tsdb.core.model.Labels;
@@ -37,6 +38,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.function.BiConsumer;
 import java.util.stream.Collectors;
+
+import org.opensearch.tsdb.query.utils.ProfileInfoMapper;
 
 /**
  * Aggregator that unfolds samples from chunks and applies linear pipeline stages.
@@ -205,6 +208,17 @@ public class TimeSeriesUnfoldAggregator extends BucketsAggregator {
                 // Use SampleMerger to merge chunks, assuming both are sorted
                 allSamples = MERGE_HELPER.merge(allSamples, chunkIterator.decodeSamples(minTimestamp, maxTimestamp), true);
             }
+            boolean isLiveReader = metricsReader instanceof LiveSeriesIndexLeafReader;
+            if (isLiveReader) {
+                debugInfo.liveDocCount++;
+                debugInfo.liveChunkCount += chunkIterators.size();
+                debugInfo.liveSampleCount += allSamples.size();
+            } else {
+                debugInfo.closedDocCount++;
+                debugInfo.closedChunkCount += chunkIterators.size();
+                debugInfo.closedSampleCount += allSamples.size();
+            }
+
             debugInfo.sampleCount += allSamples.size();
 
             if (allSamples.isEmpty()) {
@@ -380,12 +394,25 @@ public class TimeSeriesUnfoldAggregator extends BucketsAggregator {
         // total number of series returned via InternalUnfold aggregation (if there is a reduce phase, it should be
         // smaller than inputSeriesCount)
         long outputSeriesCount = 0;
+        // the number of doc/chunk/sample in LiveSeriesIndex or in ClosedChunkIndex
+        long liveDocCount;
+        long liveChunkCount;
+        long liveSampleCount;
+        long closedDocCount;
+        long closedChunkCount;
+        long closedSampleCount;
 
         void add(BiConsumer<String, Object> add) {
-            add.accept("chunk_count", chunkCount);
-            add.accept("sample_count", sampleCount);
-            add.accept("input_series_count", inputSeriesCount);
-            add.accept("output_series_count", outputSeriesCount);
+            add.accept(ProfileInfoMapper.TOTAL_CHUNKS, chunkCount);
+            add.accept(ProfileInfoMapper.TOTAL_SAMPLES, sampleCount);
+            add.accept(ProfileInfoMapper.TOTAL_INPUT_SERIES, inputSeriesCount);
+            add.accept(ProfileInfoMapper.TOTAL_OUTPUT_SERIES, outputSeriesCount);
+            add.accept(ProfileInfoMapper.LIVE_DOC_COUNT, liveDocCount);
+            add.accept(ProfileInfoMapper.CLOSED_DOC_COUNT, closedDocCount);
+            add.accept(ProfileInfoMapper.LIVE_CHUNK_COUNT, liveChunkCount);
+            add.accept(ProfileInfoMapper.CLOSED_CHUNK_COUNT, closedChunkCount);
+            add.accept(ProfileInfoMapper.LIVE_SAMPLE_COUNT, liveSampleCount);
+            add.accept(ProfileInfoMapper.CLOSED_SAMPLE_COUNT, closedSampleCount);
         }
     }
 }
