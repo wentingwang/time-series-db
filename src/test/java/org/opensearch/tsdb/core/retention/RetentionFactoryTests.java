@@ -26,7 +26,7 @@ public class RetentionFactoryTests extends OpenSearchTestCase {
     public void testCreateWithTimeBasedRetention() {
         Settings settings = Settings.builder()
             .put(IndexMetadata.SETTING_VERSION_CREATED, org.opensearch.Version.CURRENT)
-            .put(TSDBPlugin.TSDB_ENGINE_RETENTION_TIME_SETTING.getKey(), "7d")
+            .put(TSDBPlugin.TSDB_ENGINE_RETENTION_TIME.getKey(), "7d")
             .put(TSDBPlugin.TSDB_ENGINE_RETENTION_FREQUENCY.getKey(), "30m")
             .build();
 
@@ -59,7 +59,7 @@ public class RetentionFactoryTests extends OpenSearchTestCase {
     public void testCreateWithExplicitMinusOneTime() {
         Settings settings = Settings.builder()
             .put(IndexMetadata.SETTING_VERSION_CREATED, org.opensearch.Version.CURRENT)
-            .put(TSDBPlugin.TSDB_ENGINE_RETENTION_TIME_SETTING.getKey(), TimeValue.MINUS_ONE)
+            .put(TSDBPlugin.TSDB_ENGINE_RETENTION_TIME.getKey(), TimeValue.MINUS_ONE)
             .build();
 
         IndexSettings indexSettings = new IndexSettings(
@@ -77,7 +77,7 @@ public class RetentionFactoryTests extends OpenSearchTestCase {
         // Test with 1 hour
         Settings settings1h = Settings.builder()
             .put(IndexMetadata.SETTING_VERSION_CREATED, org.opensearch.Version.CURRENT)
-            .put(TSDBPlugin.TSDB_ENGINE_RETENTION_TIME_SETTING.getKey(), "2h")
+            .put(TSDBPlugin.TSDB_ENGINE_RETENTION_TIME.getKey(), "2h")
             .build();
 
         IndexSettings indexSettings1h = new IndexSettings(
@@ -91,7 +91,7 @@ public class RetentionFactoryTests extends OpenSearchTestCase {
         // Test with 30 days
         Settings settings30d = Settings.builder()
             .put(IndexMetadata.SETTING_VERSION_CREATED, org.opensearch.Version.CURRENT)
-            .put(TSDBPlugin.TSDB_ENGINE_RETENTION_TIME_SETTING.getKey(), "30d")
+            .put(TSDBPlugin.TSDB_ENGINE_RETENTION_TIME.getKey(), "30d")
             .build();
 
         IndexSettings indexSettings30d = new IndexSettings(
@@ -106,7 +106,7 @@ public class RetentionFactoryTests extends OpenSearchTestCase {
     public void testCreateReturnsNewInstanceEachTime() throws Exception {
         Settings settings = Settings.builder()
             .put(IndexMetadata.SETTING_VERSION_CREATED, org.opensearch.Version.CURRENT)
-            .put(TSDBPlugin.TSDB_ENGINE_RETENTION_TIME_SETTING.getKey(), "2h")
+            .put(TSDBPlugin.TSDB_ENGINE_RETENTION_TIME.getKey(), "2h")
             .build();
 
         IndexSettings indexSettings = new IndexSettings(
@@ -125,7 +125,7 @@ public class RetentionFactoryTests extends OpenSearchTestCase {
     public void testInvalidRetentionTimeThrowsException() {
         Settings settings = Settings.builder()
             .put(IndexMetadata.SETTING_VERSION_CREATED, org.opensearch.Version.CURRENT)
-            .put(TSDBPlugin.TSDB_ENGINE_RETENTION_TIME_SETTING.getKey(), "5m") // Assuming block duration is greater than 5m
+            .put(TSDBPlugin.TSDB_ENGINE_RETENTION_TIME.getKey(), "5m") // Assuming block duration is greater than 5m
             .put(TSDBPlugin.TSDB_ENGINE_BLOCK_DURATION.getKey(), "10m")
             .build();
 

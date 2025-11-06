@@ -27,6 +27,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -191,16 +192,32 @@ public class Head {
         Map<MemSeries, Set<MemChunk>> seriesToClosedChunks = new HashMap<>();
         for (MemSeries series : seriesList) {
             MemSeries.ClosableChunkResult closeableChunkResult = series.getClosableChunks(maxTime, staleChunkExpiry);
-            if (closeableChunkResult.minSeqNo() < minSeqNo) {
-                minSeqNo = closeableChunkResult.minSeqNo();
-            }
 
             for (MemChunk memChunk : closeableChunkResult.closableChunks()) {
                 try {
-                    closedChunkIndexManager.addMemChunk(series, memChunk);
+                    var added = closedChunkIndexManager.addMemChunk(series, memChunk);
+                    if (!added) {
+                        // This should only happen for infrequent OOO or backfill sample ingestion since compaction
+                        // does not consider open indexes.
+                        break;
+                    }
                     seriesToClosedChunks.computeIfAbsent(series, k -> new HashSet<>()).add(memChunk);
                 } catch (IOException e) {
                     throw new RuntimeException(e);
+                }
+            }
+
+            /*
+                If processed all chunks of a series.
+             */
+            if (seriesToClosedChunks.getOrDefault(series, Collections.emptySet()).size() == closeableChunkResult.closableChunks().size()) {
+                if (closeableChunkResult.minSeqNo() < minSeqNo) {
+                    minSeqNo = closeableChunkResult.minSeqNo();
+                }
+            } else { // If processed partially e.g. due to ongoing compaction, use first failed chunk's minSeq.
+                var failedChunk = closeableChunkResult.closableChunks().get(seriesToClosedChunks.get(series).size());
+                if (failedChunk.getMinSeqNo() < minSeqNo) {
+                    minSeqNo = failedChunk.getMinSeqNo();
                 }
             }
         }

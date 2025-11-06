@@ -50,8 +50,9 @@ import java.util.Base64;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-
-import static org.opensearch.tsdb.core.utils.Constants.Time.DEFAULT_TIME_UNIT;
+import java.util.concurrent.TimeUnit;
+import java.util.function.BiConsumer;
+import java.util.stream.Stream;
 
 /**
  * Simple head index that stores chunks, current as one doc per chunk.
@@ -60,20 +61,22 @@ public class ClosedChunkIndex {
     private static final String SERIES_METADATA_KEY = "live_series_metadata";
     private final Analyzer analyzer;
     private final Directory directory;
-    private final IndexWriter indexWriter;
     private final SnapshotDeletionPolicy snapshotDeletionPolicy;
     private final ReaderManager directoryReaderManager;
     private final Metadata metadata;
     private final Path path;
+    private final TimeUnit resolution;
+    private IndexWriter indexWriter;
 
     /**
      * Create a new ClosedChunkIndex in the given directory.
      *
      * @param dir      the directory to store the index
      * @param metadata metadata of the index
+     * @param resolution resolution of the samples
      * @throws IOException if there is an error creating the index
      */
-    public ClosedChunkIndex(Path dir, Metadata metadata) throws IOException {
+    public ClosedChunkIndex(Path dir, Metadata metadata, TimeUnit resolution) throws IOException {
         if (!Files.exists(dir)) {
             Files.createDirectories(dir);
         }
@@ -82,6 +85,7 @@ public class ClosedChunkIndex {
         directory = new MMapDirectory(dir);
         try {
             this.metadata = metadata;
+            this.resolution = resolution;
             IndexWriterConfig iwc = new IndexWriterConfig(analyzer);
 
             // Use SnapshotDeletionPolicy to allow taking snapshots during recovery
@@ -187,11 +191,38 @@ public class ClosedChunkIndex {
     }
 
     /**
-     * Update the series with the correct metadata values from the commit data.
+     * Commit the live series metadata map including seriesRef and corresponding max mmap timestamps.
      *
-     * @param seriesUpdater seriesUpdater used to update the series
+     * @param liveSeries the map of seriesRef to corresponding max mmap timestamps.
      */
-    public void updateSeriesFromCommitData(SeriesUpdater seriesUpdater) {
+    public void commitWithMetadata(Map<Long, Long> liveSeries) {
+        Map<String, String> commitData = new HashMap<>();
+
+        try (BytesStreamOutput output = new BytesStreamOutput()) {
+            output.writeVLong(liveSeries.size());
+            for (Map.Entry<Long, Long> entry : liveSeries.entrySet()) {
+                output.writeLong(entry.getKey());
+                output.writeVLong(entry.getValue());
+            }
+            String liveSeriesMetadata = new String(Base64.getEncoder().encode(output.bytes().toBytesRef().bytes), StandardCharsets.UTF_8);
+            commitData.put(SERIES_METADATA_KEY, liveSeriesMetadata);
+        } catch (IOException e) {
+            throw new RuntimeException("Failed to serialize live series", e);
+        }
+
+        try {
+            commitWithMetadata(() -> commitData.entrySet().iterator());
+        } catch (IOException e) {
+            throw new RuntimeException("Failed to commit ", e);
+        }
+    }
+
+    /**
+     * Apply the live series metadata to given consumer.
+     *
+     * @param consumer BiConsumer to accept seriesRef(Long) and ts(Long).
+     */
+    public void applyLiveSeriesMetaData(BiConsumer<Long, Long> consumer) {
         Iterable<Map.Entry<String, String>> commitData = indexWriter.getLiveCommitData();
         if (commitData == null) {
             return;
@@ -208,7 +239,7 @@ public class ClosedChunkIndex {
                             for (int i = 0; i < numSeries; i++) {
                                 long ref = input.readLong();
                                 long ts = input.readVLong();
-                                seriesUpdater.update(ref, ts);
+                                consumer.accept(ref, ts);
                             }
                         }
                     }
@@ -269,7 +300,7 @@ public class ClosedChunkIndex {
      * @return Instant representing the min boundary
      */
     public Instant getMinTime() {
-        return Time.toInstant(metadata.minTimestamp(), DEFAULT_TIME_UNIT);
+        return Time.toInstant(metadata.minTimestamp(), resolution);
     }
 
     /**
@@ -278,15 +309,60 @@ public class ClosedChunkIndex {
      * @return Instant representing the max boundary
      */
     public Instant getMaxTime() {
-        return Time.toInstant(metadata.maxTimestamp(), DEFAULT_TIME_UNIT);
+        return Time.toInstant(metadata.maxTimestamp(), resolution);
     }
 
     /**
      * Returns filesystem path backing the index
+     *
      * @return filesystem {@link Path}
      */
     public Path getPath() {
         return path;
+    }
+
+    /**
+     * Copies the data from this index to the other index. In order to prevent the concurrent modification
+     * this method closes the IndexWriter and proper care should be taken to ensure no concurrent calls to methods
+     * are made which modifies the index.
+     *
+     * @param other destination index of the copy operation.
+     * @throws IOException IOException will be thrown if the indexWriter can not be re-opened.
+     */
+    public void copyTo(ClosedChunkIndex other) throws IOException {
+        var isWriterOpen = indexWriter.isOpen();
+        try {
+            this.indexWriter.close();
+            other.indexWriter.addIndexes(this.directory);
+        } finally {
+            IndexWriterConfig iwc = new IndexWriterConfig(analyzer);
+            iwc.setIndexDeletionPolicy(snapshotDeletionPolicy);
+            if (isWriterOpen) {
+                indexWriter = new IndexWriter(directory, iwc);
+            }
+        }
+    }
+
+    /**
+     * Calculates the size of the index in bytes.
+     *
+     * @return size of the index in bytes.
+     * @throws IOException
+     */
+    public long getIndexSize() throws IOException {
+        if (!Files.exists(path)) {
+            return 0L;
+        }
+
+        try (Stream<Path> walk = Files.walk(path)) {
+            return walk.filter(Files::isRegularFile).mapToLong(p -> {
+                try {
+                    return Files.size(p);
+                } catch (IOException e) {
+                    return 0L;
+                }
+            }).sum();
+        }
     }
 
     /**

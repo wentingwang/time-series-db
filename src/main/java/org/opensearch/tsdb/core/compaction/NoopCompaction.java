@@ -5,28 +5,24 @@
  * this file be licensed under the Apache-2.0 license or a
  * compatible open source license.
  */
-package org.opensearch.tsdb.core.retention;
+package org.opensearch.tsdb.core.compaction;
 
 import org.opensearch.tsdb.core.index.closed.ClosedChunkIndex;
 
-import java.util.Collections;
+import java.io.IOException;
 import java.util.List;
 
-/**
- * A Noop implementation of Retention interface.
- */
-public class NOOPRetention implements Retention {
-    /**
-     * {@inheritDoc}
-     */
+public class NoopCompaction implements Compaction {
     @Override
     public List<ClosedChunkIndex> plan(List<ClosedChunkIndex> indexes) {
-        return Collections.emptyList();
+        return List.of();
     }
 
-    /**
-     * {@inheritDoc}
-     */
+    @Override
+    public void compact(List<ClosedChunkIndex> sources, ClosedChunkIndex dest) throws IOException {
+
+    }
+
     @Override
     public long getFrequency() {
         return Long.MAX_VALUE;

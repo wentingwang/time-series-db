@@ -38,6 +38,7 @@ import org.opensearch.index.translog.TranslogOperationHelper;
 import org.opensearch.index.translog.listener.TranslogEventListener;
 import org.opensearch.search.suggest.completion.CompletionStats;
 import org.opensearch.tsdb.MetadataStore;
+import org.opensearch.tsdb.core.compaction.CompactionFactory;
 import org.opensearch.tsdb.core.head.Appender;
 import org.opensearch.tsdb.core.head.Head;
 import org.opensearch.tsdb.core.index.closed.ClosedChunkIndexManager;
@@ -126,6 +127,7 @@ public class TSDBEngine extends Engine {
         boolean success = false;
         try {
             var retention = RetentionFactory.create(engineConfig.getIndexSettings());
+            var compaction = CompactionFactory.create(engineConfig.getIndexSettings());
             lastCommittedSegmentInfos = store.readLastCommittedSegmentsInfo();
             Files.createDirectories(metricsStorePath);
             metadataStore = new CheckpointedMetadataStore();
@@ -133,6 +135,7 @@ public class TSDBEngine extends Engine {
                 metricsStorePath,
                 metadataStore,
                 retention,
+                compaction,
                 engineConfig.getThreadPool(),
                 engineConfig.getShardId(),
                 engineConfig.getIndexSettings().getSettings()

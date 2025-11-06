@@ -17,6 +17,7 @@ import org.apache.lucene.search.MatchAllDocsQuery;
 import org.apache.lucene.search.ScoreDoc;
 import org.apache.lucene.search.TopDocs;
 import org.apache.lucene.util.BytesRef;
+import org.mockito.Mockito;
 import org.opensearch.common.settings.Settings;
 import org.opensearch.common.unit.TimeValue;
 import org.opensearch.core.index.shard.ShardId;
@@ -29,6 +30,7 @@ import org.opensearch.tsdb.MetadataStore;
 import org.opensearch.tsdb.TSDBPlugin;
 import org.opensearch.tsdb.core.chunk.Chunk;
 import org.opensearch.tsdb.core.chunk.ChunkIterator;
+import org.opensearch.tsdb.core.compaction.NoopCompaction;
 import org.opensearch.tsdb.core.index.closed.ClosedChunk;
 import org.opensearch.tsdb.core.index.closed.ClosedChunkIndexIO;
 import org.opensearch.tsdb.core.index.closed.ClosedChunkIndexManager;
@@ -39,15 +41,19 @@ import org.opensearch.tsdb.core.utils.Constants;
 
 import java.io.IOException;
 import java.nio.file.Path;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
 
+import static org.mockito.Mockito.doReturn;
+
 public class HeadTests extends OpenSearchTestCase {
-    ThreadPool threadPool;
 
     private static final TimeValue TEST_CHUNK_EXPIRY = TimeValue.timeValueMinutes(30);
+    private static final long TEST_BLOCK_DURATION = Duration.ofHours(2).toMillis();
 
     private final Settings defaultSettings = Settings.builder()
         .put(TSDBPlugin.TSDB_ENGINE_BLOCK_DURATION.getKey(), TimeValue.timeValueHours(2))
@@ -55,6 +61,8 @@ public class HeadTests extends OpenSearchTestCase {
         .put(TSDBPlugin.TSDB_ENGINE_SAMPLES_PER_CHUNK.getKey(), 120)
         .put(TSDBPlugin.TSDB_ENGINE_TIME_UNIT.getKey(), Constants.Time.DEFAULT_TIME_UNIT.toString())
         .build();
+
+    ThreadPool threadPool;
 
     public void setUp() throws Exception {
         super.setUp();
@@ -74,6 +82,7 @@ public class HeadTests extends OpenSearchTestCase {
             createTempDir("metrics"),
             new InMemoryMetadataStore(),
             new NOOPRetention(),
+            new NoopCompaction(),
             threadPool,
             new ShardId("headTest", "headTestUid", 0),
             defaultSettings
@@ -158,6 +167,7 @@ public class HeadTests extends OpenSearchTestCase {
             metricsPath,
             new InMemoryMetadataStore(),
             new NOOPRetention(),
+            new NoopCompaction(),
             threadPool,
             shardId,
             defaultSettings
@@ -208,6 +218,7 @@ public class HeadTests extends OpenSearchTestCase {
             metricsPath,
             metadataStore,
             new NOOPRetention(),
+            new NoopCompaction(),
             threadPool,
             shardId,
             defaultSettings
@@ -241,6 +252,7 @@ public class HeadTests extends OpenSearchTestCase {
             metricsPath,
             metadataStore,
             new NOOPRetention(),
+            new NoopCompaction(),
             threadPool,
             shardId,
             defaultSettings
@@ -284,6 +296,84 @@ public class HeadTests extends OpenSearchTestCase {
         newClosedChunkIndexManager.close();
     }
 
+    public void testHeadRecoveryWithFailedChunks() throws IOException, InterruptedException {
+        ShardId shardId = new ShardId("headTest", "headTestUid", 0);
+        Path metricsPath = createTempDir("metricsStore");
+        MetadataStore metadataStore = new InMemoryMetadataStore();
+
+        ClosedChunkIndexManager closedChunkIndexManager = Mockito.spy(
+            new ClosedChunkIndexManager(
+                metricsPath,
+                metadataStore,
+                new NOOPRetention(),
+                new NoopCompaction(),
+                threadPool,
+                shardId,
+                defaultSettings
+            )
+        );
+        Path headPath = createTempDir("testHeadRecoveryWithCompaction");
+
+        // Create 4 chunks across 4 indexes for series A.
+        long chunkRange = TEST_BLOCK_DURATION;
+        int samplesPerChunk = 8;
+        long step = TEST_BLOCK_DURATION / samplesPerChunk;
+        Head head = new Head(headPath, new ShardId("headTest", "headTestUid", 0), closedChunkIndexManager, defaultSettings);
+        Head.HeadAppender.AppendContext context = new Head.HeadAppender.AppendContext(new ChunkOptions(chunkRange, samplesPerChunk));
+        Labels series1 = ByteLabels.fromStrings("k1", "v1", "k2", "v2");
+        long series1Reference = 1L;
+        var seqNo = 0;
+        for (int i = 0; i < 32; i++) {
+            Head.HeadAppender appender = head.newAppender();
+            appender.preprocess(seqNo++, series1Reference, series1, step * (i + 1), 10 * i);
+            appender.appendSample(context, () -> {});
+        }
+
+        // Validate 4 indexes are created and closeHeadChunks return correct minSeq.
+        var minSeqNo = head.closeHeadChunks();
+        assertEquals(30, minSeqNo);
+        assertEquals(4, closedChunkIndexManager.getClosedChunkIndexes(Instant.ofEpochMilli(0), Instant.now()).size());
+
+        // Create 8 chunks across 8 indexes for series B
+        Labels series2 = ByteLabels.fromStrings("k1", "v1", "k3", "v3");
+        long series2Reference = 2L;
+        for (int i = 0; i < 64; i++) {
+            Head.HeadAppender appender = head.newAppender();
+            appender.preprocess(seqNo++, series2Reference, series2, step * (i + 1), 10 * i);
+            appender.appendSample(context, () -> {});
+        }
+
+        // Setup to stop flushing of chunks at second chunk
+        var memSeries2 = head.getSeriesMap().getByReference(series2Reference);
+        var closableChunks = memSeries2.getClosableChunks(Instant.now().toEpochMilli(), TEST_CHUNK_EXPIRY.getMillis()).closableChunks();
+        doReturn(false).when(closedChunkIndexManager).addMemChunk(memSeries2, closableChunks.get(1));
+
+        // minSeq should increase by 8 (31+7)
+        minSeqNo = head.closeHeadChunks();
+        assertEquals(38, minSeqNo);
+        head.close();
+
+        // Reload the index should reinstate the previous state.
+        ClosedChunkIndexManager newClosedChunkIndexManager = new ClosedChunkIndexManager(
+            metricsPath,
+            metadataStore,
+            new NOOPRetention(),
+            new NoopCompaction(),
+            threadPool,
+            shardId,
+            defaultSettings
+        );
+        Head newHead = new Head(headPath, new ShardId("headTest", "headTestUid", 0), newClosedChunkIndexManager, defaultSettings);
+
+        // MemSeries are correctly loaded and updated from commit data
+        assertEquals(series2, newHead.getSeriesMap().getByReference(series2Reference).getLabels());
+        assertEquals(step * 7, newHead.getSeriesMap().getByReference(series2Reference).getMaxMMapTimestamp());
+        assertEquals(95, newHead.getSeriesMap().getByReference(series2Reference).getMaxSeqNo());
+
+        newHead.close();
+        newClosedChunkIndexManager.close();
+    }
+
     public void testHeadGetOrCreateSeries() throws IOException {
         ShardId shardId = new ShardId("headTest", "headTestUid", 0);
         Path metricsPath = createTempDir("testGetOrCreateSeries");
@@ -291,6 +381,7 @@ public class HeadTests extends OpenSearchTestCase {
             metricsPath,
             new InMemoryMetadataStore(),
             new NOOPRetention(),
+            new NoopCompaction(),
             threadPool,
             shardId,
             defaultSettings
@@ -322,6 +413,7 @@ public class HeadTests extends OpenSearchTestCase {
             metricsPath,
             new InMemoryMetadataStore(),
             new NOOPRetention(),
+            new NoopCompaction(),
             threadPool,
             shardId,
             defaultSettings
@@ -353,6 +445,7 @@ public class HeadTests extends OpenSearchTestCase {
             metricsPath,
             new InMemoryMetadataStore(),
             new NOOPRetention(),
+            new NoopCompaction(),
             threadPool,
             shardId,
             defaultSettings
@@ -519,6 +612,7 @@ public class HeadTests extends OpenSearchTestCase {
             metricsPath,
             new InMemoryMetadataStore(),
             new NOOPRetention(),
+            new NoopCompaction(),
             threadPool,
             shardId,
             defaultSettings
@@ -545,6 +639,7 @@ public class HeadTests extends OpenSearchTestCase {
             metricsPath,
             new InMemoryMetadataStore(),
             new NOOPRetention(),
+            new NoopCompaction(),
             threadPool,
             shardId,
             defaultSettings

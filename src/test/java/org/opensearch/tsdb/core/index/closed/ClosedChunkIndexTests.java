@@ -47,6 +47,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import static org.opensearch.tsdb.core.utils.Constants.Time.DEFAULT_TIME_UNIT;
+
 public class ClosedChunkIndexTests extends OpenSearchTestCase {
 
     public void testCreateDir() {
@@ -54,7 +56,8 @@ public class ClosedChunkIndexTests extends OpenSearchTestCase {
         try {
             ClosedChunkIndex closedChunkIndex = new ClosedChunkIndex(
                 Path.of(tempDir.toString(), "subdir"),
-                new ClosedChunkIndex.Metadata(Path.of(tempDir.toString(), "subdir").getFileName().toString(), 0, 0)
+                new ClosedChunkIndex.Metadata(Path.of(tempDir.toString(), "subdir").getFileName().toString(), 0, 0),
+                DEFAULT_TIME_UNIT
             );
             closedChunkIndex.close();
         } catch (IOException e) {
@@ -64,7 +67,11 @@ public class ClosedChunkIndexTests extends OpenSearchTestCase {
 
     public void testAddAndRead() throws IOException {
         var dir = createTempDir("testAddAndRead");
-        ClosedChunkIndex closedChunkIndex = new ClosedChunkIndex(dir, new ClosedChunkIndex.Metadata(dir.getFileName().toString(), 0, 0));
+        ClosedChunkIndex closedChunkIndex = new ClosedChunkIndex(
+            dir,
+            new ClosedChunkIndex.Metadata(dir.getFileName().toString(), 0, 0),
+            DEFAULT_TIME_UNIT
+        );
 
         Labels labels1 = ByteLabels.fromStrings("k1", "v1", "k2", "v2");
         Labels labels2 = ByteLabels.fromStrings("k1", "v1", "k3", "v3");
@@ -100,7 +107,8 @@ public class ClosedChunkIndexTests extends OpenSearchTestCase {
         Path tempDir = createTempDir("testCommitWithMetadataAndLoad");
         ClosedChunkIndex closedChunkIndex = new ClosedChunkIndex(
             tempDir,
-            new ClosedChunkIndex.Metadata(tempDir.getFileName().toString(), 0, 0)
+            new ClosedChunkIndex.Metadata(tempDir.getFileName().toString(), 0, 0),
+            DEFAULT_TIME_UNIT
         );
         Labels labels1 = ByteLabels.fromStrings("k1", "v1", "k2", "v2");
         closedChunkIndex.addNewChunk(labels1, buildMemChunk(5, 0, 90));
@@ -117,7 +125,8 @@ public class ClosedChunkIndexTests extends OpenSearchTestCase {
 
         ClosedChunkIndex reopenedIndex = new ClosedChunkIndex(
             tempDir,
-            new ClosedChunkIndex.Metadata(tempDir.getFileName().toString(), 0, 0)
+            new ClosedChunkIndex.Metadata(tempDir.getFileName().toString(), 0, 0),
+            DEFAULT_TIME_UNIT
         );
         Map<Labels, List<ClosedChunk>> chunks = getChunks(reopenedIndex, buildQuery("/.*/", 0, Long.MAX_VALUE));
         assertEquals("Should find both persisted chunks", 1, chunks.size());
@@ -126,7 +135,7 @@ public class ClosedChunkIndexTests extends OpenSearchTestCase {
         // Verify metadata persisted by updating series from commit data
         Map<Long, Long> updatedSeries = new HashMap<>();
         SeriesUpdater mockUpdater = updatedSeries::put;
-        reopenedIndex.updateSeriesFromCommitData(mockUpdater);
+        reopenedIndex.applyLiveSeriesMetaData(mockUpdater::update);
 
         assertEquals("Should have updated 2 series from metadata", 2, updatedSeries.size());
         assertEquals("Series 100L should have timestamp 1500L", Long.valueOf(90L), updatedSeries.get(100L));
@@ -139,7 +148,8 @@ public class ClosedChunkIndexTests extends OpenSearchTestCase {
         Path tempDir = createTempDir("testSnapshotDeletionPolicy");
         ClosedChunkIndex closedChunkIndex = new ClosedChunkIndex(
             tempDir,
-            new ClosedChunkIndex.Metadata(tempDir.getFileName().toString(), 0, 0)
+            new ClosedChunkIndex.Metadata(tempDir.getFileName().toString(), 0, 0),
+            DEFAULT_TIME_UNIT
         );
         Labels labels1 = ByteLabels.fromStrings("k1", "v1", "k2", "v2");
         Labels labels2 = ByteLabels.fromStrings("k1", "v1", "k3", "v3");
@@ -179,7 +189,11 @@ public class ClosedChunkIndexTests extends OpenSearchTestCase {
 
     public void testForceMerge() throws IOException {
         var dir = createTempDir("testForceMerge");
-        ClosedChunkIndex closedChunkIndex = new ClosedChunkIndex(dir, new ClosedChunkIndex.Metadata(dir.getFileName().toString(), 0, 0));
+        ClosedChunkIndex closedChunkIndex = new ClosedChunkIndex(
+            dir,
+            new ClosedChunkIndex.Metadata(dir.getFileName().toString(), 0, 0),
+            DEFAULT_TIME_UNIT
+        );
         Labels labels1 = ByteLabels.fromStrings("k1", "v1", "k2", "v2");
         Labels labels2 = ByteLabels.fromStrings("k1", "v1", "k3", "v3");
         Labels labels3 = ByteLabels.fromStrings("k1", "v1", "k4", "v4");
@@ -216,7 +230,11 @@ public class ClosedChunkIndexTests extends OpenSearchTestCase {
 
     public void testDocumentsSortedByLabelsHashAndTime() throws IOException {
         var dir = createTempDir("testDocumentsSortedByLabelsHashAndTime");
-        ClosedChunkIndex closedChunkIndex = new ClosedChunkIndex(dir, new ClosedChunkIndex.Metadata(dir.getFileName().toString(), 0, 0));
+        ClosedChunkIndex closedChunkIndex = new ClosedChunkIndex(
+            dir,
+            new ClosedChunkIndex.Metadata(dir.getFileName().toString(), 0, 0),
+            DEFAULT_TIME_UNIT
+        );
 
         // Create labels with different hash values to test sorting
         Labels labels1 = ByteLabels.fromStrings("metric", "cpu_usage", "host", "server1");
@@ -412,13 +430,21 @@ public class ClosedChunkIndexTests extends OpenSearchTestCase {
         Files.createFile(fileInsteadOfDir);
 
         expectThrows(FileAlreadyExistsException.class, () -> {
-            new ClosedChunkIndex(fileInsteadOfDir, new ClosedChunkIndex.Metadata(fileInsteadOfDir.getFileName().toString(), 0, 0));
+            new ClosedChunkIndex(
+                fileInsteadOfDir,
+                new ClosedChunkIndex.Metadata(fileInsteadOfDir.getFileName().toString(), 0, 0),
+                DEFAULT_TIME_UNIT
+            );
         });
     }
 
     public void testForceMergeException() throws IOException {
         var dir = createTempDir("testForceMergeException");
-        ClosedChunkIndex closedChunkIndex = new ClosedChunkIndex(dir, new ClosedChunkIndex.Metadata(dir.getFileName().toString(), 0, 0));
+        ClosedChunkIndex closedChunkIndex = new ClosedChunkIndex(
+            dir,
+            new ClosedChunkIndex.Metadata(dir.getFileName().toString(), 0, 0),
+            DEFAULT_TIME_UNIT
+        );
 
         // Close the index first to make forceMerge throw IOException
         closedChunkIndex.close();

@@ -23,6 +23,7 @@ import org.opensearch.search.aggregations.AggregatorTestCase;
 import org.opensearch.search.aggregations.InternalAggregation;
 import org.opensearch.tsdb.core.index.closed.ClosedChunkIndex;
 import org.opensearch.tsdb.core.index.closed.ClosedChunkIndexLeafReader;
+import org.opensearch.tsdb.core.utils.Constants;
 
 import java.io.IOException;
 import java.util.List;
@@ -101,12 +102,12 @@ public abstract class TimeSeriesAggregatorTestCase extends AggregatorTestCase {
      * }</pre>
      *
      * @param aggregationBuilder The aggregation to test
-     * @param query The query to execute
-     * @param buildIndex Consumer that builds test data using ClosedChunkIndex APIs
-     * @param verify Consumer that verifies the aggregation result
-     * @param fieldTypes Optional field type mappings
-     * @param <T> Type of aggregation builder
-     * @param <V> Type of aggregation result
+     * @param query              The query to execute
+     * @param buildIndex         Consumer that builds test data using ClosedChunkIndex APIs
+     * @param verify             Consumer that verifies the aggregation result
+     * @param fieldTypes         Optional field type mappings
+     * @param <T>                Type of aggregation builder
+     * @param <V>                Type of aggregation result
      * @throws IOException if index operations fail
      */
     protected <T extends AggregationBuilder, V extends InternalAggregation> void testCaseWithClosedChunkIndex(
@@ -122,7 +123,8 @@ public abstract class TimeSeriesAggregatorTestCase extends AggregatorTestCase {
         // Create ClosedChunkIndex with the Path constructor - it manages its own directory
         ClosedChunkIndex closedChunkIndex = new ClosedChunkIndex(
             tempDir,
-            new ClosedChunkIndex.Metadata(tempDir.getFileName().toString(), 0, 0)
+            new ClosedChunkIndex.Metadata(tempDir.getFileName().toString(), 0, 0),
+            Constants.Time.DEFAULT_TIME_UNIT
         );
 
         try {

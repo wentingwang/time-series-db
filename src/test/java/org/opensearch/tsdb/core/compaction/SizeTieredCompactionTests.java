@@ -1,0 +1,372 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * The OpenSearch Contributors require contributions made to
+ * this file be licensed under the Apache-2.0 license or a
+ * compatible open source license.
+ */
+package org.opensearch.tsdb.core.compaction;
+
+import org.opensearch.common.settings.Settings;
+import org.opensearch.common.unit.TimeValue;
+import org.opensearch.core.index.shard.ShardId;
+import org.opensearch.test.OpenSearchTestCase;
+import org.opensearch.threadpool.FixedExecutorBuilder;
+import org.opensearch.threadpool.TestThreadPool;
+import org.opensearch.threadpool.ThreadPool;
+import org.opensearch.tsdb.InMemoryMetadataStore;
+import org.opensearch.tsdb.MetadataStore;
+import org.opensearch.tsdb.TSDBPlugin;
+import org.opensearch.tsdb.TestUtils;
+import org.opensearch.tsdb.core.head.MemSeries;
+import org.opensearch.tsdb.core.index.closed.ClosedChunkIndex;
+import org.opensearch.tsdb.core.index.closed.ClosedChunkIndexManager;
+import org.opensearch.tsdb.core.model.ByteLabels;
+import org.opensearch.tsdb.core.model.Labels;
+import org.opensearch.tsdb.core.retention.NOOPRetention;
+import org.opensearch.tsdb.core.utils.Constants;
+import org.opensearch.tsdb.core.utils.Time;
+
+import java.io.IOException;
+import java.nio.file.Path;
+import java.time.Duration;
+import java.time.Instant;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.List;
+import java.util.stream.IntStream;
+
+public class SizeTieredCompactionTests extends OpenSearchTestCase {
+    private static final long TEST_BLOCK_DURATION = Duration.ofHours(2).toMillis();
+    private final Settings defaultSettings = Settings.builder()
+        .put(TSDBPlugin.TSDB_ENGINE_BLOCK_DURATION.getKey(), TimeValue.timeValueHours(2))
+        .put(TSDBPlugin.TSDB_ENGINE_CHUNK_EXPIRY.getKey(), TimeValue.timeValueMinutes(30))
+        .put(TSDBPlugin.TSDB_ENGINE_SAMPLES_PER_CHUNK.getKey(), 120)
+        .put(TSDBPlugin.TSDB_ENGINE_TIME_UNIT.getKey(), Constants.Time.DEFAULT_TIME_UNIT.toString())
+        .build();
+
+    ThreadPool threadPool;
+
+    public void setUp() throws Exception {
+        super.setUp();
+        threadPool = new TestThreadPool(
+            TSDBPlugin.MGMT_THREAD_POOL_NAME,
+            new FixedExecutorBuilder(Settings.builder().build(), TSDBPlugin.MGMT_THREAD_POOL_NAME, 1, 1, "")
+        );
+    }
+
+    public void tearDown() throws Exception {
+        super.tearDown();
+        threadPool.shutdownNow();
+    }
+
+    /**
+     * Test constructor with valid ranges
+     */
+    public void testConstructor() {
+        Duration[] durations = IntStream.of(2, 6, 18, 54, 162, 486).mapToObj(Duration::ofHours).toArray(Duration[]::new);
+        SizeTieredCompaction compaction = new SizeTieredCompaction(durations, 0, Constants.Time.DEFAULT_TIME_UNIT);
+        assertNotNull(compaction);
+    }
+
+    /**
+     * Test plan with empty indexes list
+     */
+    public void testPlanWithEmptyIndexes() throws IOException {
+        Duration[] durations = IntStream.of(2, 6, 18, 54, 162, 486).mapToObj(Duration::ofHours).toArray(Duration[]::new);
+        SizeTieredCompaction compaction = new SizeTieredCompaction(durations, 0, Constants.Time.DEFAULT_TIME_UNIT);
+
+        List<ClosedChunkIndex> result = compaction.plan(Collections.emptyList());
+        assertTrue(result.isEmpty());
+    }
+
+    /**
+     * Test plan with ranges array having less than 2 elements
+     */
+    public void testPlanWithInvalidRanges() throws IOException {
+        Path tempDir = createTempDir("testPlanWithInvalidRanges");
+        MetadataStore metadataStore = new InMemoryMetadataStore();
+        Duration[] ranges = new Duration[] { Duration.ofHours(2) };
+        var compaction = new SizeTieredCompaction(ranges, 300_000, Constants.Time.DEFAULT_TIME_UNIT);
+        ClosedChunkIndexManager manager = new ClosedChunkIndexManager(
+            tempDir,
+            metadataStore,
+            new NOOPRetention(),
+            compaction,
+            threadPool,
+            new ShardId("index", "uuid", 0),
+            defaultSettings
+        );
+
+        Labels labels1 = ByteLabels.fromStrings("label1", "value1");
+        MemSeries series1 = new MemSeries(0, labels1);
+        List<ClosedChunkIndex> indexes = createIndexes(manager, series1, new long[] { 0, 1, 2 }, new long[] { 1, 2, 3 });
+        List<ClosedChunkIndex> result = compaction.plan(indexes);
+        assertTrue(result.isEmpty());
+        manager.close();
+    }
+
+    /**
+     * Test plan with single index
+     */
+    public void testPlanWithSingleIndex() throws IOException {
+        Path tempDir = createTempDir("testPlanWithSingleIndex");
+        MetadataStore metadataStore = new InMemoryMetadataStore();
+        Duration[] ranges = IntStream.of(2, 6, 18, 54, 162, 486).mapToObj(Duration::ofHours).toArray(Duration[]::new);
+        var compaction = new SizeTieredCompaction(ranges, 300_000, Constants.Time.DEFAULT_TIME_UNIT);
+        ClosedChunkIndexManager manager = new ClosedChunkIndexManager(
+            tempDir,
+            metadataStore,
+            new NOOPRetention(),
+            compaction,
+            threadPool,
+            new ShardId("index", "uuid", 0),
+            defaultSettings
+        );
+
+        Labels labels1 = ByteLabels.fromStrings("label1", "value1");
+        MemSeries series1 = new MemSeries(0, labels1);
+        List<ClosedChunkIndex> indexes = createIndexes(manager, series1, new long[] { 0 }, new long[] { 1 });
+
+        List<ClosedChunkIndex> result = compaction.plan(indexes);
+        assertTrue(result.isEmpty());
+        manager.close();
+    }
+
+    /**
+     * Test plan with multiple indexes in same range
+     */
+    public void testPlanWithMultipleIndexesInSameRange() throws IOException {
+        Path tempDir = createTempDir("testPlanWithMultipleIndexesInSameRange");
+        MetadataStore metadataStore = new InMemoryMetadataStore();
+        Duration[] ranges = IntStream.of(2, 6, 18, 54, 162, 486).mapToObj(Duration::ofHours).toArray(Duration[]::new);
+        var compaction = new SizeTieredCompaction(ranges, 300_000, Constants.Time.DEFAULT_TIME_UNIT);
+        ClosedChunkIndexManager manager = new ClosedChunkIndexManager(
+            tempDir,
+            metadataStore,
+            new NOOPRetention(),
+            compaction,
+            threadPool,
+            new ShardId("index", "uuid", 0),
+            defaultSettings
+        );
+
+        // Three indexes within the first 6 hours (21600000 ms) where max - min = 6 hours
+        Labels labels1 = ByteLabels.fromStrings("label1", "value1");
+        MemSeries series1 = new MemSeries(0, labels1);
+        List<ClosedChunkIndex> indexes = createIndexes(manager, series1, new long[] { 0, 1, 2 }, new long[] { 1, 2, 3 });
+
+        List<ClosedChunkIndex> result = compaction.plan(indexes);
+        assertEquals(3, result.size());
+        manager.close();
+    }
+
+    /**
+     * Test plan with indexes that span beyond range boundary
+     */
+    public void testPlanWithIndexesSpanningBeyondRange() throws IOException {
+        Path tempDir = createTempDir("testPlanWithIndexesSpanningBeyondRange");
+        MetadataStore metadataStore = new InMemoryMetadataStore();
+        Duration[] ranges = IntStream.of(2, 6, 18, 54, 162, 486).mapToObj(Duration::ofHours).toArray(Duration[]::new);
+        var compaction = new SizeTieredCompaction(ranges, 300_000, Constants.Time.DEFAULT_TIME_UNIT);
+        ClosedChunkIndexManager manager = new ClosedChunkIndexManager(
+            tempDir,
+            metadataStore,
+            new NOOPRetention(),
+            compaction,
+            threadPool,
+            new ShardId("index", "uuid", 0),
+            defaultSettings
+        );
+
+        // One index spans beyond the 6 time unit boundary
+        Labels labels1 = ByteLabels.fromStrings("label1", "value1");
+        MemSeries series1 = new MemSeries(0, labels1);
+        List<ClosedChunkIndex> indexes = createIndexes(manager, series1, new long[] { -11, 0, 1, 5 }, new long[] { -4, 1, 2, 6 });
+        List<ClosedChunkIndex> result = compaction.plan(indexes);
+        assertEquals(2, result.size()); // Should compact first two indexes, third index is out of range.
+        manager.close();
+    }
+
+    /**
+     * Test plan with indexes where latest block condition is met
+     */
+    public void testPlanWithLatestBlockCondition() throws IOException {
+        Path tempDir = createTempDir("testPlanWithLatestBlockCondition");
+        MetadataStore metadataStore = new InMemoryMetadataStore();
+        Duration[] ranges = IntStream.of(2, 6, 18, 54, 162, 486).mapToObj(Duration::ofHours).toArray(Duration[]::new);
+        var compaction = new SizeTieredCompaction(ranges, 300_000, Constants.Time.DEFAULT_TIME_UNIT);
+        ClosedChunkIndexManager manager = new ClosedChunkIndexManager(
+            tempDir,
+            metadataStore,
+            new NOOPRetention(),
+            compaction,
+            threadPool,
+            new ShardId("index", "uuid", 0),
+            defaultSettings
+        );
+
+        // Create indexes where the last one has a higher min time
+        // First two span 0-4 hours (not exactly 6 hours), third is at 20-24 hours
+        Labels labels1 = ByteLabels.fromStrings("label1", "value1");
+        MemSeries series1 = new MemSeries(0, labels1);
+        List<ClosedChunkIndex> indexes = createIndexes(manager, series1, new long[] { 0, 1, 20 }, new long[] { 1, 2, 22 });
+
+        List<ClosedChunkIndex> result = compaction.plan(indexes);
+        // Since max(4 hours) < latestBlockMin(20 hours) and size > 1, should return the first two
+        assertEquals(2, result.size());
+        assertEquals(indexes.get(0), result.get(0));
+        assertEquals(indexes.get(1), result.get(1));
+        manager.close();
+    }
+
+    /**
+     * Test plan with negative timestamps
+     */
+    public void testPlanWithNegativeTimestamps() throws IOException {
+        Path tempDir = createTempDir("testPlanWithNegativeTimestamps");
+        MetadataStore metadataStore = new InMemoryMetadataStore();
+        Duration[] ranges = IntStream.of(2, 6, 18, 54, 162, 486).mapToObj(Duration::ofHours).toArray(Duration[]::new);
+        var compaction = new SizeTieredCompaction(ranges, 300_000, Constants.Time.DEFAULT_TIME_UNIT);
+        ClosedChunkIndexManager manager = new ClosedChunkIndexManager(
+            tempDir,
+            metadataStore,
+            new NOOPRetention(),
+            compaction,
+            threadPool,
+            new ShardId("index", "uuid", 0),
+            defaultSettings
+        );
+        Labels labels1 = ByteLabels.fromStrings("label1", "value1");
+        MemSeries series1 = new MemSeries(0, labels1);
+        List<ClosedChunkIndex> indexes = createIndexes(manager, series1, new long[] { -10, -6, 0 }, new long[] { -9, -5, 1 });
+
+        List<ClosedChunkIndex> result = compaction.plan(indexes);
+        // Should handle negative timestamps correctly
+        assertNotNull(result);
+        manager.close();
+    }
+
+    /**
+     * Test plan with multiple groups, first group doesn't qualify
+     */
+    public void testPlanWithMultipleGroupsFirstDoesntQualify() throws IOException {
+        Path tempDir = createTempDir("testPlanWithMultipleGroupsFirstDoesntQualify");
+        MetadataStore metadataStore = new InMemoryMetadataStore();
+        Duration[] ranges = IntStream.of(2, 6, 18, 54, 162, 486).mapToObj(Duration::ofHours).toArray(Duration[]::new);
+        var compaction = new SizeTieredCompaction(ranges, 300_000, Constants.Time.DEFAULT_TIME_UNIT);
+        ClosedChunkIndexManager manager = new ClosedChunkIndexManager(
+            tempDir,
+            metadataStore,
+            new NOOPRetention(),
+            compaction,
+            threadPool,
+            new ShardId("index", "uuid", 0),
+            defaultSettings
+        );
+
+        // First range (18) has only one index, second range should be checked
+        Labels labels1 = ByteLabels.fromStrings("label1", "value1");
+        MemSeries series1 = new MemSeries(0, labels1);
+        List<ClosedChunkIndex> indexes = createIndexes(manager, series1, new long[] { 0, 20, 23 }, new long[] { 9, 23, 26 });
+        List<ClosedChunkIndex> result = compaction.plan(indexes);
+        // Since first index alone spans 0-18 (exactly 18), and others are in different range
+        assertEquals(0, result.size());
+        manager.close();
+    }
+
+    /**
+     * Test plan with indexes at different time ranges
+     */
+    public void testPlanWithIndexesAtDifferentTimeRanges() throws IOException {
+        Path tempDir = createTempDir("testPlanWithIndexesAtDifferentTimeRanges");
+        MetadataStore metadataStore = new InMemoryMetadataStore();
+        Duration[] ranges = IntStream.of(2, 6, 18, 54, 162, 486).mapToObj(Duration::ofHours).toArray(Duration[]::new);
+        var compaction = new SizeTieredCompaction(ranges, 300_000, Constants.Time.DEFAULT_TIME_UNIT);
+        ClosedChunkIndexManager manager = new ClosedChunkIndexManager(
+            tempDir,
+            metadataStore,
+            new NOOPRetention(),
+            compaction,
+            threadPool,
+            new ShardId("index", "uuid", 0),
+            defaultSettings
+        );
+
+        // Indexes in completely different time ranges
+        Labels labels1 = ByteLabels.fromStrings("label1", "value1");
+        MemSeries series1 = new MemSeries(0, labels1);
+        List<ClosedChunkIndex> indexes = createIndexes(manager, series1, new long[] { 0, 6, 12 }, new long[] { 2, 8, 14 });
+
+        List<ClosedChunkIndex> result = compaction.plan(indexes);
+        assertEquals(2, result.size());
+        manager.close();
+    }
+
+    /**
+     * Test compact method
+     */
+    public void testCompact() throws IOException {
+        Path tempDir = createTempDir("testCompact");
+        MetadataStore metadataStore = new InMemoryMetadataStore();
+        Duration[] ranges = IntStream.of(2, 6, 18, 54, 162, 486).mapToObj(Duration::ofHours).toArray(Duration[]::new);
+        var compaction = new SizeTieredCompaction(ranges, 300_000, Constants.Time.DEFAULT_TIME_UNIT);
+        ClosedChunkIndexManager manager = new ClosedChunkIndexManager(
+            tempDir,
+            metadataStore,
+            new NOOPRetention(),
+            compaction,
+            threadPool,
+            new ShardId("index", "uuid", 0),
+            defaultSettings
+        );
+        Labels labels1 = ByteLabels.fromStrings("label1", "value1");
+        MemSeries series1 = new MemSeries(0, labels1);
+        var indexes = createIndexes(manager, series1, new long[] { 0, 1, 2 }, new long[] { 1, 2, 3 });
+        manager.commitChangedIndexes(List.of(series1));
+
+        var dest = new ClosedChunkIndex(
+            tempDir.resolve("blocks"),
+            new ClosedChunkIndex.Metadata(
+                "compacted",
+                Time.toTimestamp(indexes.getFirst().getMinTime(), Constants.Time.DEFAULT_TIME_UNIT),
+                Time.toTimestamp(indexes.getLast().getMaxTime(), Constants.Time.DEFAULT_TIME_UNIT)
+            ),
+            Constants.Time.DEFAULT_TIME_UNIT
+        );
+
+        // Execute compact
+        compaction.compact(indexes, dest);
+        var compactedSeriesMetadata = new HashMap<Long, Long>();
+        dest.applyLiveSeriesMetaData(compactedSeriesMetadata::put);
+        assertEquals(1, compactedSeriesMetadata.size());
+        assertEquals((TEST_BLOCK_DURATION * 3) - 1, compactedSeriesMetadata.entrySet().iterator().next().getValue().longValue());
+        dest.getDirectoryReaderManager().maybeRefreshBlocking();
+        assertEquals(3, TestUtils.getChunks(dest).size());
+        dest.close();
+
+        var index = new ClosedChunkIndex(
+            dest.getPath(),
+            new ClosedChunkIndex.Metadata(
+                dest.getPath().getFileName().toString(),
+                Time.toTimestamp(dest.getMinTime(), Constants.Time.DEFAULT_TIME_UNIT),
+                Time.toTimestamp(dest.getMaxTime(), Constants.Time.DEFAULT_TIME_UNIT)
+            ),
+            Constants.Time.DEFAULT_TIME_UNIT
+        );
+
+        assertEquals(3, TestUtils.getChunks(index).size());
+        manager.close();
+        index.close();
+    }
+
+    private List<ClosedChunkIndex> createIndexes(ClosedChunkIndexManager manager, MemSeries series, long[] minTimes, long[] maxTimes)
+        throws IOException {
+        assertEquals(minTimes.length, maxTimes.length);
+
+        for (int i = 0; i < minTimes.length; i++) {
+            manager.addMemChunk(series, TestUtils.getMemChunk(5, minTimes[i] * TEST_BLOCK_DURATION, maxTimes[i] * TEST_BLOCK_DURATION - 1));
+        }
+        return manager.getClosedChunkIndexes(Instant.ofEpochMilli(minTimes[0] * TEST_BLOCK_DURATION), Instant.now());
+    }
+}

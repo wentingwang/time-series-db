@@ -81,7 +81,7 @@ public class TSDBPlugin extends Plugin implements SearchPlugin, EnginePlugin, Ac
         Setting.Property.Final
     );
 
-    public static final Setting<TimeValue> TSDB_ENGINE_RETENTION_TIME_SETTING = Setting.timeSetting(
+    public static final Setting<TimeValue> TSDB_ENGINE_RETENTION_TIME = Setting.timeSetting(
         "index.tsdb_engine.retention.time",
         TimeValue.MINUS_ONE,
         Setting.Property.IndexScope,
@@ -90,6 +90,20 @@ public class TSDBPlugin extends Plugin implements SearchPlugin, EnginePlugin, Ac
 
     public static final Setting<TimeValue> TSDB_ENGINE_RETENTION_FREQUENCY = Setting.timeSetting(
         "index.tsdb_engine.retention.frequency",
+        TimeValue.timeValueMinutes(15),
+        Setting.Property.IndexScope,
+        Setting.Property.Final
+    );
+
+    public static final Setting<String> TSDB_ENGINE_COMPACTION_TYPE = Setting.simpleString(
+        "index.tsdb_engine.compaction.type",
+        "SizeTieredCompaction",
+        Setting.Property.IndexScope,
+        Setting.Property.Final
+    );
+
+    public static final Setting<TimeValue> TSDB_ENGINE_COMPACTION_FREQUENCY = Setting.timeSetting(
+        "index.tsdb_engine.compaction.frequency",
         TimeValue.timeValueMinutes(15),
         Setting.Property.IndexScope,
         Setting.Property.Final
@@ -161,8 +175,10 @@ public class TSDBPlugin extends Plugin implements SearchPlugin, EnginePlugin, Ac
     public List<Setting<?>> getSettings() {
         return List.of(
             TSDB_ENGINE_ENABLED,
-            TSDB_ENGINE_RETENTION_TIME_SETTING,
+            TSDB_ENGINE_RETENTION_TIME,
             TSDB_ENGINE_RETENTION_FREQUENCY,
+            TSDB_ENGINE_COMPACTION_TYPE,
+            TSDB_ENGINE_COMPACTION_FREQUENCY,
             TSDB_ENGINE_SAMPLES_PER_CHUNK,
             TSDB_ENGINE_CHUNK_EXPIRY,
             TSDB_ENGINE_BLOCK_DURATION,

@@ -38,7 +38,7 @@ public class RetentionFactory {
      * @return a Retention instance configured according to the index settings
      */
     public static Retention create(IndexSettings indexSettings) {
-        var age = TSDBPlugin.TSDB_ENGINE_RETENTION_TIME_SETTING.get(indexSettings.getSettings());
+        var age = TSDBPlugin.TSDB_ENGINE_RETENTION_TIME.get(indexSettings.getSettings());
         var frequency = TSDBPlugin.TSDB_ENGINE_RETENTION_FREQUENCY.get(indexSettings.getSettings());
         var blockDuration = TSDBPlugin.TSDB_ENGINE_BLOCK_DURATION.get(indexSettings.getSettings());
 

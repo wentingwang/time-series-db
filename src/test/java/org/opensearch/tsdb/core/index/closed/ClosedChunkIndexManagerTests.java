@@ -7,15 +7,8 @@
  */
 package org.opensearch.tsdb.core.index.closed;
 
-import org.apache.lucene.index.BinaryDocValues;
-import org.apache.lucene.index.DirectoryReader;
 import org.apache.lucene.index.IndexCommit;
-import org.apache.lucene.index.LeafReaderContext;
 import org.apache.lucene.index.ReaderManager;
-import org.apache.lucene.search.IndexSearcher;
-import org.apache.lucene.search.MatchAllDocsQuery;
-import org.apache.lucene.search.ScoreDoc;
-import org.apache.lucene.search.TopDocs;
 import org.opensearch.common.settings.Settings;
 import org.opensearch.common.unit.TimeValue;
 import org.opensearch.core.index.shard.ShardId;
@@ -26,13 +19,11 @@ import org.opensearch.threadpool.ThreadPool;
 import org.opensearch.tsdb.InMemoryMetadataStore;
 import org.opensearch.tsdb.MetadataStore;
 import org.opensearch.tsdb.TSDBPlugin;
-import org.opensearch.tsdb.core.chunk.Chunk;
-import org.opensearch.tsdb.core.chunk.ChunkAppender;
+import org.opensearch.tsdb.TestUtils;
 import org.opensearch.tsdb.core.chunk.ChunkIterator;
-import org.opensearch.tsdb.core.chunk.XORChunk;
-import org.opensearch.tsdb.core.head.MemChunk;
+import org.opensearch.tsdb.core.compaction.NoopCompaction;
+import org.opensearch.tsdb.core.compaction.SizeTieredCompaction;
 import org.opensearch.tsdb.core.head.MemSeries;
-import org.opensearch.tsdb.core.mapping.Constants;
 import org.opensearch.tsdb.core.model.ByteLabels;
 import org.opensearch.tsdb.core.model.Labels;
 import org.opensearch.tsdb.core.retention.NOOPRetention;
@@ -41,6 +32,7 @@ import org.opensearch.tsdb.core.retention.TimeBasedRetention;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -49,6 +41,8 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.TimeUnit;
+import java.util.stream.IntStream;
 
 public class ClosedChunkIndexManagerTests extends OpenSearchTestCase {
     ThreadPool threadPool;
@@ -80,6 +74,7 @@ public class ClosedChunkIndexManagerTests extends OpenSearchTestCase {
             tempDir,
             metadataStore,
             new NOOPRetention(),
+            new NoopCompaction(),
             threadPool,
             new ShardId("index", "uuid", 0),
             defaultSettings
@@ -89,10 +84,10 @@ public class ClosedChunkIndexManagerTests extends OpenSearchTestCase {
         MemSeries series1 = new MemSeries(0, labels1);
 
         // first chunk should trigger an index creation on commit
-        manager.addMemChunk(series1, getMemChunk(5, 0, 1500));
+        manager.addMemChunk(series1, TestUtils.getMemChunk(5, 0, 1500));
 
         // second chunk timestamp is larger than block boundary, should trigger a second index creation on commit
-        manager.addMemChunk(series1, getMemChunk(5, 7200000, 7800000));
+        manager.addMemChunk(series1, TestUtils.getMemChunk(5, 7200000, 7800000));
         manager.commitChangedIndexes(List.of(series1));
 
         assertEquals("MaxMMapTimestamp updated after commit", 7800000, series1.getMaxMMapTimestamp());
@@ -102,6 +97,7 @@ public class ClosedChunkIndexManagerTests extends OpenSearchTestCase {
             tempDir,
             metadataStore,
             new NOOPRetention(),
+            new NoopCompaction(),
             threadPool,
             new ShardId("index", "uuid", 0),
             defaultSettings
@@ -113,10 +109,12 @@ public class ClosedChunkIndexManagerTests extends OpenSearchTestCase {
     public void testAddChunk() throws IOException {
         Path tempDir = createTempDir("testAddChunk");
         MetadataStore metadataStore = new InMemoryMetadataStore();
+        var resolution = TimeUnit.valueOf(TSDBPlugin.TSDB_ENGINE_TIME_UNIT.get(defaultSettings));
         ClosedChunkIndexManager manager = new ClosedChunkIndexManager(
             tempDir,
             metadataStore,
             new NOOPRetention(),
+            new NoopCompaction(),
             threadPool,
             new ShardId("index", "uuid", 0),
             defaultSettings
@@ -126,19 +124,19 @@ public class ClosedChunkIndexManagerTests extends OpenSearchTestCase {
         // Add chunk and verify first index is created
         Labels labels1 = ByteLabels.fromStrings("label1", "value1");
         MemSeries series1 = new MemSeries(0, labels1);
-        manager.addMemChunk(series1, getMemChunk(5, 0, 1500));
-        manager.addMemChunk(series1, getMemChunk(5, 1600, 2500));
+        manager.addMemChunk(series1, TestUtils.getMemChunk(5, 0, 1500));
+        manager.addMemChunk(series1, TestUtils.getMemChunk(5, 1600, 2500));
         addIndexDirectories(tempDir.resolve("blocks"), blockDirs);
 
         assertEquals(1, blockDirs.size());
 
         // Add chunk and verify second index is created
-        manager.addMemChunk(series1, getMemChunk(5, 7200000, 7800000));
+        manager.addMemChunk(series1, TestUtils.getMemChunk(5, 7200000, 7800000));
         addIndexDirectories(tempDir.resolve("blocks"), blockDirs);
         assertEquals(2, blockDirs.size());
 
         // Add an old chunk, it should be added to the first index
-        manager.addMemChunk(series1, getMemChunk(5, 2600, 4500));
+        manager.addMemChunk(series1, TestUtils.getMemChunk(5, 2600, 4500));
 
         manager.commitChangedIndexes(List.of(series1));
         manager.close();
@@ -146,21 +144,23 @@ public class ClosedChunkIndexManagerTests extends OpenSearchTestCase {
         // Independently verify chunks in both indexes
         ClosedChunkIndex first = new ClosedChunkIndex(
             blockDirs.get(0),
-            new ClosedChunkIndex.Metadata(blockDirs.get(0).getFileName().toString(), 0, 7200000)
+            new ClosedChunkIndex.Metadata(blockDirs.get(0).getFileName().toString(), 0, 7200000),
+            resolution
         );
         ClosedChunkIndex second = new ClosedChunkIndex(
             blockDirs.get(1),
-            new ClosedChunkIndex.Metadata(blockDirs.get(1).getFileName().toString(), 7200000, 14400000)
+            new ClosedChunkIndex.Metadata(blockDirs.get(1).getFileName().toString(), 7200000, 14400000),
+            resolution
         );
 
-        List<ClosedChunk> firstChunks = getChunks(first);
+        List<ClosedChunk> firstChunks = TestUtils.getChunks(first);
         assertEquals(3, firstChunks.size());
 
         MinMax firstMinMax = getMinMaxTimestamps(firstChunks);
         assertEquals("First block min timestamp should be 0", 0, firstMinMax.minTimestamp());
         assertEquals("First block max timestamp should be 4500", 4500, firstMinMax.maxTimestamp());
 
-        List<ClosedChunk> secondChunks = getChunks(second);
+        List<ClosedChunk> secondChunks = TestUtils.getChunks(second);
         assertEquals(1, secondChunks.size());
 
         MinMax result = getMinMaxTimestamps(secondChunks);
@@ -177,6 +177,7 @@ public class ClosedChunkIndexManagerTests extends OpenSearchTestCase {
             tempDir,
             new InMemoryMetadataStore(),
             new NOOPRetention(),
+            new NoopCompaction(),
             threadPool,
             new ShardId("index", "uuid", 0),
             defaultSettings
@@ -187,9 +188,9 @@ public class ClosedChunkIndexManagerTests extends OpenSearchTestCase {
         MemSeries series1 = new MemSeries(100, labels1);
         MemSeries series2 = new MemSeries(200, labels2);
 
-        manager.addMemChunk(series1, getMemChunk(5, 0, 1500));
-        manager.addMemChunk(series2, getMemChunk(5, 1600, 3000));
-        manager.addMemChunk(series1, getMemChunk(5, 7200000, 7800000));
+        manager.addMemChunk(series1, TestUtils.getMemChunk(5, 0, 1500));
+        manager.addMemChunk(series2, TestUtils.getMemChunk(5, 1600, 3000));
+        manager.addMemChunk(series1, TestUtils.getMemChunk(5, 7200000, 7800000));
 
         List<MemSeries> allSeries = List.of(series1, series2);
         manager.commitChangedIndexes(allSeries);
@@ -212,6 +213,7 @@ public class ClosedChunkIndexManagerTests extends OpenSearchTestCase {
             tempDir,
             new InMemoryMetadataStore(),
             new NOOPRetention(),
+            new NoopCompaction(),
             threadPool,
             new ShardId("index", "uuid", 0),
             defaultSettings
@@ -223,9 +225,9 @@ public class ClosedChunkIndexManagerTests extends OpenSearchTestCase {
         MemSeries series1 = new MemSeries(100, labels1);
         MemSeries series2 = new MemSeries(200, labels2);
 
-        manager.addMemChunk(series1, getMemChunk(5, 0, 1500));
+        manager.addMemChunk(series1, TestUtils.getMemChunk(5, 0, 1500));
         addIndexDirectories(tempDir.resolve("blocks"), blockDirs);
-        manager.addMemChunk(series1, getMemChunk(5, 7200000, 7800000));
+        manager.addMemChunk(series1, TestUtils.getMemChunk(5, 7200000, 7800000));
         addIndexDirectories(tempDir.resolve("blocks"), blockDirs);
 
         List<MemSeries> allSeries = List.of(series1, series2);
@@ -238,7 +240,7 @@ public class ClosedChunkIndexManagerTests extends OpenSearchTestCase {
         Set<String> firstBlockFilesBefore = getFileNames(firstBlockDir);
         Set<String> secondBlockFilesBefore = getFileNames(secondBlockDir);
 
-        manager.addMemChunk(series2, getMemChunk(5, 1600, 3000));
+        manager.addMemChunk(series2, TestUtils.getMemChunk(5, 1600, 3000));
         manager.commitChangedIndexes(allSeries);
 
         // Verify only first block's files changed (series2 chunk goes to first block)
@@ -261,6 +263,7 @@ public class ClosedChunkIndexManagerTests extends OpenSearchTestCase {
             tempDir,
             new InMemoryMetadataStore(),
             new NOOPRetention(),
+            new NoopCompaction(),
             threadPool,
             new ShardId("index", "uuid", 0),
             defaultSettings
@@ -271,10 +274,10 @@ public class ClosedChunkIndexManagerTests extends OpenSearchTestCase {
         Labels labels1 = ByteLabels.fromStrings("label1", "value1");
         MemSeries series1 = new MemSeries(0, labels1);
 
-        manager.addMemChunk(series1, getMemChunk(5, 0, 1500));
+        manager.addMemChunk(series1, TestUtils.getMemChunk(5, 0, 1500));
         assertEquals("One reader manager after first chunk", 1, manager.getReaderManagers().size());
 
-        manager.addMemChunk(series1, getMemChunk(5, 7200000, 7800000));
+        manager.addMemChunk(series1, TestUtils.getMemChunk(5, 7200000, 7800000));
         assertEquals("Two reader managers after second chunk in different block", 2, manager.getReaderManagers().size());
 
         List<ReaderManager> readerManagers = manager.getReaderManagers();
@@ -291,6 +294,7 @@ public class ClosedChunkIndexManagerTests extends OpenSearchTestCase {
             tempDir,
             new InMemoryMetadataStore(),
             new NOOPRetention(),
+            new NoopCompaction(),
             threadPool,
             new ShardId("index", "uuid", 0),
             defaultSettings
@@ -305,9 +309,9 @@ public class ClosedChunkIndexManagerTests extends OpenSearchTestCase {
         MemSeries series1 = new MemSeries(100, labels1);
         MemSeries series2 = new MemSeries(200, labels2);
 
-        manager.addMemChunk(series1, getMemChunk(5, 0, 1500));
-        manager.addMemChunk(series2, getMemChunk(5, 1600, 3000));
-        manager.addMemChunk(series1, getMemChunk(5, 7200000, 7800000));
+        manager.addMemChunk(series1, TestUtils.getMemChunk(5, 0, 1500));
+        manager.addMemChunk(series2, TestUtils.getMemChunk(5, 1600, 3000));
+        manager.addMemChunk(series1, TestUtils.getMemChunk(5, 7200000, 7800000));
 
         List<MemSeries> allSeries = List.of(series1, series2);
         manager.commitChangedIndexes(allSeries);
@@ -335,8 +339,8 @@ public class ClosedChunkIndexManagerTests extends OpenSearchTestCase {
             assertNotNull("Release action should not be null", releaseAction);
         }
 
-        manager.addMemChunk(series1, getMemChunk(5, 3000, 3500));
-        manager.addMemChunk(series1, getMemChunk(5, 7800000, 7900000));
+        manager.addMemChunk(series1, TestUtils.getMemChunk(5, 3000, 3500));
+        manager.addMemChunk(series1, TestUtils.getMemChunk(5, 7800000, 7900000));
         manager.commitChangedIndexes(allSeries);
 
         for (Runnable releaseAction : result.releaseActions()) {
@@ -359,126 +363,156 @@ public class ClosedChunkIndexManagerTests extends OpenSearchTestCase {
         manager.close();
     }
 
-    public void testRemove() throws IOException {
-        Path tempDir = createTempDir("testRemove");
-        ClosedChunkIndexManager manager = new ClosedChunkIndexManager(
-            tempDir,
-            new InMemoryMetadataStore(),
-            new NOOPRetention(),
-            threadPool,
-            new ShardId("index", "uuid", 0),
-            defaultSettings
-        );
-
-        Labels labels1 = ByteLabels.fromStrings("label1", "value1");
-        MemSeries series1 = new MemSeries(0, labels1);
-
-        // Create two indexes
-        manager.addMemChunk(series1, getMemChunk(5, 0, 1500));
-        manager.addMemChunk(series1, getMemChunk(5, 7200000, 7800000));
-
-        var indexes = manager.getClosedChunkIndexes(Instant.ofEpochMilli(0), Instant.now());
-        assertEquals(2, indexes.size());
-
-        manager.remove(indexes.getFirst());
-        indexes.getFirst().close();
-
-        indexes = manager.getClosedChunkIndexes(Instant.ofEpochMilli(0), Instant.now());
-        assertEquals(1, indexes.size());
-        manager.close();
-    }
-
     public void testOptimizationCycle() throws IOException {
         Path tempDir = createTempDir("testOptimizationCycle");
         MetadataStore metadataStore = new InMemoryMetadataStore();
+        var retention = new TimeBasedRetention(Duration.ofHours(2).toMillis() * 3, 300_000);
+        var resolution = TimeUnit.valueOf(TSDBPlugin.TSDB_ENGINE_TIME_UNIT.get(defaultSettings));
+        var compaction = new SizeTieredCompaction(
+            IntStream.of(2, 6, 18, 54).mapToObj(Duration::ofHours).toArray(Duration[]::new),
+            300_000,
+            resolution
+        );
         ClosedChunkIndexManager manager = new ClosedChunkIndexManager(
             tempDir,
             metadataStore,
-            new TimeBasedRetention(TSDBPlugin.TSDB_ENGINE_BLOCK_DURATION.get(defaultSettings).getMillis(), 300_000),
+            retention,
+            compaction,
             threadPool,
             new ShardId("index", "uuid", 0),
             defaultSettings
         );
 
         var blockDirs = new ArrayList<Path>();
+
         // Add chunk and verify first index is created
         Labels labels1 = ByteLabels.fromStrings("label1", "value1");
         MemSeries series1 = new MemSeries(0, labels1);
-        manager.addMemChunk(series1, getMemChunk(5, 0, 1500));
-        manager.addMemChunk(series1, getMemChunk(5, 1600, 2500));
+        manager.addMemChunk(series1, TestUtils.getMemChunk(5, 0, 1500));
+        manager.addMemChunk(series1, TestUtils.getMemChunk(5, 1600, 2500));
         addIndexDirectories(tempDir.resolve("blocks"), blockDirs);
         assertEquals(1, blockDirs.size());
 
         // Add chunk and verify second index is created
-        manager.addMemChunk(series1, getMemChunk(5, 7200000, 7800000));
+        manager.addMemChunk(series1, TestUtils.getMemChunk(5, 7200000, 7800000));
         addIndexDirectories(tempDir.resolve("blocks"), blockDirs);
         assertEquals(2, blockDirs.size());
+
+        // Add chunk and verify third is created
+        manager.addMemChunk(series1, TestUtils.getMemChunk(5, 14400000, 14500000));
+        manager.addMemChunk(series1, TestUtils.getMemChunk(5, 14400000, 14500000));
+        addIndexDirectories(tempDir.resolve("blocks"), blockDirs);
+        assertEquals(3, blockDirs.size());
+
+        // Add chunk and verify fourth index is created
+        manager.addMemChunk(series1, TestUtils.getMemChunk(5, 21600000, 21700000));
+        addIndexDirectories(tempDir.resolve("blocks"), blockDirs);
+        assertEquals(4, blockDirs.size());
 
         // Create orphan block.
         Files.createDirectories(tempDir.resolve("blocks").resolve("block_1000"));
         blockDirs.clear();
         addIndexDirectories(tempDir.resolve("blocks"), blockDirs);
+        assertEquals(5, blockDirs.size());
+
+        // Optimization cycle should remove the oldest index and compact remaining two index into [7200000, 21600000] and orphan/dangling
+        // indexes.
+        retention.setFrequency(0);
+        compaction.setFrequency(0);
+        manager.commitChangedIndexes(List.of(series1));
+        var compactingIndex = manager.getClosedChunkIndexes(Instant.ofEpochMilli(0), Instant.now()).get(1);
+        compactingIndex.getDirectoryReaderManager().acquire();
+        manager.runOptimization();
+
+        blockDirs.clear();
+        addIndexDirectories(tempDir.resolve("blocks"), blockDirs);
+        assertEquals(3, blockDirs.size());
+        var liveIndexes = manager.getClosedChunkIndexes(Instant.ofEpochMilli(0), Instant.now());
+        assertEquals(2, liveIndexes.size());
+        liveIndexes.getFirst().getDirectoryReaderManager().maybeRefreshBlocking();
+        liveIndexes.getLast().getDirectoryReaderManager().maybeRefreshBlocking();
+        assertEquals(3, TestUtils.getChunks(liveIndexes.getFirst()).size());
+        assertEquals(1, TestUtils.getChunks(liveIndexes.getLast()).size());
+
+        // Running it again should have no effect.
+        manager.runOptimization();
+        liveIndexes = manager.getClosedChunkIndexes(Instant.ofEpochMilli(0), Instant.now());
+        assertEquals(2, liveIndexes.size());
+        manager.close();
+        compactingIndex.close();
+
+        // Independently verify chunks in both indexes
+        var firstBlock = blockDirs.stream().filter(s -> s.getFileName().toString().contains("7200000_21600000")).findFirst().get();
+        var secondBlock = blockDirs.stream().filter(s -> s.getFileName().toString().contains("21600000_28800000")).findFirst().get();
+
+        ClosedChunkIndex first = new ClosedChunkIndex(
+            firstBlock,
+            new ClosedChunkIndex.Metadata(firstBlock.getFileName().toString(), 7200000, 21600000),
+            resolution
+        );
+
+        ClosedChunkIndex second = new ClosedChunkIndex(
+            secondBlock,
+            new ClosedChunkIndex.Metadata(secondBlock.getFileName().toString(), 21600000, 28800000),
+            resolution
+        );
+
+        assertEquals(3, TestUtils.getChunks(first).size());
+        assertEquals(1, TestUtils.getChunks(second).size());
+        first.close();
+        second.close();
+    }
+
+    public void testOptimizationCycleFailureToLockIndexesForCompaction() throws IOException {
+        Path tempDir = createTempDir("testOptimizationCycleFailureToLockIndexesForCompaction");
+        MetadataStore metadataStore = new InMemoryMetadataStore();
+        var retention = new NOOPRetention();
+        var resolution = TimeUnit.valueOf(TSDBPlugin.TSDB_ENGINE_TIME_UNIT.get(defaultSettings));
+        var compaction = new SizeTieredCompaction(
+            IntStream.of(2, 6, 18, 54).mapToObj(Duration::ofHours).toArray(Duration[]::new),
+            300_000,
+            resolution
+        );
+        ClosedChunkIndexManager manager = new ClosedChunkIndexManager(
+            tempDir,
+            metadataStore,
+            retention,
+            compaction,
+            threadPool,
+            new ShardId("index", "uuid", 0),
+            defaultSettings
+        );
+
+        var blockDirs = new ArrayList<Path>();
+
+        // Add chunk and verify first index is created
+        Labels labels1 = ByteLabels.fromStrings("label1", "value1");
+        MemSeries series1 = new MemSeries(0, labels1);
+        // Add chunk and verify second index is created
+        manager.addMemChunk(series1, TestUtils.getMemChunk(5, 7200000, 7800000));
+        addIndexDirectories(tempDir.resolve("blocks"), blockDirs);
+        assertEquals(1, blockDirs.size());
+
+        // Add chunk and second third is created
+        manager.addMemChunk(series1, TestUtils.getMemChunk(5, 14400000, 14500000));
+        manager.addMemChunk(series1, TestUtils.getMemChunk(5, 14400000, 14500000));
+        addIndexDirectories(tempDir.resolve("blocks"), blockDirs);
+        assertEquals(2, blockDirs.size());
+
+        // Add chunk and verify third index is created
+        manager.addMemChunk(series1, TestUtils.getMemChunk(5, 21600000, 21700000));
+        addIndexDirectories(tempDir.resolve("blocks"), blockDirs);
         assertEquals(3, blockDirs.size());
 
-        // Optimization cycle should remove both stale and orphan/dangling indexes.
+        // Compaction cycle should be Noop since it will fail to acquire lock.
+        compaction.setFrequency(0);
         manager.runOptimization();
         blockDirs.clear();
         addIndexDirectories(tempDir.resolve("blocks"), blockDirs);
-        assertEquals(1, blockDirs.size());
+        assertEquals(3, blockDirs.size());
         var liveIndexes = manager.getClosedChunkIndexes(Instant.ofEpochMilli(0), Instant.now());
-        assertEquals(1, liveIndexes.size());
-        liveIndexes.getLast().close();
-    }
-
-    private MemChunk getMemChunk(int numSamples, int minTimestamp, int maxTimestamp) {
-        long interval = (maxTimestamp - minTimestamp) / (numSamples - 1);
-
-        MemChunk chunk = new MemChunk(0, 0, maxTimestamp, null);
-        Chunk rawChunk = new XORChunk();
-        ChunkAppender appender = rawChunk.appender();
-        for (int i = 0; i < numSamples; i++) {
-            long timestamp = minTimestamp + (i * interval);
-            appender.append(timestamp, i);
-        }
-        chunk.setChunk(rawChunk);
-        chunk.setMinTimestamp(minTimestamp);
-        chunk.setMaxTimestamp(maxTimestamp);
-        return chunk;
-    }
-
-    // Helper method to all chunks
-    private List<ClosedChunk> getChunks(ClosedChunkIndex closedChunkIndex) throws IOException {
-        List<ClosedChunk> chunks = new ArrayList<>();
-
-        ReaderManager closedReaderManager = closedChunkIndex.getDirectoryReaderManager();
-        DirectoryReader closedReader = null;
-        try {
-            closedReader = closedReaderManager.acquire();
-            IndexSearcher closedSearcher = new IndexSearcher(closedReader);
-            TopDocs topDocs = closedSearcher.search(new MatchAllDocsQuery(), Integer.MAX_VALUE);
-
-            for (LeafReaderContext leaf : closedReader.leaves()) {
-                BinaryDocValues chunkDocValues = leaf.reader().getBinaryDocValues(Constants.IndexSchema.CHUNK);
-                if (chunkDocValues == null) {
-                    continue;
-                }
-                int docBase = leaf.docBase;
-                for (ScoreDoc sd : topDocs.scoreDocs) {
-                    int docId = sd.doc;
-                    if (docId >= docBase && docId < docBase + leaf.reader().maxDoc()) {
-                        int localDocId = docId - docBase;
-                        if (chunkDocValues.advanceExact(localDocId)) {
-                            chunks.add(ClosedChunkIndexIO.getClosedChunkFromSerialized(chunkDocValues.binaryValue()));
-                        }
-                    }
-                }
-            }
-        } finally {
-            if (closedReader != null) {
-                closedReaderManager.release(closedReader);
-            }
-        }
-        return chunks;
+        assertEquals(3, liveIndexes.size());
+        manager.close();
     }
 
     private MinMax getMinMaxTimestamps(List<ClosedChunk> secondChunks) {

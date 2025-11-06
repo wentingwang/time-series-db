@@ -152,7 +152,7 @@ public class MemSeries {
             // all chunks but the head chunk can always be closed, as they will not receive any more samples
             MemChunk prevChunk = headChunk.getPrev();
             while (prevChunk != null) {
-                closableChunks.add(prevChunk);
+                closableChunks.addFirst(prevChunk);
                 prevChunk = prevChunk.getPrev();
             }
 
