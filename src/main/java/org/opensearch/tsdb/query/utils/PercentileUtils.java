@@ -99,4 +99,20 @@ public final class PercentileUtils {
     public static double calculateMedian(List<Double> sortedValues) {
         return calculatePercentile(sortedValues, 50.0, false);
     }
+
+    /**
+     * Format percentile value for label.
+     * Removes unnecessary decimal points (e.g., "99.0" becomes "99", but "99.5" stays "99.5").
+     *
+     * @param percentile The percentile value to format
+     * @return Formatted string representation
+     */
+    public static String formatPercentile(float percentile) {
+        // If it's a whole number, return without decimal point
+        if (percentile == (int) percentile) {
+            return String.valueOf((int) percentile);
+        }
+        // Otherwise, return with decimals (stripping trailing zeros)
+        return String.valueOf(percentile).replaceAll("\\.?0+$", "");
+    }
 }

@@ -18,6 +18,7 @@ import org.opensearch.tsdb.core.model.Sample;
 import org.opensearch.tsdb.query.aggregator.TimeSeries;
 import org.opensearch.tsdb.query.stage.PipelineStageAnnotation;
 import org.opensearch.tsdb.query.stage.UnaryPipelineStage;
+import org.opensearch.tsdb.query.utils.PercentileUtils;
 
 import java.io.IOException;
 import java.time.Duration;
@@ -53,7 +54,7 @@ public class HistogramPercentileStage implements UnaryPipelineStage {
     /** The name of the percentiles field **/
     public static final String PERCENTILES = "percentiles";
 
-    private static final String PERCENTILE_LABEL = "percentile"; // name of the label when generating aggregated time series
+    private static final String PERCENTILE_LABEL = "histogramPercentile"; // name of the label when generating aggregated time series
 
     private final String bucketId;
     private final String bucketRange;
@@ -335,9 +336,9 @@ public class HistogramPercentileStage implements UnaryPipelineStage {
                 percentileSamples.add(new FloatSample(timestamp, percentileValue));
             }
 
-            // Create labels with percentile information
-            groupLabels.put(PERCENTILE_LABEL, String.valueOf(percentile));
-            ByteLabels finalLabels = ByteLabels.fromMap(groupLabels);
+            // Create labels with percentile information (format: histogramPercentile:pXX)
+            String percentileValue = "p" + PercentileUtils.formatPercentile(percentile);
+            Labels finalLabels = ByteLabels.fromMap(groupLabels).withLabel(PERCENTILE_LABEL, percentileValue);
 
             result.add(
                 new TimeSeries(

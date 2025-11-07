@@ -92,8 +92,8 @@ public class HistogramPercentileStageTests extends AbstractWireSerializingTestCa
         TimeSeries p99Series = result.get(0);
 
         // Check labels
-        assertTrue(p99Series.getLabels().has("percentile"));
-        assertEquals("99.0", p99Series.getLabels().get("percentile"));
+        assertTrue(p99Series.getLabels().has("histogramPercentile"));
+        assertEquals("p99", p99Series.getLabels().get("histogramPercentile"));
         assertEquals("api-server", p99Series.getLabels().get("service"));
 
         // Check P99 value - with 300 total requests, P99 is at 297th request
@@ -148,7 +148,7 @@ public class HistogramPercentileStageTests extends AbstractWireSerializingTestCa
         Map<String, Map<String, TimeSeries>> resultsByService = new HashMap<>();
         for (TimeSeries series : result) {
             String service = series.getLabels().get("service");
-            String percentile = series.getLabels().get("percentile");
+            String percentile = series.getLabels().get("histogramPercentile");
             resultsByService.computeIfAbsent(service, k -> new HashMap<>()).put(percentile, series);
         }
 
@@ -158,17 +158,17 @@ public class HistogramPercentileStageTests extends AbstractWireSerializingTestCa
         assertEquals(3, fastApiResults.size());
 
         // P50 for fast-api: 100th request out of 200 falls at the end of 0-10ms bucket
-        TimeSeries p50Fast = fastApiResults.get("50.0");
+        TimeSeries p50Fast = fastApiResults.get("p50");
         assertNotNull(p50Fast);
         assertEquals(10.0, p50Fast.getSamples().getFirst().getValue(), 0.001);
 
         // P95 for fast-api: 190th request falls in 25ms-50ms bucket
-        TimeSeries p95Fast = fastApiResults.get("95.0");
+        TimeSeries p95Fast = fastApiResults.get("p95");
         assertNotNull(p95Fast);
         assertEquals(50.0, p95Fast.getSamples().getFirst().getValue(), 0.001);
 
         // P99 for fast-api: 198th request falls in 50ms-100ms bucket
-        TimeSeries p99Fast = fastApiResults.get("99.0");
+        TimeSeries p99Fast = fastApiResults.get("p99");
         assertNotNull(p99Fast);
         assertEquals(100.0, p99Fast.getSamples().getFirst().getValue(), 0.001);
 
@@ -178,17 +178,17 @@ public class HistogramPercentileStageTests extends AbstractWireSerializingTestCa
         assertEquals(3, slowApiResults.size());
 
         // P50 for slow-api: 75th request out of 150 falls in 50ms-100ms bucket (after 20+30=50)
-        TimeSeries p50Slow = slowApiResults.get("50.0");
+        TimeSeries p50Slow = slowApiResults.get("p50");
         assertNotNull(p50Slow);
         assertEquals(100.0, p50Slow.getSamples().getFirst().getValue(), 0.001);
 
         // P95 for slow-api: 142.5th request falls in 200ms-500ms bucket
-        TimeSeries p95Slow = slowApiResults.get("95.0");
+        TimeSeries p95Slow = slowApiResults.get("p95");
         assertNotNull(p95Slow);
         assertEquals(500.0, p95Slow.getSamples().getFirst().getValue(), 0.001);
 
         // P99 for slow-api: 148.5th request falls in 200ms-500ms bucket
-        TimeSeries p99Slow = slowApiResults.get("99.0");
+        TimeSeries p99Slow = slowApiResults.get("p99");
         assertNotNull(p99Slow);
         assertEquals(500.0, p99Slow.getSamples().getFirst().getValue(), 0.001);
     }
@@ -384,7 +384,7 @@ public class HistogramPercentileStageTests extends AbstractWireSerializingTestCa
         assertEquals(100.0, ((FloatSample) samples.get(0)).getValue(), 0.001);
 
         // Check labels
-        assertEquals("90.0", p90Series.getLabels().get("percentile"));
+        assertEquals("p90", p90Series.getLabels().get("histogramPercentile"));
         assertEquals("response_size", p90Series.getLabels().get("metric"));
     }
 
