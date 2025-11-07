@@ -55,6 +55,17 @@ public class RestQueryExecutor extends BaseQueryExecutor {
     private static final String RESULT_TYPE_MATRIX = "matrix";
     private static final String QUERY_PARAM_FORMAT = "%s?start=%d&end=%d&step=%d";
 
+    private static final String FIELD_RESOLVED_PARTITIONS = "resolved_partitions";
+    private static final String FIELD_PARTITIONS = "partitions";
+    private static final String FIELD_FETCH_STATEMENT = "fetch_statement";
+    private static final String FIELD_PARTITION_WINDOWS = "partition_windows";
+    private static final String FIELD_PARTITION_ID = "partition_id";
+    private static final String FIELD_START = "start";
+    private static final String FIELD_END = "end";
+    private static final String FIELD_ROUTING_KEYS = "routing_keys";
+    private static final String FIELD_KEY = "key";
+    private static final String FIELD_VALUE = "value";
+
     private final RestClient restClient;
 
     public RestQueryExecutor(RestClient restClient) {
@@ -119,7 +130,47 @@ public class RestQueryExecutor extends BaseQueryExecutor {
         Request request = new Request(RestRequest.Method.POST.name(), url);
 
         try (XContentBuilder builder = XContentFactory.jsonBuilder()) {
-            builder.startObject().field(FIELD_QUERY, queryConfig.query()).endObject();
+            builder.startObject();
+            builder.field(FIELD_QUERY, queryConfig.query());
+
+            if (queryConfig.resolvedPartitions() != null && !queryConfig.resolvedPartitions().getPartitions().isEmpty()) {
+                builder.startObject(FIELD_RESOLVED_PARTITIONS);
+                builder.startArray(FIELD_PARTITIONS);
+
+                for (var partition : queryConfig.resolvedPartitions().getPartitions()) {
+                    builder.startObject();
+                    builder.field(FIELD_FETCH_STATEMENT, partition.getFetchStatement());
+                    builder.startArray(FIELD_PARTITION_WINDOWS);
+
+                    for (var window : partition.getPartitionWindows()) {
+                        builder.startObject();
+                        builder.field(FIELD_PARTITION_ID, window.partitionId());
+                        builder.field(FIELD_START, window.startMs());
+                        builder.field(FIELD_END, window.endMs());
+
+                        if (!window.routingKeys().isEmpty()) {
+                            builder.startArray(FIELD_ROUTING_KEYS);
+                            for (var routingKey : window.routingKeys()) {
+                                builder.startObject();
+                                builder.field(FIELD_KEY, routingKey.key());
+                                builder.field(FIELD_VALUE, routingKey.value());
+                                builder.endObject();
+                            }
+                            builder.endArray();
+                        }
+
+                        builder.endObject();
+                    }
+
+                    builder.endArray();
+                    builder.endObject();
+                }
+
+                builder.endArray();
+                builder.endObject();
+            }
+
+            builder.endObject();
             request.setJsonEntity(builder.toString());
         }
 

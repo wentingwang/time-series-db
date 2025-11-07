@@ -42,7 +42,7 @@ import java.util.concurrent.TimeUnit;
 @Fork(value = 1, jvmArgs = { "-Xms2g", "-Xmx2g" })
 public class MergeIteratorBenchmark {
 
-    @Param({ "2", "3", "5", "10", "50", "200"})
+    @Param({ "2", "3", "5", "10", "50", "200" })
     private int numIterators;
 
     @Param({ "100" })
