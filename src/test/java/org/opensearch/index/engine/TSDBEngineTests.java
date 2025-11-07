@@ -79,6 +79,10 @@ public class TSDBEngineTests extends EngineTestCase {
         clusterApplierService = mock(ClusterApplierService.class);
         when(clusterApplierService.state()).thenReturn(ClusterState.EMPTY_STATE);
         metricsEngine = buildTSDBEngine(globalCheckpoint, engineStore, indexSettings, clusterApplierService);
+        // TranslogManager initialized with pendingTranslogRecovery set to true, recover here to reset it, so flush won't be blocked by
+        // translogManager.ensureCanFlush()
+        metricsEngine.translogManager()
+            .recoverFromTranslog(this.translogHandler, metricsEngine.getProcessedLocalCheckpoint(), Long.MAX_VALUE);
     }
 
     @Override
@@ -580,7 +584,7 @@ public class TSDBEngineTests extends EngineTestCase {
         }
 
         // Force a flush to create closed chunks
-        metricsEngine.flush(false, true);
+        metricsEngine.flush(true, true);
 
         // Acquire commit which should now have both live index and closed chunk files
         try (var commitCloseable = metricsEngine.acquireSafeIndexCommit()) {
@@ -789,5 +793,146 @@ public class TSDBEngineTests extends EngineTestCase {
 
         // Indexing on closed engine should throw RuntimeException
         assertThrows(RuntimeException.class, () -> metricsEngine.index(index));
+    }
+
+    /**
+     * Test that old segments_N files are cleaned up after flush when not snapshotted.
+     */
+    public void testSegmentsFileCleanupAfterFlush() throws Exception {
+        // Get initial segments file name
+        String initialSegmentsFile = engineStore.readLastCommittedSegmentsInfo().getSegmentsFileName();
+        assertTrue("Initial segments file should exist", segmentsFileExists(initialSegmentsFile));
+
+        // Index samples with timestamps spread across time to ensure chunks are closed
+        for (int i = 0; i < 10; i++) {
+            publishSample(i, createSampleJson("__name__ metric1 host server1", 100L + (i * 1000L), 10.0 + i));
+        }
+
+        // Force flush to close chunks and create new segments file
+        metricsEngine.flush(true, true);
+
+        // Get new segments file name
+        String newSegmentsFile = engineStore.readLastCommittedSegmentsInfo().getSegmentsFileName();
+        assertNotEquals("Segments file should be different after flush", initialSegmentsFile, newSegmentsFile);
+        assertTrue("New segments file should exist", segmentsFileExists(newSegmentsFile));
+
+        // Old segments file should be cleaned up (not snapshotted)
+        assertFalse("Old segments file should be deleted after flush", segmentsFileExists(initialSegmentsFile));
+    }
+
+    /**
+     * Test that snapshotted segments_N files are protected from deletion.
+     */
+    public void testSnapshotProtectsSegmentsFile() throws Exception {
+        // Get current segments file before any operations
+        String segmentsFileBeforeSnapshot = engineStore.readLastCommittedSegmentsInfo().getSegmentsFileName();
+
+        // Index samples with timestamps spread across time
+        for (int i = 0; i < 10; i++) {
+            publishSample(i, createSampleJson("__name__ metric1 host server1", 1000L + (i * 1000L), 10.0 + i));
+        }
+
+        // Acquire snapshot (this should protect the segments file)
+        var commitCloseable = metricsEngine.acquireSafeIndexCommit();
+        try {
+            String snapshotSegmentsFile = commitCloseable.get().getSegmentsFileName();
+            assertEquals("Snapshot should reference current segments file", segmentsFileBeforeSnapshot, snapshotSegmentsFile);
+
+            // Index more samples and flush to create new segments file
+            for (int i = 10; i < 20; i++) {
+                publishSample(i, createSampleJson("__name__ metric1 host server1", 11000L + (i * 1000L), 20.0 + i));
+            }
+            metricsEngine.flush(true, true);
+
+            // Get new segments file after flush
+            String newSegmentsFile = engineStore.readLastCommittedSegmentsInfo().getSegmentsFileName();
+            assertNotEquals("New segments file should be created", segmentsFileBeforeSnapshot, newSegmentsFile);
+
+            // Old segments file should still exist because it's snapshotted
+            assertTrue("Snapshotted segments file should be protected from deletion", segmentsFileExists(segmentsFileBeforeSnapshot));
+            assertTrue("New segments file should exist", segmentsFileExists(newSegmentsFile));
+
+        } finally {
+            // Release snapshot
+            commitCloseable.close();
+        }
+
+        // After releasing snapshot, do another flush to trigger cleanup
+        for (int i = 20; i < 30; i++) {
+            publishSample(i, createSampleJson("__name__ metric1 host server1", 31000L + (i * 1000L), 30.0 + i));
+        }
+        metricsEngine.flush(true, true);
+
+        // Now the old segments file should be cleaned up
+        assertFalse("Old segments file should be deleted after snapshot release", segmentsFileExists(segmentsFileBeforeSnapshot));
+    }
+
+    /**
+     * Test that metadata store commits properly manage segments_N files.
+     */
+    public void testMetadataStoreCommitManagesSegmentsFiles() throws Exception {
+        // Get initial segments file
+        String initialSegmentsFile = engineStore.readLastCommittedSegmentsInfo().getSegmentsFileName();
+        assertTrue("Initial segments file should exist", segmentsFileExists(initialSegmentsFile));
+
+        // Store metadata which triggers a commit
+        metricsEngine.getMetadataStore().store("test_key", "test_value");
+
+        // New segments file should be created
+        String newSegmentsFile = engineStore.readLastCommittedSegmentsInfo().getSegmentsFileName();
+        assertNotEquals("New segments file should be created after metadata store", initialSegmentsFile, newSegmentsFile);
+        assertTrue("New segments file should exist", segmentsFileExists(newSegmentsFile));
+
+        // Verify metadata is persisted
+        var retrievedValue = metricsEngine.getMetadataStore().retrieve("test_key");
+        assertTrue("Metadata should be retrievable", retrievedValue.isPresent());
+        assertEquals("Metadata value should match", "test_value", retrievedValue.get());
+
+        // Old segments file should be cleaned up
+        assertFalse("Old segments file should be deleted", segmentsFileExists(initialSegmentsFile));
+    }
+
+    /**
+     * Test that critical metadata (TRANSLOG_UUID, HISTORY_UUID) is preserved across flushes.
+     */
+    public void testCriticalMetadataPreservedAcrossFlushes() throws Exception {
+        // Get initial metadata
+        var initialSegmentInfos = engineStore.readLastCommittedSegmentsInfo();
+        String initialTranslogUUID = initialSegmentInfos.getUserData().get(Translog.TRANSLOG_UUID_KEY);
+        String initialHistoryUUID = initialSegmentInfos.getUserData().get(Engine.HISTORY_UUID_KEY);
+
+        assertNotNull("Initial translog UUID should exist", initialTranslogUUID);
+        assertNotNull("Initial history UUID should exist", initialHistoryUUID);
+
+        // Index samples and flush
+        for (int i = 0; i < 10; i++) {
+            publishSample(i, createSampleJson("__name__ metric1 host server1", 1000L + (i * 1000L), 10.0 + i));
+        }
+        metricsEngine.flush(true, true);
+
+        // Verify metadata is preserved after flush
+        var segmentInfosAfterFlush = engineStore.readLastCommittedSegmentsInfo();
+        String translogUUIDAfterFlush = segmentInfosAfterFlush.getUserData().get(Translog.TRANSLOG_UUID_KEY);
+        String historyUUIDAfterFlush = segmentInfosAfterFlush.getUserData().get(Engine.HISTORY_UUID_KEY);
+
+        assertEquals("Translog UUID should be preserved", initialTranslogUUID, translogUUIDAfterFlush);
+        assertEquals("History UUID should be preserved", initialHistoryUUID, historyUUIDAfterFlush);
+    }
+
+    /**
+     * Helper method to check if a segments file exists in the store directory.
+     */
+    private boolean segmentsFileExists(String segmentsFileName) {
+        try {
+            String[] files = engineStore.directory().listAll();
+            for (String file : files) {
+                if (file.equals(segmentsFileName)) {
+                    return true;
+                }
+            }
+            return false;
+        } catch (IOException e) {
+            throw new RuntimeException("Failed to check segments file existence", e);
+        }
     }
 }

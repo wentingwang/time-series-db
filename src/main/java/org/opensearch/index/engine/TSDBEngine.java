@@ -8,7 +8,11 @@
 package org.opensearch.index.engine;
 
 import org.apache.lucene.index.IndexCommit;
+import org.apache.lucene.index.IndexWriter;
+import org.apache.lucene.index.IndexWriterConfig;
+import org.apache.lucene.index.KeepOnlyLastCommitDeletionPolicy;
 import org.apache.lucene.index.SegmentInfos;
+import org.apache.lucene.index.SnapshotDeletionPolicy;
 import org.apache.lucene.index.Term;
 import org.apache.lucene.search.ReferenceManager;
 import org.apache.lucene.store.AlreadyClosedException;
@@ -87,6 +91,8 @@ public class TSDBEngine extends Engine {
     private final String historyUUID;
     private final LocalCheckpointTracker localCheckpointTracker;
     private final ClosedChunkIndexManager closedChunkIndexManager;
+    private final IndexWriter metadataIndexWriter;
+    private final SnapshotDeletionPolicy snapshotDeletionPolicy;
 
     private final Lock closeChunksLock = new ReentrantLock(); // control closing head chunks during ops like flushing head
     private final Lock segmentInfosLock = new ReentrantLock(); // protect lastCommittedSegmentInfos access
@@ -124,6 +130,13 @@ public class TSDBEngine extends Engine {
             // custom path is only used for tests
             this.metricsStorePath = path;
         }
+
+        // Initialize IndexWriter with SnapshotDeletionPolicy for managing segments_N files lifecycle
+        IndexWriterConfig iwc = new IndexWriterConfig();
+        KeepOnlyLastCommitDeletionPolicy baseDeletionPolicy = new KeepOnlyLastCommitDeletionPolicy();
+        this.snapshotDeletionPolicy = new SnapshotDeletionPolicy(baseDeletionPolicy);
+        iwc.setIndexDeletionPolicy(snapshotDeletionPolicy);
+        this.metadataIndexWriter = new IndexWriter(store.directory(), iwc);
 
         store.incRef();
         boolean success = false;
@@ -172,6 +185,9 @@ public class TSDBEngine extends Engine {
             success = true;
         } finally {
             if (success == false) {
+                if (metadataIndexWriter != null) {
+                    metadataIndexWriter.close();
+                }
                 if (head != null) {
                     head.close();
                 }
@@ -195,6 +211,7 @@ public class TSDBEngine extends Engine {
         head.close();
         translogManager.close();
         metricsReaderManager.close();
+        metadataIndexWriter.close();
         super.close();
     }
 
@@ -633,6 +650,19 @@ public class TSDBEngine extends Engine {
             ClosedChunkIndexManager.SnapshotResult closedChunkSnapshotResult = closedChunkIndexManager.snapshotAllIndexes();
             snapshots.addAll(closedChunkSnapshotResult.indexCommits());
             releaseActions.addAll(closedChunkSnapshotResult.releaseActions());
+
+            // Snapshot the main metadata commit (protects segments_N file from deletion)
+            IndexCommit metadataSnapshot = snapshotDeletionPolicy.snapshot();
+
+            // Add release action for metadata snapshot that will clean up old segments_N files
+            releaseActions.add(() -> {
+                try {
+                    snapshotDeletionPolicy.release(metadataSnapshot);
+                    metadataIndexWriter.deleteUnusedFiles();
+                } catch (IOException e) {
+                    throw new RuntimeException("Failed to release metadata snapshot", e);
+                }
+            });
 
             final SegmentInfos segmentInfosSnapshot;
             segmentInfosLock.lock();
@@ -1091,11 +1121,9 @@ public class TSDBEngine extends Engine {
                 userData.put(SequenceNumbers.MAX_SEQ_NO, Long.toString(localCheckpointTracker.getMaxSeqNo()));
             }
             logger.info("commitSegmentInfos local checkpoint: {}", userData.get(SequenceNumbers.LOCAL_CHECKPOINT_KEY));
-
-            lastCommittedSegmentInfos.setUserData(userData, false);
-            lastCommittedSegmentInfos.commit(store.directory());
-            store.directory().sync(lastCommittedSegmentInfos.files(true));
-            store.directory().syncMetaData();
+            metadataIndexWriter.setLiveCommitData(userData.entrySet());
+            metadataIndexWriter.commit();
+            lastCommittedSegmentInfos = SegmentInfos.readLatestCommit(store.directory());
         } finally {
             segmentInfosLock.unlock();
         }
@@ -1348,10 +1376,9 @@ public class TSDBEngine extends Engine {
                 // Update user data with current state
                 Map<String, String> userData = new HashMap<>(lastCommittedSegmentInfos.getUserData());
                 userData.put(key, value);
-                lastCommittedSegmentInfos.setUserData(userData, false);
-                lastCommittedSegmentInfos.commit(getStore().directory());
-                getStore().directory().sync(lastCommittedSegmentInfos.files(true));
-                getStore().directory().syncMetaData();
+                metadataIndexWriter.setLiveCommitData(userData.entrySet());
+                metadataIndexWriter.commit();
+                lastCommittedSegmentInfos = SegmentInfos.readLatestCommit(store.directory());
             } finally {
                 segmentInfosLock.unlock();
             }
