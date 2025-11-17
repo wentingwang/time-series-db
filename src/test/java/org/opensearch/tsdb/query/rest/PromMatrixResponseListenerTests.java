@@ -273,9 +273,9 @@ public class PromMatrixResponseListenerTests extends OpenSearchTestCase {
         assertFalse(responseContent.contains("\"__name__\""));
     }
 
-    // ========== Step Field Tests ==========
+    // ========== Metadata Field Tests ==========
 
-    public void testResponseWithoutStepWhenIncludeStepIsFalse() throws Exception {
+    public void testResponseWithoutMetadataWhenIncludeMetadataIsFalse() throws Exception {
         // Arrange
         FakeRestChannel channel = new FakeRestChannel(new FakeRestRequest(), true, 1);
         PromMatrixResponseListener listener = new PromMatrixResponseListener(channel, TEST_AGG_NAME, false, false);
@@ -296,26 +296,28 @@ public class PromMatrixResponseListenerTests extends OpenSearchTestCase {
         List<Map<String, Object>> results = getResultArray(parsed);
         assertThat(results, hasSize(1));
 
-        // Step should NOT be present when includeStep is false
-        assertFalse("Step field should not be present when includeStep is false", results.get(0).containsKey("step"));
+        // Metadata fields should NOT be present when includeMetadata is false
+        assertFalse("Step field should not be present when includeMetadata is false", results.get(0).containsKey("step"));
+        assertFalse("Start field should not be present when includeMetadata is false", results.get(0).containsKey("start"));
+        assertFalse("End field should not be present when includeMetadata is false", results.get(0).containsKey("end"));
     }
 
-    public void testResponseWithDifferentStepsPerTimeSeries() throws Exception {
-        // Arrange - Create multiple time series with different step sizes
+    public void testResponseWithDifferentMetadataPerTimeSeries() throws Exception {
+        // Arrange - Create multiple time series with different metadata (step, start, end)
         FakeRestChannel channel = new FakeRestChannel(new FakeRestRequest(), true, 1);
         PromMatrixResponseListener listener = new PromMatrixResponseListener(channel, TEST_AGG_NAME, false, true);
 
         List<Sample> samples1 = List.of(new FloatSample(1000L, 10.0));
         Labels labels1 = ByteLabels.fromMap(Map.of("id", "1"));
-        TimeSeries ts1 = new TimeSeries(samples1, labels1, 1000L, 1000L, 5000L, "metric1");
+        TimeSeries ts1 = new TimeSeries(samples1, labels1, 1000L, 1500L, 5000L, "metric1");
 
         List<Sample> samples2 = List.of(new FloatSample(2000L, 20.0));
         Labels labels2 = ByteLabels.fromMap(Map.of("id", "2"));
-        TimeSeries ts2 = new TimeSeries(samples2, labels2, 2000L, 2000L, 10000L, "metric2");
+        TimeSeries ts2 = new TimeSeries(samples2, labels2, 2000L, 2500L, 10000L, "metric2");
 
         List<Sample> samples3 = List.of(new FloatSample(3000L, 30.0));
         Labels labels3 = ByteLabels.fromMap(Map.of("id", "3"));
-        TimeSeries ts3 = new TimeSeries(samples3, labels3, 3000L, 3000L, 30000L, "metric3");
+        TimeSeries ts3 = new TimeSeries(samples3, labels3, 3000L, 3500L, 30000L, "metric3");
 
         SearchResponse searchResponse = createSearchResponse(TEST_AGG_NAME, List.of(ts1, ts2, ts3));
         XContentBuilder builder = JsonXContent.contentBuilder();
@@ -328,10 +330,18 @@ public class PromMatrixResponseListenerTests extends OpenSearchTestCase {
         List<Map<String, Object>> results = getResultArray(parsed);
         assertThat(results, hasSize(3));
 
-        // Verify each time series has its own step value
-        assertEquals("First time series step", 5000, results.get(0).get("step"));
-        assertEquals("Second time series step", 10000, results.get(1).get("step"));
-        assertEquals("Third time series step", 30000, results.get(2).get("step"));
+        // Verify each time series has its own metadata values
+        assertEquals("First time series step", 5000, ((Number) results.get(0).get("step")).longValue());
+        assertEquals("First time series start", 1000, ((Number) results.get(0).get("start")).longValue());
+        assertEquals("First time series end", 1500, ((Number) results.get(0).get("end")).longValue());
+
+        assertEquals("Second time series step", 10000, ((Number) results.get(1).get("step")).longValue());
+        assertEquals("Second time series start", 2000, ((Number) results.get(1).get("start")).longValue());
+        assertEquals("Second time series end", 2500, ((Number) results.get(1).get("end")).longValue());
+
+        assertEquals("Third time series step", 30000, ((Number) results.get(2).get("step")).longValue());
+        assertEquals("Third time series start", 3000, ((Number) results.get(2).get("start")).longValue());
+        assertEquals("Third time series end", 3500, ((Number) results.get(2).get("end")).longValue());
     }
 
     // ========== Full Response Structure Tests ==========
@@ -382,9 +392,13 @@ public class PromMatrixResponseListenerTests extends OpenSearchTestCase {
         assertThat(values.get(1).get(0), equalTo(2.0));
         assertThat(values.get(1).get(1), equalTo("20.5"));
 
-        // Validate step field (1000ms) at time series level
+        // Validate metadata fields at time series level
         assertNotNull("Step field should be present in time series", result.get("step"));
-        assertEquals(1000, result.get("step"));
+        assertEquals(1000, ((Number) result.get("step")).longValue());
+        assertNotNull("Start field should be present in time series", result.get("start"));
+        assertEquals(1000L, ((Number) result.get("start")).longValue());
+        assertNotNull("End field should be present in time series", result.get("end"));
+        assertEquals(2000L, ((Number) result.get("end")).longValue());
     }
 
     public void testFullResponseStructureWithMultipleTimeSeries() throws Exception {
@@ -423,9 +437,14 @@ public class PromMatrixResponseListenerTests extends OpenSearchTestCase {
         assertThat(metric2.get("__name__"), equalTo("metric2"));
         assertThat(metric2.get("id"), equalTo("2"));
 
-        // Validate step field (1000ms) at time series level
-        assertEquals(1000, results.get(0).get("step"));
-        assertEquals(1000, results.get(1).get("step"));
+        // Validate metadata fields at time series level
+        assertEquals(1000, ((Number) results.get(0).get("step")).longValue());
+        assertEquals(1000L, ((Number) results.get(0).get("start")).longValue());
+        assertEquals(1000L, ((Number) results.get(0).get("end")).longValue());
+
+        assertEquals(1000, ((Number) results.get(1).get("step")).longValue());
+        assertEquals(2000L, ((Number) results.get(1).get("start")).longValue());
+        assertEquals(2000L, ((Number) results.get(1).get("end")).longValue());
     }
 
     public void testFullErrorResponseStructure() throws Exception {

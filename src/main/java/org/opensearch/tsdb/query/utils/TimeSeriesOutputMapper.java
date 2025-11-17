@@ -28,6 +28,8 @@ public class TimeSeriesOutputMapper {
     private static final String FIELD_METRIC = "metric";
     private static final String FIELD_VALUES = "values";
     private static final String FIELD_STEP = "step";
+    private static final String FIELD_START = "start";
+    private static final String FIELD_END = "end";
 
     // Prometheus label names
     private static final String LABEL_NAME = "__name__";
@@ -79,13 +81,15 @@ public class TimeSeriesOutputMapper {
      *   <li>metric: labels for the time series</li>
      *   <li>values: array of [timestamp, value] pairs</li>
      *   <li>step: (optional) step size in milliseconds for this time series</li>
+     *   <li>start: (optional) start time in milliseconds for this time series</li>
+     *   <li>end: (optional) end time in milliseconds for this time series</li>
      * </ul>
      *
      * @param timeSeries The time series to transform
-     * @param includeStep Whether to include the step field
+     * @param includeMetadata Whether to include the metadata fields (step, start, end)
      * @return Map representing the Prometheus matrix format
      */
-    public static Map<String, Object> transformToPromMatrix(TimeSeries timeSeries, boolean includeStep) {
+    public static Map<String, Object> transformToPromMatrix(TimeSeries timeSeries, boolean includeMetadata) {
         Map<String, Object> series = new HashMap<>();
 
         // Add metric labels
@@ -101,9 +105,11 @@ public class TimeSeriesOutputMapper {
         // Transform samples to values array
         series.put(FIELD_VALUES, transformSamplesToValues(timeSeries.getSamples()));
 
-        // Optionally add step size in milliseconds (query resolution for this time series)
-        if (includeStep) {
+        // Optionally add metadata (step, start, end) in milliseconds for this time series
+        if (includeMetadata) {
             series.put(FIELD_STEP, timeSeries.getStep());
+            series.put(FIELD_START, timeSeries.getMinTimestamp());
+            series.put(FIELD_END, timeSeries.getMaxTimestamp());
         }
 
         return series;
@@ -172,19 +178,19 @@ public class TimeSeriesOutputMapper {
      *
      * @param aggregations The aggregations to extract from
      * @param finalAggName The name of the final aggregation to extract (null for all)
-     * @param includeStep Whether to include the step field in each time series
+     * @param includeMetadata Whether to include the metadata fields (step, start, end) in each time series
      * @return List of Prometheus matrix formatted results
      */
     public static List<Map<String, Object>> extractAndTransformToPromMatrix(
         Aggregations aggregations,
         String finalAggName,
-        boolean includeStep
+        boolean includeMetadata
     ) {
         List<Map<String, Object>> result = new ArrayList<>();
         List<TimeSeries> timeSeriesList = extractTimeSeriesFromAggregations(aggregations, finalAggName);
 
         for (TimeSeries timeSeries : timeSeriesList) {
-            result.add(transformToPromMatrix(timeSeries, includeStep));
+            result.add(transformToPromMatrix(timeSeries, includeMetadata));
         }
 
         return result;
