@@ -120,7 +120,9 @@ public class ClosedChunkIndex {
             doc.add(new StringField(Constants.IndexSchema.LABELS, labelRef, Field.Store.NO));
             doc.add(new SortedSetDocValuesField(Constants.IndexSchema.LABELS, labelRef));
         }
-        doc.add(new BinaryDocValuesField(Constants.IndexSchema.CHUNK, ClosedChunkIndexIO.serializeChunk(memChunk.getChunk())));
+        doc.add(
+            new BinaryDocValuesField(Constants.IndexSchema.CHUNK, ClosedChunkIndexIO.serializeChunk(memChunk.getCompoundChunk().toChunk()))
+        );
         doc.add(new LongPoint(Constants.IndexSchema.MIN_TIMESTAMP, memChunk.getMinTimestamp()));
         doc.add(new NumericDocValuesField(Constants.IndexSchema.MIN_TIMESTAMP, memChunk.getMinTimestamp()));
         doc.add(new LongPoint(Constants.IndexSchema.MAX_TIMESTAMP, memChunk.getMaxTimestamp()));
@@ -160,6 +162,14 @@ public class ClosedChunkIndex {
      */
     public ReaderManager getDirectoryReaderManager() {
         return directoryReaderManager;
+    }
+
+    public void commit() {
+        try {
+            indexWriter.commit();
+        } catch (Exception e) {
+            throw ExceptionsHelper.convertToRuntime(e);
+        }
     }
 
     /**

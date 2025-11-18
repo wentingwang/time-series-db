@@ -13,9 +13,8 @@ import org.opensearch.search.aggregations.bucket.global.InternalGlobal;
 import org.opensearch.search.aggregations.bucket.filter.FilterAggregationBuilder;
 import org.opensearch.search.aggregations.bucket.filter.InternalFilter;
 import org.opensearch.index.query.MatchAllQueryBuilder;
+import org.opensearch.tsdb.core.chunk.Encoding;
 import org.opensearch.tsdb.query.stage.PipelineStage;
-import org.opensearch.tsdb.core.chunk.ChunkAppender;
-import org.opensearch.tsdb.core.chunk.XORChunk;
 import org.opensearch.tsdb.core.head.MemChunk;
 import org.opensearch.tsdb.core.index.closed.ClosedChunkIndex;
 import org.opensearch.tsdb.core.model.FloatSample;
@@ -328,15 +327,11 @@ public class TSAggregationPluginTests extends TimeSeriesAggregatorTestCase {
         }
 
         // Create XOR compressed chunk
-        XORChunk chunk = new XORChunk();
-        ChunkAppender appender = chunk.appender();
-        for (FloatSample sample : samples) {
-            appender.append(sample.getTimestamp(), sample.getValue());
-        }
+        MemChunk memChunk = new MemChunk(samples.size(), minTimestamp, maxTimestamp, null, Encoding.XOR);
 
-        // Create MemChunk
-        MemChunk memChunk = new MemChunk(samples.size(), minTimestamp, maxTimestamp, null);
-        memChunk.setChunk(chunk);
+        for (FloatSample sample : samples) {
+            memChunk.append(sample.getTimestamp(), sample.getValue(), 0);
+        }
 
         // Add the chunk using the ClosedChunkIndex API
         index.addNewChunk(labels, memChunk);

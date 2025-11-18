@@ -127,6 +127,7 @@ public class RetentionFactoryTests extends OpenSearchTestCase {
             .put(IndexMetadata.SETTING_VERSION_CREATED, org.opensearch.Version.CURRENT)
             .put(TSDBPlugin.TSDB_ENGINE_RETENTION_TIME.getKey(), "5m") // Assuming block duration is greater than 5m
             .put(TSDBPlugin.TSDB_ENGINE_BLOCK_DURATION.getKey(), "10m")
+            .put(TSDBPlugin.TSDB_ENGINE_CHUNK_DURATION.getKey(), "2m")
             .build();
 
         IndexSettings indexSettings = new IndexSettings(
@@ -162,6 +163,7 @@ public class RetentionFactoryTests extends OpenSearchTestCase {
         Settings settings = Settings.builder()
             .put(IndexMetadata.SETTING_VERSION_CREATED, org.opensearch.Version.CURRENT)
             .put(TSDBPlugin.TSDB_ENGINE_BLOCK_DURATION.getKey(), "10m")
+            .put(TSDBPlugin.TSDB_ENGINE_CHUNK_DURATION.getKey(), "2m")
             .build();
 
         IndexSettings indexSettings = new IndexSettings(

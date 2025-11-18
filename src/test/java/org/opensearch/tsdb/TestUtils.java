@@ -15,9 +15,8 @@ import org.apache.lucene.search.IndexSearcher;
 import org.apache.lucene.search.MatchAllDocsQuery;
 import org.apache.lucene.search.ScoreDoc;
 import org.apache.lucene.search.TopDocs;
-import org.opensearch.tsdb.core.chunk.Chunk;
-import org.opensearch.tsdb.core.chunk.ChunkAppender;
-import org.opensearch.tsdb.core.chunk.XORChunk;
+import org.opensearch.tsdb.core.chunk.ChunkIterator;
+import org.opensearch.tsdb.core.chunk.Encoding;
 import org.opensearch.tsdb.core.head.MemChunk;
 import org.opensearch.tsdb.core.index.closed.ClosedChunk;
 import org.opensearch.tsdb.core.index.closed.ClosedChunkIndex;
@@ -152,16 +151,11 @@ public class TestUtils {
     public static MemChunk getMemChunk(int numSamples, long minTimestamp, long maxTimestamp) {
         long interval = (maxTimestamp - minTimestamp) / (numSamples - 1);
 
-        MemChunk chunk = new MemChunk(0, 0, maxTimestamp, null);
-        Chunk rawChunk = new XORChunk();
-        ChunkAppender appender = rawChunk.appender();
+        MemChunk chunk = new MemChunk(0, minTimestamp, maxTimestamp, null, Encoding.XOR);
         for (int i = 0; i < numSamples; i++) {
             long timestamp = minTimestamp + (i * interval);
-            appender.append(timestamp, i);
+            chunk.append(timestamp, i, i);
         }
-        chunk.setChunk(rawChunk);
-        chunk.setMinTimestamp(minTimestamp);
-        chunk.setMaxTimestamp(maxTimestamp);
         return chunk;
     }
 
@@ -205,6 +199,30 @@ public class TestUtils {
             }
         }
         return chunks;
+    }
+
+    /**
+     * Helper method to assert that a ChunkIterator contains exactly the expected timestamp-value pairs.
+     * @param it the iterator to check
+     * @param expectedTimestamps list of expected timestamps in order
+     * @param expectedValues list of expected values in order
+     */
+    public static void assertIteratorEquals(ChunkIterator it, List<Long> expectedTimestamps, List<Double> expectedValues) {
+        assertEquals("Timestamps and values must have same length", expectedTimestamps.size(), expectedValues.size());
+
+        List<Long> actualTimestamps = new ArrayList<>();
+        List<Double> actualValues = new ArrayList<>();
+        while (it.next() != ChunkIterator.ValueType.NONE) {
+            ChunkIterator.TimestampValue tv = it.at();
+            actualTimestamps.add(tv.timestamp());
+            actualValues.add(tv.value());
+        }
+
+        assertEquals("Iterator should have same number of elements", expectedTimestamps.size(), actualTimestamps.size());
+        for (int i = 0; i < expectedTimestamps.size(); i++) {
+            assertEquals("Timestamp at index " + i, expectedTimestamps.get(i).longValue(), actualTimestamps.get(i).longValue());
+            assertEquals("Value at index " + i, expectedValues.get(i), actualValues.get(i), 0.0001);
+        }
     }
 
     /**

@@ -7,6 +7,7 @@
  */
 package org.opensearch.tsdb.core.head;
 
+import org.opensearch.index.engine.Engine;
 import org.opensearch.tsdb.core.model.Labels;
 
 /**
@@ -16,6 +17,7 @@ public interface Appender {
     /**
      * Append a sample to the appender, and create a new series if needed.
      *
+     * @param origin the operation origin
      * @param seqNo the sequence number for ordering
      * @param reference the labels hash. This should be a stable hash of the labels. If not available, use labels.stableHash(). Accepting
      *                  an existing hash (e.g. from translog) allows for backwards compatibility as the hash algorithm may change.
@@ -25,7 +27,15 @@ public interface Appender {
      * @param failureCallback the callback to execute on failure
      * @return true if a new series was created, false otherwise
      */
-    boolean preprocess(long seqNo, long reference, Labels labels, long timestamp, double value, Runnable failureCallback);
+    boolean preprocess(
+        Engine.Operation.Origin origin,
+        long seqNo,
+        long reference,
+        Labels labels,
+        long timestamp,
+        double value,
+        Runnable failureCallback
+    );
 
     /**
      * Append the sample to the series found or created during preprocessing. Execute a callback under the series lock.

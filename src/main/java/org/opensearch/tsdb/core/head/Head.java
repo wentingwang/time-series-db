@@ -12,10 +12,12 @@ import org.opensearch.ExceptionsHelper;
 import org.opensearch.common.logging.Loggers;
 import org.opensearch.common.settings.Settings;
 import org.opensearch.core.index.shard.ShardId;
+import org.opensearch.index.engine.Engine;
 import org.opensearch.index.engine.TSDBEmptyLabelException;
+import org.opensearch.index.engine.TSDBOutOfOrderException;
 import org.opensearch.index.engine.TSDBTragicException;
 import org.opensearch.tsdb.TSDBPlugin;
-import org.opensearch.tsdb.core.chunk.Chunk;
+import org.opensearch.tsdb.core.chunk.ChunkIterator;
 import org.opensearch.tsdb.core.index.closed.ClosedChunkIndexManager;
 import org.opensearch.tsdb.core.index.live.LiveSeriesIndex;
 import org.opensearch.tsdb.core.index.live.MemChunkReader;
@@ -47,7 +49,7 @@ import java.util.concurrent.TimeUnit;
 public class Head {
     private static final String HEAD_DIR = "head";
     private final HeadAppender.AppendContext appendContext;
-    private final long staleChunkExpiry;
+    private final long oooCutoffWindow;
     private final Logger log;
     private final LiveSeriesIndex liveSeriesIndex;
     private final SeriesMap seriesMap;
@@ -67,11 +69,11 @@ public class Head {
         seriesMap = new SeriesMap();
 
         TimeUnit timeUnit = TimeUnit.valueOf(TSDBPlugin.TSDB_ENGINE_TIME_UNIT.get(indexSettings));
-        long chunkRange = Time.toTimestamp(TSDBPlugin.TSDB_ENGINE_BLOCK_DURATION.get(indexSettings), timeUnit);
+        long chunkRange = Time.toTimestamp(TSDBPlugin.TSDB_ENGINE_CHUNK_DURATION.get(indexSettings), timeUnit);
         appendContext = new HeadAppender.AppendContext(
             new ChunkOptions(chunkRange, TSDBPlugin.TSDB_ENGINE_SAMPLES_PER_CHUNK.get(indexSettings))
         );
-        staleChunkExpiry = Time.toTimestamp(TSDBPlugin.TSDB_ENGINE_CHUNK_EXPIRY.get(indexSettings), timeUnit);
+        oooCutoffWindow = Time.toTimestamp(TSDBPlugin.TSDB_ENGINE_OOO_CUTOFF.get(indexSettings), timeUnit);
 
         Path headDir = dir.resolve(HEAD_DIR);
         try {
@@ -234,8 +236,12 @@ public class Head {
     private IndexChunksResult indexCloseableChunks(List<MemSeries> seriesList) {
         long minSeqNo = Long.MAX_VALUE;
         Map<MemSeries, Set<MemChunk>> seriesToClosedChunks = new HashMap<>();
+
+        long cutoffTimestamp = maxTime - oooCutoffWindow;
+        log.info("Closing head chunks before timestamp: {}", cutoffTimestamp);
+
         for (MemSeries series : seriesList) {
-            MemSeries.ClosableChunkResult closeableChunkResult = series.getClosableChunks(maxTime, staleChunkExpiry);
+            MemSeries.ClosableChunkResult closeableChunkResult = series.getClosableChunks(cutoffTimestamp);
 
             var addedChunks = 0;
             for (MemChunk memChunk : closeableChunkResult.closableChunks()) {
@@ -253,15 +259,14 @@ public class Head {
                 }
             }
 
-            /*
-                If processed all chunks of a series.
-             */
             if (addedChunks == closeableChunkResult.closableChunks().size()) {
+                // If processed all chunks of a series.
                 if (closeableChunkResult.minSeqNo() < minSeqNo) {
                     minSeqNo = closeableChunkResult.minSeqNo();
                 }
-            } else { // If processed partially e.g. due to ongoing compaction, use first failed chunk's minSeq.
-                var failedChunk = closeableChunkResult.closableChunks().get(seriesToClosedChunks.get(series).size());
+            } else {
+                // If processed partially e.g. due to ongoing compaction, use first failed chunk's minSeq.
+                MemChunk failedChunk = closeableChunkResult.closableChunks().get(addedChunks);
                 if (failedChunk.getMinSeqNo() < minSeqNo) {
                     minSeqNo = failedChunk.getMinSeqNo();
                 }
@@ -414,9 +419,21 @@ public class Head {
         }
 
         @Override
-        public boolean preprocess(long seqNo, long reference, Labels labels, long timestamp, double value, Runnable failureCallback) {
+        public boolean preprocess(
+            Engine.Operation.Origin origin,
+            long seqNo,
+            long reference,
+            Labels labels,
+            long timestamp,
+            double value,
+            Runnable failureCallback
+        ) {
             try {
-                // TODO: OOO support
+                // Strictly enforce OOO window to prevent creating many old chunks, when chunks are subject to closing
+                if (origin == Engine.Operation.Origin.PRIMARY) {
+                    validateOOO(timestamp, failureCallback);
+                }
+
                 MemSeries series = head.getSeriesMap().getByReference(reference);
                 if (series == null || series.isFailed()) {
                     // Create a new series if none exists or if the existing series creation failed
@@ -425,13 +442,18 @@ public class Head {
                     seriesCreated = seriesResult.created();
                 }
                 this.series = series;
+                head.updateMaxSeenTimestamp(timestamp);
 
-                // During translog replay, skip appending in-order samples that are older than the last mmap chunk
-                if (timestamp <= series.getMaxMMapTimestamp()) {
-                    return false;
+                // During translog replay, skip appending samples for series that have already been mmaped beyond the sample timestamp.
+                // This will happen if there's a server crash after a ClosedChunkIndex is committed and before the TSDBEngine's
+                // MetadataIndexWriter has committed the updated local checkpoint, or around chunk boundaries where seqNo ordering may
+                // not match sample timestamp ordering. This prevents duplicate samples from being appended in this scenario.
+                // Since MaxMMAPTimestamp corresponds to the max timestamp of the closed chunk, which is exclusive, we skip samples with
+                // timestamp strictly less than it.
+                if (timestamp < series.getMaxMMapTimestamp()) {
+                    return seriesCreated; // TODO: add metric for skipped samples during translog replay
                 }
 
-                head.updateMaxSeenTimestamp(timestamp);
                 sample = new FloatSample(timestamp, value);
                 this.seqNo = seqNo;
                 return seriesCreated;
@@ -457,6 +479,27 @@ public class Head {
             }
 
             return head.getOrCreateSeries(hash, labels, timestamp);
+        }
+
+        private void validateOOO(long timestamp, Runnable failureCallback) {
+            if (head.maxTime == Long.MIN_VALUE) {
+                // no samples have been ingested yet, skip OOO check
+                return;
+            }
+
+            long cutoffTimestamp = head.maxTime - head.oooCutoffWindow;
+            if (timestamp < cutoffTimestamp) {
+                TSDBMetrics.incrementCounter(TSDBMetrics.INGESTION.oooSamplesRejected, 1);
+                failureCallback.run();
+                throw new TSDBOutOfOrderException(
+                    "Sample with timestamp "
+                        + timestamp
+                        + " is before OOO cutoff "
+                        + cutoffTimestamp
+                        + "based on max seen timestamp "
+                        + head.maxTime
+                );
+            }
         }
 
         @Override
@@ -498,14 +541,11 @@ public class Head {
                 // Execute the callback to write to translog under the series lock.
                 executeCallback(callback, failureCallback);
 
-                if (sample == null || series.isOOO(sample.getTimestamp())) {
-                    return false; // FIXME: OOO handling - for now skip to ensure compressed chunks are monotonically increasing
+                if (sample == null) {
+                    return false;
                 }
 
-                boolean chunkCreated = series.append(seqNo, sample.getTimestamp(), sample.getValue(), context.options());
-                if (chunkCreated) {
-                    TSDBMetrics.incrementCounter(TSDBMetrics.INGESTION.memChunksCreated, 1);
-                }
+                series.append(seqNo, sample.getTimestamp(), sample.getValue(), context.options());
                 return true;
             } finally {
                 series.unlock();
@@ -559,19 +599,19 @@ public class Head {
     private class HeadChunkReader implements MemChunkReader {
 
         @Override
-        public List<Chunk> getChunks(long reference) {
+        public List<ChunkIterator> getChunkIterators(long reference) {
             MemSeries series = seriesMap.getByReference(reference);
 
             if (series == null) {
                 return List.of();
             }
 
-            List<Chunk> chunks = new ArrayList<>();
+            List<ChunkIterator> chunks = new ArrayList<>();
             series.lock();
             try {
                 MemChunk current = series.getHeadChunk();
                 while (current != null) {
-                    chunks.add(current.getChunk());
+                    chunks.addAll(current.getCompoundChunk().getChunkIterators());
                     current = current.getPrev();
                 }
             } finally {

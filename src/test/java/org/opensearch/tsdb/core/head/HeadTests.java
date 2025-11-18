@@ -22,7 +22,9 @@ import org.opensearch.common.SuppressForbidden;
 import org.opensearch.common.settings.Settings;
 import org.opensearch.common.unit.TimeValue;
 import org.opensearch.core.index.shard.ShardId;
+import org.opensearch.index.engine.Engine;
 import org.opensearch.index.engine.TSDBEmptyLabelException;
+import org.opensearch.index.engine.TSDBOutOfOrderException;
 import org.opensearch.test.OpenSearchTestCase;
 import org.opensearch.threadpool.FixedExecutorBuilder;
 import org.opensearch.threadpool.TestThreadPool;
@@ -30,6 +32,7 @@ import org.opensearch.threadpool.ThreadPool;
 import org.opensearch.tsdb.InMemoryMetadataStore;
 import org.opensearch.tsdb.MetadataStore;
 import org.opensearch.tsdb.TSDBPlugin;
+import org.opensearch.tsdb.TestUtils;
 import org.opensearch.tsdb.core.chunk.Chunk;
 import org.opensearch.tsdb.core.chunk.ChunkIterator;
 import org.opensearch.tsdb.core.compaction.NoopCompaction;
@@ -44,10 +47,9 @@ import org.opensearch.tsdb.core.utils.Constants;
 
 import java.io.IOException;
 import java.nio.file.Path;
-import java.time.Duration;
-import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -56,12 +58,10 @@ import static org.mockito.Mockito.doReturn;
 
 public class HeadTests extends OpenSearchTestCase {
 
-    private static final TimeValue TEST_CHUNK_EXPIRY = TimeValue.timeValueMinutes(30);
-    private static final long TEST_BLOCK_DURATION = Duration.ofHours(2).toMillis();
-
     private final Settings defaultSettings = Settings.builder()
-        .put(TSDBPlugin.TSDB_ENGINE_BLOCK_DURATION.getKey(), TimeValue.timeValueHours(2))
-        .put(TSDBPlugin.TSDB_ENGINE_CHUNK_EXPIRY.getKey(), TEST_CHUNK_EXPIRY)
+        .put(TSDBPlugin.TSDB_ENGINE_BLOCK_DURATION.getKey(), TimeValue.timeValueMillis(48000))
+        .put(TSDBPlugin.TSDB_ENGINE_CHUNK_DURATION.getKey(), TimeValue.timeValueMillis(8000))
+        .put(TSDBPlugin.TSDB_ENGINE_OOO_CUTOFF.getKey(), TimeValue.timeValueMillis(8000))
         .put(TSDBPlugin.TSDB_ENGINE_SAMPLES_PER_CHUNK.getKey(), 120)
         .put(TSDBPlugin.TSDB_ENGINE_TIME_UNIT.getKey(), Constants.Time.DEFAULT_TIME_UNIT.toString())
         .build();
@@ -98,23 +98,16 @@ public class HeadTests extends OpenSearchTestCase {
             closedChunkIndexManager,
             defaultSettings
         );
-        Head.HeadAppender.AppendContext context = new Head.HeadAppender.AppendContext(new ChunkOptions(1000, 10));
         Labels seriesLabels = ByteLabels.fromStrings("k1", "v1", "k2", "v2");
 
-        List<Long> expectedTimestamps = new ArrayList<>();
-        List<Double> expectedValues = new ArrayList<>();
+        // create three chunks, with [7, 8, 2] samples respectively
+        for (int i = 1; i < 18; i++) {
+            long timestamp = i * 1000L;
+            double value = i;
 
-        // three batches create three chunks, with [8, 8, 2] samples respectively
-        int sample = 1;
-        for (int batch = 0; batch < 3; batch++) {
-            for (int i = 0; i < 6; i++) {
-                expectedTimestamps.add((long) sample);
-                expectedValues.add((double) i);
-
-                Head.HeadAppender appender = head.newAppender();
-                appender.preprocess(0, 0, seriesLabels, sample++, i, () -> {});
-                appender.appendSample(context, () -> {}, () -> {});
-            }
+            Head.HeadAppender appender = head.newAppender();
+            appender.preprocess(Engine.Operation.Origin.PRIMARY, 0, 0, seriesLabels, timestamp, value, () -> {});
+            appender.append(() -> {}, () -> {});
         }
 
         head.getLiveSeriesIndex().getDirectoryReaderManager().maybeRefreshBlocking();
@@ -139,26 +132,26 @@ public class HeadTests extends OpenSearchTestCase {
         assertEquals(3, seriesChunks.size());
 
         assertTrue("First chunk is closed", seriesChunks.get(0) instanceof ClosedChunk);
-        assertTrue("Second chunk is closed", seriesChunks.get(1) instanceof ClosedChunk);
+        assertTrue("Second chunk is still in-memory", seriesChunks.get(1) instanceof MemChunk);
         assertTrue("Third chunk is still in-memory", seriesChunks.get(2) instanceof MemChunk);
 
         ChunkIterator firstChunk = ((ClosedChunk) seriesChunks.get(0)).getChunkIterator();
-        ChunkIterator secondChunk = ((ClosedChunk) seriesChunks.get(1)).getChunkIterator();
-        Chunk thirdChunk = ((MemChunk) seriesChunks.get(2)).getChunk();
+        ChunkIterator secondChunk = ((MemChunk) seriesChunks.get(1)).getCompoundChunk().toChunk().iterator();
+        ChunkIterator thirdChunk = ((MemChunk) seriesChunks.get(2)).getCompoundChunk().toChunk().iterator();
 
-        assertEquals(thirdChunk.numSamples(), 2);
+        TestUtils.assertIteratorEquals(
+            firstChunk,
+            List.of(1000L, 2000L, 3000L, 4000L, 5000L, 6000L, 7000L),
+            List.of(1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0)
+        );
 
-        List<Long> actualTimestamps = new ArrayList<>();
-        List<Double> actualValues = new ArrayList<>();
-        appendIterator(firstChunk, actualTimestamps, actualValues);
-        assertEquals("First chunk should have 8 samples", 8, actualTimestamps.size());
-        appendIterator(secondChunk, actualTimestamps, actualValues);
-        assertEquals("First + second chunk should have 16 samples", 16, actualTimestamps.size());
-        appendChunk(thirdChunk, actualTimestamps, actualValues);
-        assertEquals("All three chunks should have 18 samples", 18, actualTimestamps.size());
+        TestUtils.assertIteratorEquals(
+            secondChunk,
+            List.of(8000L, 9000L, 10000L, 11000L, 12000L, 13000L, 14000L, 15000L),
+            List.of(8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0)
+        );
 
-        assertEquals(expectedTimestamps, actualTimestamps);
-        assertEquals(expectedValues, actualValues);
+        TestUtils.assertIteratorEquals(thirdChunk, List.of(16000L, 17000L), List.of(16.0, 17.0));
 
         head.close();
         closedChunkIndexManager.close();
@@ -178,17 +171,24 @@ public class HeadTests extends OpenSearchTestCase {
         );
         Head head = new Head(metricsPath, shardId, closedChunkIndexManager, defaultSettings);
 
-        Head.HeadAppender.AppendContext context = new Head.HeadAppender.AppendContext(new ChunkOptions(1000, 10));
         Labels seriesNoData = ByteLabels.fromStrings("k1", "v1", "k2", "v2");
         Labels seriesWithData = ByteLabels.fromStrings("k1", "v1", "k3", "v3");
 
         head.getOrCreateSeries(seriesNoData.stableHash(), seriesNoData, 0L);
         assertEquals("One series in the series map", 1, head.getSeriesMap().size());
         assertEquals("getNumSeries returns 1", 1, head.getNumSeries());
-        for (int i = 0; i < 10; i++) {
+        for (int i = 1; i < 18; i++) {
             Head.HeadAppender appender = head.newAppender();
-            appender.preprocess(i, seriesWithData.stableHash(), seriesWithData, i * 100L, i * 10.0, () -> {});
-            appender.appendSample(context, () -> {}, () -> {});
+            appender.preprocess(
+                Engine.Operation.Origin.PRIMARY,
+                i,
+                seriesWithData.stableHash(),
+                seriesWithData,
+                i * 1000L,
+                i * 10.0,
+                () -> {}
+            );
+            appender.append(() -> {}, () -> {});
         }
 
         assertEquals("getNumSeries returns 2", 2, head.getNumSeries());
@@ -203,7 +203,7 @@ public class HeadTests extends OpenSearchTestCase {
         assertEquals("getNumSeries returns 1", 1, head.getNumSeries());
 
         // Simulate advancing the time, so the series with data may have it's last chunk closed
-        head.updateMaxSeenTimestamp(TEST_CHUNK_EXPIRY.getMillis() + 1000L);
+        head.updateMaxSeenTimestamp(40000L); // last chunk has range 16000-24000, this should ensure maxTime - oooCutoff is beyond that
         assertEquals(Long.MAX_VALUE, head.closeHeadChunks(true));
 
         head.close();
@@ -226,25 +226,18 @@ public class HeadTests extends OpenSearchTestCase {
         Path headPath = createTempDir("testHeadRecovery");
 
         Head head = new Head(headPath, new ShardId("headTest", "headTestUid", 0), closedChunkIndexManager, defaultSettings);
-        Head.HeadAppender.AppendContext context = new Head.HeadAppender.AppendContext(new ChunkOptions(1001, 10));
         Labels series1 = ByteLabels.fromStrings("k1", "v1", "k2", "v2");
-        Labels series2 = ByteLabels.fromStrings("k1", "v1", "k3", "v3");
         long series1Reference = 1L;
-        long series2Reference = 2L;
+        long numSamples = 18;
 
-        for (int i = 0; i < 12; i++) {
+        for (int i = 0; i < numSamples; i++) {
             Head.HeadAppender appender1 = head.newAppender();
-            appender1.preprocess(i, series1Reference, series1, 100 * (i + 1), 10 * i, () -> {});
-            appender1.appendSample(context, () -> {}, () -> {});
-
-            Head.HeadAppender appender2 = head.newAppender();
-            appender2.preprocess(i, series2Reference, series2, 10 * (i + 1), 10 * i, () -> {});
-            appender2.appendSample(context, () -> {}, () -> {});
+            appender1.preprocess(Engine.Operation.Origin.PRIMARY, i, series1Reference, series1, 1000L * (i + 1), 10 * i, () -> {});
+            appender1.append(() -> {}, () -> {});
         }
 
-        // 10 samples per chunk, so closing head chunks at 12 should leave 2 in-memory in the live chunk
         long minSeqNo = head.closeHeadChunks(true);
-        assertEquals("10 samples were MMAPed, replay from minSeqNo + 1", 9, minSeqNo);
+        assertEquals("7 samples were MMAPed, replay from minSeqNo + 1", 6, minSeqNo);
         head.close();
         closedChunkIndexManager.close();
 
@@ -261,34 +254,23 @@ public class HeadTests extends OpenSearchTestCase {
 
         // MemSeries are correctly loaded and updated from commit data
         assertEquals(series1, newHead.getSeriesMap().getByReference(series1Reference).getLabels());
-        assertEquals(series2, newHead.getSeriesMap().getByReference(series2Reference).getLabels());
-        assertEquals(1000, newHead.getSeriesMap().getByReference(series1Reference).getMaxMMapTimestamp());
-        assertEquals(100, newHead.getSeriesMap().getByReference(series2Reference).getMaxMMapTimestamp());
-        assertEquals(11, newHead.getSeriesMap().getByReference(series1Reference).getMaxSeqNo());
-        assertEquals(11, newHead.getSeriesMap().getByReference(series2Reference).getMaxSeqNo());
+        assertEquals(8000, newHead.getSeriesMap().getByReference(series1Reference).getMaxMMapTimestamp());
+        assertEquals(17, newHead.getSeriesMap().getByReference(series1Reference).getMaxSeqNo());
 
         // The translog replay correctly skips MMAPed samples
         int i = 0;
-        while (i < 10) {
+        while (i < 7) {
             Head.HeadAppender appender1 = newHead.newAppender();
-            appender1.preprocess(i, series1Reference, series1, 100L * (i + 1), 10 * i, () -> {});
-            assertFalse("Previously MMAPed sample is not appended again", appender1.appendSample(context, () -> {}, () -> {}));
-
-            Head.HeadAppender appender2 = newHead.newAppender();
-            appender2.preprocess(i, series2Reference, series2, 10L * (i + 1), 10 * i, () -> {});
-            assertFalse("Previously MMAPed sample is not appended again", appender2.appendSample(context, () -> {}, () -> {}));
+            appender1.preprocess(Engine.Operation.Origin.PRIMARY, i, series1Reference, series1, 1000L * (i + 1), 10 * i, () -> {});
+            assertFalse("Previously MMAPed sample for seqNo " + i + " is not appended again", appender1.append(() -> {}, () -> {}));
             i++;
         }
 
         // non MMAPed samples are appended
-        while (i < 12) {
+        while (i < numSamples) {
             Head.HeadAppender appender1 = newHead.newAppender();
-            appender1.preprocess(i, series1Reference, series1, 100L * (i + 1), 10 * i, () -> {});
-            assertTrue("Previously in-memory sample is appended", appender1.appendSample(context, () -> {}, () -> {}));
-
-            Head.HeadAppender appender2 = newHead.newAppender();
-            appender2.preprocess(i, series2Reference, series2, 10L * (i + 1), 10 * i, () -> {});
-            assertTrue("Previously in-memory sample is appended", appender2.appendSample(context, () -> {}, () -> {}));
+            appender1.preprocess(Engine.Operation.Origin.PRIMARY, i, series1Reference, series1, 1000L * (i + 1), 10 * i, () -> {});
+            assertTrue("Previously in-memory sample for seqNo " + i + " is appended", appender1.append(() -> {}, () -> {}));
             i++;
         }
 
@@ -313,65 +295,88 @@ public class HeadTests extends OpenSearchTestCase {
             )
         );
         Path headPath = createTempDir("testHeadRecoveryWithCompaction");
+        Head head = new Head(headPath, shardId, closedChunkIndexManager, defaultSettings);
 
-        // Create 4 chunks across 4 indexes for series A.
-        long chunkRange = TEST_BLOCK_DURATION;
-        int samplesPerChunk = 8;
-        long step = TEST_BLOCK_DURATION / samplesPerChunk;
-        Head head = new Head(headPath, new ShardId("headTest", "headTestUid", 0), closedChunkIndexManager, defaultSettings);
-        Head.HeadAppender.AppendContext context = new Head.HeadAppender.AppendContext(new ChunkOptions(chunkRange, samplesPerChunk));
-        Labels series1 = ByteLabels.fromStrings("k1", "v1", "k2", "v2");
-        long series1Reference = 1L;
-        var seqNo = 0;
-        for (int i = 0; i < 32; i++) {
+        // Create series with multiple closable chunks
+        Labels seriesLabels = ByteLabels.fromStrings("k1", "v1", "k2", "v2");
+        long seriesRef = 1L;
+        long seqNo = 100; // Start at 100 to make tracking easier
+
+        // Create 5 chunks: [0-8000], [8000-16000], [16000-24000], [24000-32000], [32000-40000]
+        // Each chunk will have samples with incrementing seqNos
+        // 5 chunks are chosen to produce 4 closable chunks, which is an even number to ensure closed chunk selection logic using
+        // .addFirst doesn't have the same behavior as .add(last) for testing, and will be caught be mistakenly changed
+        for (int i = 0; i < 40; i++) {
             Head.HeadAppender appender = head.newAppender();
-            appender.preprocess(seqNo++, series1Reference, series1, step * (i + 1), 10 * i, () -> {});
-            appender.appendSample(context, () -> {}, () -> {});
+            appender.preprocess(Engine.Operation.Origin.PRIMARY, seqNo++, seriesRef, seriesLabels, 1000L * (i + 1), 10.0 * i, () -> {});
+            appender.append(() -> {}, () -> {});
         }
 
-        // Validate 4 indexes are created and closeHeadChunks return correct minSeq.
-        var minSeqNo = head.closeHeadChunks(true);
-        assertEquals(30, minSeqNo);
-        assertEquals(4, closedChunkIndexManager.getClosedChunkIndexes(Instant.ofEpochMilli(0), Instant.now()).size());
+        MemSeries series = head.getSeriesMap().getByReference(seriesRef);
 
-        // Create 8 chunks across 8 indexes for series B
-        Labels series2 = ByteLabels.fromStrings("k1", "v1", "k3", "v3");
-        long series2Reference = 2L;
-        for (int i = 0; i < 64; i++) {
-            Head.HeadAppender appender = head.newAppender();
-            appender.preprocess(seqNo++, series2Reference, series2, step * (i + 1), 10 * i, () -> {});
-            appender.appendSample(context, () -> {}, () -> {});
-        }
+        // With maxTime=40000, cutoff=40000-8000-0=32000
+        // Closable chunks (oldest to newest):
+        // index 0: [0-8000] (seqNo 100-106, minSeqNo=100)
+        // index 1: [8000-16000] (seqNo 107-114, minSeqNo=107)
+        // index 2: [16000-24000] (seqNo 115-122, minSeqNo=115)
+        // index 3: [24000-32000] (seqNo 123-130, minSeqNo=123)
+        // Non-closable: [32000-40000], [40000-48000]
 
-        // Setup to stop flushing of chunks at second chunk
-        var memSeries2 = head.getSeriesMap().getByReference(series2Reference);
-        var closableChunks = memSeries2.getClosableChunks(Instant.now().toEpochMilli(), TEST_CHUNK_EXPIRY.getMillis()).closableChunks();
-        doReturn(false).when(closedChunkIndexManager).addMemChunk(memSeries2, closableChunks.get(1));
+        // mock to fail on the 3rd closable chunk (index 2), 1st and 2nd succeed (indices 0 and 1)
+        MemSeries.ClosableChunkResult result = series.getClosableChunks(32000L);
+        doReturn(false).when(closedChunkIndexManager).addMemChunk(series, result.closableChunks().get(2));
 
-        // minSeq should increase by 8 (31+7)
-        minSeqNo = head.closeHeadChunks(true);
-        assertEquals(38, minSeqNo);
+        // closeHeadChunks should return minSeqNo of the first failed chunk minus 1
+        // First failed chunk is at index 2: [16000-24000] with minSeqNo 115
+        long minSeqNo = head.closeHeadChunks(true);
+        assertEquals(114, minSeqNo); // 115 - 1
+
         head.close();
+        closedChunkIndexManager.close();
+    }
 
-        // Reload the index should reinstate the previous state.
-        ClosedChunkIndexManager newClosedChunkIndexManager = new ClosedChunkIndexManager(
-            metricsPath,
-            metadataStore,
-            new NOOPRetention(),
-            new NoopCompaction(),
-            threadPool,
-            shardId,
-            defaultSettings
+    public void testHeadRecoveryWithFirstChunkFailing() throws IOException, InterruptedException {
+        ShardId shardId = new ShardId("headTest", "headTestUid", 0);
+        Path metricsPath = createTempDir("metricsStore");
+        MetadataStore metadataStore = new InMemoryMetadataStore();
+
+        ClosedChunkIndexManager closedChunkIndexManager = Mockito.spy(
+            new ClosedChunkIndexManager(
+                metricsPath,
+                metadataStore,
+                new NOOPRetention(),
+                new NoopCompaction(),
+                threadPool,
+                shardId,
+                defaultSettings
+            )
         );
-        Head newHead = new Head(headPath, new ShardId("headTest", "headTestUid", 0), newClosedChunkIndexManager, defaultSettings);
+        Path headPath = createTempDir("testHeadRecoveryWithFirstChunkFailing");
+        Head head = new Head(headPath, shardId, closedChunkIndexManager, defaultSettings);
 
-        // MemSeries are correctly loaded and updated from commit data
-        assertEquals(series2, newHead.getSeriesMap().getByReference(series2Reference).getLabels());
-        assertEquals(step * 7, newHead.getSeriesMap().getByReference(series2Reference).getMaxMMapTimestamp());
-        assertEquals(95, newHead.getSeriesMap().getByReference(series2Reference).getMaxSeqNo());
+        Labels seriesLabels = ByteLabels.fromStrings("k1", "v1", "k2", "v2");
+        long seriesRef = 1L;
+        long seqNo = 100;
 
-        newHead.close();
-        newClosedChunkIndexManager.close();
+        // Create 3 chunks: [0-8000], [8000-16000], [16000-24000]
+        for (int i = 0; i < 24; i++) {
+            Head.HeadAppender appender = head.newAppender();
+            appender.preprocess(Engine.Operation.Origin.PRIMARY, seqNo++, seriesRef, seriesLabels, 1000L * (i + 1), 10.0 * i, () -> {});
+            appender.append(() -> {}, () -> {});
+        }
+
+        MemSeries series = head.getSeriesMap().getByReference(seriesRef);
+
+        // mock to fail on the first closable chunk (index 0)
+        MemSeries.ClosableChunkResult result = series.getClosableChunks(16000L);
+        doReturn(false).when(closedChunkIndexManager).addMemChunk(series, result.closableChunks().getFirst());
+
+        // closeHeadChunks should handle the failure gracefully and return the first failed chunk's minSeqNo - 1
+        long minSeqNo = head.closeHeadChunks(true);
+        assertEquals(99, minSeqNo); // 100 - 1
+
+        head.close();
+        closedChunkIndexManager.close();
     }
 
     public void testHeadGetOrCreateSeries() throws IOException {
@@ -571,6 +576,7 @@ public class HeadTests extends OpenSearchTestCase {
                         startLatch.await();
                         Head.HeadAppender appender = head.newAppender();
                         results[threadId] = appender.preprocess(
+                            Engine.Operation.Origin.PRIMARY,
                             currentIter * numThreads + threadId,
                             currentHash,
                             currentLabels,
@@ -655,7 +661,7 @@ public class HeadTests extends OpenSearchTestCase {
         Labels labels = ByteLabels.fromStrings("k1", "v1", "k2", "v2");
         long hash = labels.stableHash();
         Head.HeadAppender appender = head.newAppender();
-        boolean created = appender.preprocess(0, hash, labels, 1000L, 100.0, () -> {});
+        boolean created = appender.preprocess(Engine.Operation.Origin.PRIMARY, 0, hash, labels, 1000L, 100.0, () -> {});
 
         assertTrue("Series should be created", created);
         MemSeries series = head.getSeriesMap().getByReference(hash);
@@ -738,6 +744,7 @@ public class HeadTests extends OpenSearchTestCase {
             }
         }
 
+        List<MemChunk> liveChunks = new ArrayList<>();
         // Query LiveSeriesIndex
         ReaderManager liveReaderManager = head.getLiveSeriesIndex().getDirectoryReaderManager();
         DirectoryReader liveReader = null;
@@ -762,7 +769,7 @@ public class HeadTests extends OpenSearchTestCase {
                             MemSeries series = head.getSeriesMap().getByReference(ref);
                             MemChunk chunk = series.getHeadChunk();
                             while (chunk != null) {
-                                chunks.add(chunk);
+                                liveChunks.add(chunk);
                                 chunk = chunk.getPrev();
                             }
                         }
@@ -775,6 +782,8 @@ public class HeadTests extends OpenSearchTestCase {
             }
         }
 
+        liveChunks.sort(Comparator.comparingLong(MemChunk::getMaxTimestamp));
+        chunks.addAll(liveChunks);
         return chunks;
     }
 
@@ -852,7 +861,15 @@ public class HeadTests extends OpenSearchTestCase {
                     try {
                         startLatch.await();
                         Head.HeadAppender appender = head.newAppender();
-                        boolean created = appender.preprocess(threadId, hash, labels, 100L + threadId, 1.0, () -> {});
+                        boolean created = appender.preprocess(
+                            Engine.Operation.Origin.PRIMARY,
+                            threadId,
+                            hash,
+                            labels,
+                            100L + threadId,
+                            1.0,
+                            () -> {}
+                        );
                         appender.append(() -> createdResults.add(created), () -> {});
                     } catch (InterruptedException e) {
                         fail("Thread was interrupted: " + e.getMessage());
@@ -908,7 +925,7 @@ public class HeadTests extends OpenSearchTestCase {
         // Expect exception for empty labels
         TSDBEmptyLabelException ex = assertThrows(
             TSDBEmptyLabelException.class,
-            () -> appender.preprocess(0, hash, emptyLabels, 2000L, 100.0, () -> {})
+            () -> appender.preprocess(Engine.Operation.Origin.PRIMARY, 0, hash, emptyLabels, 2000L, 100.0, () -> {})
         );
         assertTrue(ex.getMessage().contains("Labels"));
 
@@ -943,7 +960,7 @@ public class HeadTests extends OpenSearchTestCase {
         // This will throw a TSDBTragicException (or RuntimeException wrapping it)
         assertThrows(
             RuntimeException.class,
-            () -> appender.preprocess(0, hash, labels, 2000L, 100.0, () -> failureCallbackCalled[0] = true)
+            () -> appender.preprocess(Engine.Operation.Origin.PRIMARY, 0, hash, labels, 2000L, 100.0, () -> failureCallbackCalled[0] = true)
         );
 
         assertFalse("Failure callback should not be called for tragic exceptions", failureCallbackCalled[0]);
@@ -1003,7 +1020,7 @@ public class HeadTests extends OpenSearchTestCase {
         long hash = labels.stableHash();
 
         Head.HeadAppender appender = head.newAppender();
-        boolean created = appender.preprocess(0, hash, labels, 2000L, 100.0, () -> {});
+        boolean created = appender.preprocess(Engine.Operation.Origin.PRIMARY, 0, hash, labels, 2000L, 100.0, () -> {});
         assertTrue("Should create series", created);
 
         // Simulate callback failure - success callback throws exception
@@ -1046,13 +1063,13 @@ public class HeadTests extends OpenSearchTestCase {
 
         // 1. Successfully preprocess and append first sample
         Head.HeadAppender appender1 = head.newAppender();
-        boolean created1 = appender1.preprocess(0, hash, labels, 2000L, 100.0, () -> {});
+        boolean created1 = appender1.preprocess(Engine.Operation.Origin.PRIMARY, 0, hash, labels, 2000L, 100.0, () -> {});
         assertTrue("First appender should create series", created1);
         appender1.append(() -> {}, () -> {});
 
         // 2. For same series, preprocess next sample
         Head.HeadAppender appender2 = head.newAppender();
-        boolean created2 = appender2.preprocess(1, hash, labels, 3000L, 200.0, () -> {});
+        boolean created2 = appender2.preprocess(Engine.Operation.Origin.PRIMARY, 1, hash, labels, 3000L, 200.0, () -> {});
         assertFalse("Second appender should not create series", created2);
 
         // 3. Before append, set series to failed
@@ -1094,7 +1111,7 @@ public class HeadTests extends OpenSearchTestCase {
 
         // First attempt - create series and mark it as failed
         Head.HeadAppender appender1 = head.newAppender();
-        appender1.preprocess(0, hash, labels, 1000L, 100.0, () -> {});
+        appender1.preprocess(Engine.Operation.Origin.PRIMARY, 0, hash, labels, 1000L, 100.0, () -> {});
 
         MemSeries series1 = head.getSeriesMap().getByReference(hash);
         assertNotNull("First series should be created", series1);
@@ -1102,7 +1119,7 @@ public class HeadTests extends OpenSearchTestCase {
 
         // Second attempt - should create a new series replacing the failed one
         Head.HeadAppender appender2 = head.newAppender();
-        boolean created = appender2.preprocess(1, hash, labels, 2000L, 200.0, () -> {});
+        boolean created = appender2.preprocess(Engine.Operation.Origin.PRIMARY, 1, hash, labels, 2000L, 200.0, () -> {});
 
         assertTrue("Second preprocess should create a new series", created);
 
@@ -1110,6 +1127,120 @@ public class HeadTests extends OpenSearchTestCase {
         assertNotNull("Series should exist after retry", series2);
         assertFalse("New series should not be marked as failed", series2.isFailed());
         assertNotSame("Should be a different series instance", series1, series2);
+
+        head.close();
+        closedChunkIndexManager.close();
+    }
+
+    /**
+     * Test that OOO validation is enforced for PRIMARY origin.
+     */
+    public void testOOOValidationWithPrimaryOrigin() throws IOException, InterruptedException {
+        Path tempDir = createTempDir();
+        ShardId shardId = new ShardId("test", "test", 0);
+        ClosedChunkIndexManager closedChunkIndexManager = new ClosedChunkIndexManager(
+            tempDir,
+            new InMemoryMetadataStore(),
+            new NOOPRetention(),
+            new NoopCompaction(),
+            threadPool,
+            shardId,
+            defaultSettings
+        );
+        Head head = new Head(tempDir, shardId, closedChunkIndexManager, defaultSettings);
+
+        Labels labels = ByteLabels.fromStrings("__name__", "test_metric", "host", "server1");
+        long hash = labels.stableHash();
+
+        // First sample to establish maxTime
+        Head.HeadAppender appender1 = head.newAppender();
+        boolean created1 = appender1.preprocess(Engine.Operation.Origin.PRIMARY, 0, hash, labels, 10000L, 100.0, () -> {});
+        assertTrue("First sample should create series", created1);
+        appender1.append(() -> {}, () -> {});
+
+        // Sample within OOO window (OOO cutoff = 8000ms, so 10000 - 8000 = 2000). Sample at 5000 is within window.
+        Head.HeadAppender appender2 = head.newAppender();
+        boolean created2 = appender2.preprocess(Engine.Operation.Origin.PRIMARY, 1, hash, labels, 5000L, 200.0, () -> {});
+        assertFalse("Second sample should not create series", created2);
+        appender2.append(() -> {}, () -> {});
+
+        // Sample outside OOO window - should throw exception (1000 < 2000)
+        Head.HeadAppender appender3 = head.newAppender();
+        TSDBOutOfOrderException ex = assertThrows(
+            TSDBOutOfOrderException.class,
+            () -> appender3.preprocess(Engine.Operation.Origin.PRIMARY, 2, hash, labels, 1000L, 300.0, () -> {})
+        );
+        assertTrue("Exception message should mention OOO cutoff", ex.getMessage().contains("OOO cutoff"));
+
+        // Sample exactly at cutoff boundary (2000 == 2000) - should succeed
+        Head.HeadAppender appender4 = head.newAppender();
+        appender4.preprocess(Engine.Operation.Origin.PRIMARY, 3, hash, labels, 2000L, 400.0, () -> {});
+
+        // Sample 1ms before cutoff (1999 < 2000) - should fail
+        Head.HeadAppender appender5 = head.newAppender();
+        assertThrows(
+            TSDBOutOfOrderException.class,
+            () -> appender5.preprocess(Engine.Operation.Origin.PRIMARY, 4, hash, labels, 1999L, 500.0, () -> {})
+        );
+
+        head.close();
+        closedChunkIndexManager.close();
+    }
+
+    /**
+     * Test that OOO validation is bypassed for non-PRIMARY origins.
+     */
+    public void testOOOValidationBypassedForNonPrimaryOrigins() throws IOException, InterruptedException {
+        Path tempDir = createTempDir();
+        ShardId shardId = new ShardId("test", "test", 0);
+        ClosedChunkIndexManager closedChunkIndexManager = new ClosedChunkIndexManager(
+            tempDir,
+            new InMemoryMetadataStore(),
+            new NOOPRetention(),
+            new NoopCompaction(),
+            threadPool,
+            shardId,
+            defaultSettings
+        );
+        Head head = new Head(tempDir, shardId, closedChunkIndexManager, defaultSettings);
+
+        // Test REPLICA origin
+        Labels labels1 = ByteLabels.fromStrings("__name__", "metric1", "host", "server1");
+        long hash1 = labels1.stableHash();
+        Head.HeadAppender appender1 = head.newAppender();
+        appender1.preprocess(Engine.Operation.Origin.REPLICA, 0, hash1, labels1, 10000L, 100.0, () -> {});
+        appender1.append(() -> {}, () -> {});
+
+        Head.HeadAppender appender2 = head.newAppender();
+        appender2.preprocess(Engine.Operation.Origin.REPLICA, 1, hash1, labels1, 1000L, 200.0, () -> {});
+        appender2.append(() -> {}, () -> {});
+
+        // Test PEER_RECOVERY origin
+        Labels labels2 = ByteLabels.fromStrings("__name__", "metric2", "host", "server2");
+        long hash2 = labels2.stableHash();
+        Head.HeadAppender appender3 = head.newAppender();
+        appender3.preprocess(Engine.Operation.Origin.PEER_RECOVERY, 2, hash2, labels2, 10000L, 100.0, () -> {});
+        appender3.append(() -> {}, () -> {});
+
+        Head.HeadAppender appender4 = head.newAppender();
+        appender4.preprocess(Engine.Operation.Origin.PEER_RECOVERY, 3, hash2, labels2, 1000L, 200.0, () -> {});
+        appender4.append(() -> {}, () -> {});
+
+        // Test LOCAL_TRANSLOG_RECOVERY origin
+        Labels labels3 = ByteLabels.fromStrings("__name__", "metric3", "host", "server3");
+        long hash3 = labels3.stableHash();
+        Head.HeadAppender appender5 = head.newAppender();
+        appender5.preprocess(Engine.Operation.Origin.LOCAL_TRANSLOG_RECOVERY, 4, hash3, labels3, 10000L, 100.0, () -> {});
+        appender5.append(() -> {}, () -> {});
+
+        Head.HeadAppender appender6 = head.newAppender();
+        appender6.preprocess(Engine.Operation.Origin.LOCAL_TRANSLOG_RECOVERY, 5, hash3, labels3, 1000L, 200.0, () -> {});
+        appender6.append(() -> {}, () -> {});
+
+        // Verify all series exist with correct maxSeqNo
+        assertEquals(1, head.getSeriesMap().getByReference(hash1).getMaxSeqNo());
+        assertEquals(3, head.getSeriesMap().getByReference(hash2).getMaxSeqNo());
+        assertEquals(5, head.getSeriesMap().getByReference(hash3).getMaxSeqNo());
 
         head.close();
         closedChunkIndexManager.close();

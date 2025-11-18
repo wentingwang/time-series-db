@@ -23,6 +23,15 @@ public class TSDBIngestionMetrics {
     /** Counter for total number of memory chunks created */
     public Counter memChunksCreated;
 
+    /** Counter for total number of out-of-order samples rejected */
+    public Counter oooSamplesRejected;
+
+    /** Counter for OOO chunks created */
+    public Counter oooChunksCreated;
+
+    /** Counter for OOO chunks merged */
+    public Counter oooChunksMerged;
+
     /**
      * Initialize ingestion metrics. Called by TSDBMetrics.initialize().
      */
@@ -42,6 +51,21 @@ public class TSDBIngestionMetrics {
             TSDBMetricsConstants.MEMCHUNKS_CREATED_TOTAL_DESC,
             TSDBMetricsConstants.UNIT_COUNT
         );
+        oooSamplesRejected = registry.createCounter(
+            TSDBMetricsConstants.OOO_SAMPLES_REJECTED_TOTAL,
+            TSDBMetricsConstants.OOO_SAMPLES_REJECTED_TOTAL_DESC,
+            TSDBMetricsConstants.UNIT_COUNT
+        );
+        oooChunksCreated = registry.createCounter(
+            TSDBMetricsConstants.OOO_CHUNKS_CREATED_TOTAL,
+            TSDBMetricsConstants.OOO_CHUNKS_CREATED_TOTAL_DESC,
+            TSDBMetricsConstants.UNIT_COUNT
+        );
+        oooChunksMerged = registry.createCounter(
+            TSDBMetricsConstants.OOO_CHUNKS_MERGED_TOTAL,
+            TSDBMetricsConstants.OOO_CHUNKS_MERGED_TOTAL_DESC,
+            TSDBMetricsConstants.UNIT_COUNT
+        );
     }
 
     /**
@@ -51,5 +75,8 @@ public class TSDBIngestionMetrics {
         samplesIngested = null;
         seriesCreated = null;
         memChunksCreated = null;
+        oooSamplesRejected = null;
+        oooChunksCreated = null;
+        oooChunksMerged = null;
     }
 }

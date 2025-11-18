@@ -7,13 +7,32 @@
  */
 package org.opensearch.tsdb.utils;
 
+import org.apache.lucene.index.BinaryDocValues;
+import org.apache.lucene.index.IndexReader;
+import org.apache.lucene.index.LeafReader;
+import org.apache.lucene.index.LeafReaderContext;
+import org.apache.lucene.util.BytesRef;
+import org.opensearch.action.search.SearchResponse;
+import org.opensearch.transport.client.Client;
 import org.opensearch.common.xcontent.XContentFactory;
 import org.opensearch.core.xcontent.XContentBuilder;
+import org.opensearch.index.engine.Engine;
+import org.opensearch.index.engine.TSDBEngine;
+import org.opensearch.search.aggregations.AggregationBuilder;
+import org.opensearch.tsdb.core.chunk.ChunkIterator;
+import org.opensearch.tsdb.core.head.Head;
+import org.opensearch.tsdb.core.head.MemChunk;
+import org.opensearch.tsdb.core.head.MemSeries;
+import org.opensearch.tsdb.core.index.closed.ClosedChunkIndexIO;
 import org.opensearch.tsdb.core.mapping.Constants;
 import org.opensearch.tsdb.core.model.Labels;
 import org.opensearch.tsdb.framework.models.TimeSeriesSample;
+import org.opensearch.tsdb.query.aggregator.InternalTimeSeries;
+import org.opensearch.tsdb.query.aggregator.TimeSeries;
+import org.opensearch.tsdb.query.aggregator.TimeSeriesUnfoldAggregationBuilder;
 
 import java.io.IOException;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
@@ -92,5 +111,90 @@ public final class TSDBTestUtils {
             sb.append(String.format(Locale.ROOT, "%s %s", entry.getKey(), entry.getValue()));
         }
         return sb.toString();
+    }
+
+    /**
+     * Count all samples in a TSDBEngine from both head (in-memory) and closed (on-disk) chunks.
+     *
+     * @param engine The TSDBEngine to count samples from
+     * @return Total number of samples across all chunks
+     */
+    public static long countSamples(TSDBEngine engine, Head head) throws Exception {
+        long totalSamples = 0;
+
+        // 1. Count samples in head chunks (in-memory, not yet mmapped)
+        for (MemSeries series : head.getSeriesMap().getSeriesMap()) {
+            MemChunk chunk = series.getHeadChunk();
+            while (chunk != null) {
+                ChunkIterator iterator = chunk.getCompoundChunk().toChunk().iterator();
+                while (iterator.next() != org.opensearch.tsdb.core.chunk.ChunkIterator.ValueType.NONE) {
+                    totalSamples++;
+                }
+                chunk = chunk.getPrev();
+            }
+        }
+
+        // 2. Count samples in closed chunks (mmapped to disk, compressed in Lucene docs)
+        // Each Lucene document contains a compressed chunk with many samples
+        try (Engine.Searcher searcher = engine.acquireSearcher("count_samples")) {
+            IndexReader reader = searcher.getDirectoryReader();
+
+            // Iterate through all documents in closed chunk indexes
+            for (LeafReaderContext context : reader.leaves()) {
+                LeafReader leafReader = context.reader();
+
+                // Get the chunks field which contains compressed sample data
+                BinaryDocValues chunksField = leafReader.getBinaryDocValues(Constants.IndexSchema.CHUNK);
+
+                if (chunksField == null) {
+                    continue; // No chunks in this segment
+                }
+
+                // Iterate through all docs in this segment
+                for (int doc = 0; doc < leafReader.maxDoc(); doc++) {
+                    if (chunksField.advanceExact(doc)) {
+                        // Decompress the chunk and count samples
+                        BytesRef chunkBytes = chunksField.binaryValue();
+
+                        // Decode the chunk to get individual samples
+                        ChunkIterator chunkIterator = ClosedChunkIndexIO.getClosedChunkFromSerialized(chunkBytes).getChunkIterator();
+
+                        while (chunkIterator.next() != ChunkIterator.ValueType.NONE) {
+                            totalSamples++;
+                        }
+                    }
+                }
+            }
+        }
+
+        return totalSamples;
+    }
+
+    /**
+     * Get sample count from an index using TimeSeriesUnfold aggregation.
+     * This is useful for integration tests where you need to verify sample counts via the search API.
+     *
+     * @param client The OpenSearch client
+     * @param indexName The name of the index to query
+     * @param startTime Start of the time range (inclusive)
+     * @param endTime End of the time range (inclusive)
+     * @param interval Interval for the aggregation
+     * @return Total number of samples across all time series in the time range
+     */
+    public static int getSampleCountViaAggregation(Client client, String indexName, long startTime, long endTime, long interval) {
+        AggregationBuilder aggregation = new TimeSeriesUnfoldAggregationBuilder("raw_unfold", List.of(), startTime, endTime, interval);
+        SearchResponse aggResponse = client.prepareSearch(indexName).setSize(0).addAggregation(aggregation).get();
+
+        InternalTimeSeries unfoldResult = aggResponse.getAggregations().get("raw_unfold");
+        if (unfoldResult == null || unfoldResult.getTimeSeries().isEmpty()) {
+            return 0;
+        }
+
+        // Sum up samples from all time series
+        int totalSamples = 0;
+        for (TimeSeries series : unfoldResult.getTimeSeries()) {
+            totalSamples += series.getSamples().size();
+        }
+        return totalSamples;
     }
 }

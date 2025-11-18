@@ -32,8 +32,7 @@ import org.apache.lucene.store.ByteBuffersDirectory;
 import org.apache.lucene.store.Directory;
 import org.opensearch.common.SuppressForbidden;
 import org.opensearch.test.OpenSearchTestCase;
-import org.opensearch.tsdb.core.chunk.ChunkAppender;
-import org.opensearch.tsdb.core.chunk.XORChunk;
+import org.opensearch.tsdb.core.chunk.Encoding;
 import org.opensearch.tsdb.core.head.MemChunk;
 import org.opensearch.tsdb.core.index.closed.ClosedChunkIndexIO;
 import org.opensearch.tsdb.core.index.closed.ClosedChunkIndexManager;
@@ -89,13 +88,11 @@ public class TSDBDirectoryReaderTests extends OpenSearchTestCase {
 
         // Initialize memChunks list for testing
         referenceToMemChunkMap = this.getMemChunksForLiveIndex();
-        memChunkReader = (reference) -> {
-            return referenceToMemChunkMap.getOrDefault(reference, new ArrayList<>())
-                .stream()
-                .map(MemChunk::getChunk)
-                .filter(chunk -> chunk != null)
-                .collect(Collectors.toList());
-        };
+        memChunkReader = (reference) -> referenceToMemChunkMap.getOrDefault(reference, new ArrayList<>())
+            .stream()
+            .map(MemChunk::getCompoundChunk)
+            .flatMap(compoundChunk -> compoundChunk.getChunkIterators().stream())
+            .collect(Collectors.toList());
 
         // Create some test documents for live index (similar to LiveSeriesIndex)
         liveWriter = new IndexWriter(liveDirectory, new IndexWriterConfig(new WhitespaceAnalyzer()));
@@ -1341,7 +1338,9 @@ public class TSDBDirectoryReaderTests extends OpenSearchTestCase {
         MemChunk memChunk = getMockChunk(mint, maxt);
 
         doc.add(new StringField(Constants.IndexSchema.LABELS, labels, Field.Store.NO));
-        doc.add(new BinaryDocValuesField(Constants.IndexSchema.CHUNK, ClosedChunkIndexIO.serializeChunk(memChunk.getChunk())));
+        doc.add(
+            new BinaryDocValuesField(Constants.IndexSchema.CHUNK, ClosedChunkIndexIO.serializeChunk(memChunk.getCompoundChunk().toChunk()))
+        );
         doc.add(new LongPoint(Constants.IndexSchema.MIN_TIMESTAMP, memChunk.getMinTimestamp()));
         doc.add(new NumericDocValuesField(Constants.IndexSchema.MIN_TIMESTAMP, memChunk.getMinTimestamp()));
         doc.add(new LongPoint(Constants.IndexSchema.MAX_TIMESTAMP, memChunk.getMaxTimestamp()));
@@ -1350,15 +1349,12 @@ public class TSDBDirectoryReaderTests extends OpenSearchTestCase {
     }
 
     private MemChunk getMockChunk(long mint, long maxt) {
-        MemChunk memChunk = new MemChunk(1, mint, maxt, null);
-        XORChunk xorChunk = new XORChunk();
-        ChunkAppender appender = xorChunk.appender();
+        MemChunk memChunk = new MemChunk(1, mint, maxt, null, Encoding.XOR);
 
         for (long i = 0; i < 10; i++) {
             double value = i * 1.5;
-            appender.append(i, value);
+            memChunk.append(i, value, 0L);
         }
-        memChunk.setChunk(xorChunk);
         return memChunk;
     }
 }

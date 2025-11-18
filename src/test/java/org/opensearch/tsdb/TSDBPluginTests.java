@@ -68,10 +68,11 @@ public class TSDBPluginTests extends OpenSearchTestCase {
         List<Setting<?>> settings = plugin.getSettings();
 
         assertNotNull("Settings list should not be null", settings);
-        assertThat("Should have 9 setting", settings, hasSize(9));
+        assertThat("Should have 10 settings", settings, hasSize(10));
 
         // Verify TSDB_ENGINE_ENABLED is present
         assertTrue("Should contain TSDB_ENGINE_ENABLED setting", settings.contains(TSDBPlugin.TSDB_ENGINE_ENABLED));
+
         assertTrue("Should contain TSDB_ENGINE_RETENTION_TIME_SETTING setting", settings.contains(TSDBPlugin.TSDB_ENGINE_RETENTION_TIME));
 
         assertTrue("Should contain TSDB_ENGINE_RETENTION_FREQUENCY setting", settings.contains(TSDBPlugin.TSDB_ENGINE_RETENTION_FREQUENCY));
@@ -79,17 +80,16 @@ public class TSDBPluginTests extends OpenSearchTestCase {
         assertTrue("Should contain TSDB_ENGINE_COMPACTION_SETTING setting", settings.contains(TSDBPlugin.TSDB_ENGINE_COMPACTION_TYPE));
 
         assertTrue("Should contain TSDB_ENGINE_COMPACTION_SETTING setting", settings.contains(TSDBPlugin.TSDB_ENGINE_COMPACTION_FREQUENCY));
+
+        assertTrue("Should contain TSDB_ENGINE_CHUNK_DURATION setting", settings.contains(TSDBPlugin.TSDB_ENGINE_CHUNK_DURATION));
+
         assertTrue("Should contain TSDB_ENGINE_BLOCK_DURATION setting", settings.contains(TSDBPlugin.TSDB_ENGINE_BLOCK_DURATION));
 
-        assertTrue("Should contain TSDB_ENGINE_CHUNK_EXPIRY setting", settings.contains(TSDBPlugin.TSDB_ENGINE_CHUNK_EXPIRY));
-
-        assertTrue(
-            "Should contain TSDB_ENGINE_TARGET_SAMPLES_PER_CHUNK setting",
-            settings.contains(TSDBPlugin.TSDB_ENGINE_SAMPLES_PER_CHUNK)
-        );
+        assertTrue("Should contain TSDB_ENGINE_SAMPLES_PER_CHUNK setting", settings.contains(TSDBPlugin.TSDB_ENGINE_SAMPLES_PER_CHUNK));
 
         assertTrue("Should contain TSDB_ENGINE_TIME_UNIT setting", settings.contains(TSDBPlugin.TSDB_ENGINE_TIME_UNIT));
 
+        assertTrue("Should contain TSDB_ENGINE_OOO_CUTOFF setting", settings.contains(TSDBPlugin.TSDB_ENGINE_OOO_CUTOFF));
     }
 
     public void testTSDBEngineEnabledSetting() {
@@ -135,6 +135,57 @@ public class TSDBPluginTests extends OpenSearchTestCase {
             "Exception message should indicate invalid time unit",
             exception.getMessage(),
             containsString("Invalid time unit: INVALID_UNIT. Only MILLISECONDS currently supported")
+        );
+    }
+
+    public void testChunkAndBlockDurationValidation() {
+        // Start with initial valid settings: 2h block, 20min chunk
+        Settings settings = Settings.builder()
+            .put("index.tsdb_engine.chunk.duration", "20m")
+            .put("index.tsdb_engine.block.duration", "2h")
+            .build();
+
+        // Verify initial settings are valid
+        TSDBPlugin.TSDB_ENGINE_CHUNK_DURATION.get(settings);
+        TSDBPlugin.TSDB_ENGINE_BLOCK_DURATION.get(settings);
+
+        // Update both to new valid values: 3h block, 15min chunk (180 % 15 = 0)
+        settings = Settings.builder().put("index.tsdb_engine.chunk.duration", "15m").put("index.tsdb_engine.block.duration", "3h").build();
+
+        // Should not throw - both updates create valid configuration
+        TSDBPlugin.TSDB_ENGINE_CHUNK_DURATION.get(settings);
+        TSDBPlugin.TSDB_ENGINE_BLOCK_DURATION.get(settings);
+    }
+
+    public void testChunkAndBlockDurationBothInvalid() {
+        // Try to update both to invalid values: 1h block, 25min chunk (60 % 25 = 10, invalid)
+        Settings settings = Settings.builder()
+            .put("index.tsdb_engine.chunk.duration", "25m")
+            .put("index.tsdb_engine.block.duration", "1h")
+            .build();
+
+        // Both validators will catch this, but block duration validator runs when we get block duration
+        IllegalArgumentException exception = expectThrows(
+            IllegalArgumentException.class,
+            () -> TSDBPlugin.TSDB_ENGINE_BLOCK_DURATION.get(settings)
+        );
+
+        assertThat(
+            "Exception message should explain the validation requirement",
+            exception.getMessage(),
+            containsString("must be an even multiple of")
+        );
+
+        // Chunk duration validator should also catch this
+        IllegalArgumentException exception2 = expectThrows(
+            IllegalArgumentException.class,
+            () -> TSDBPlugin.TSDB_ENGINE_CHUNK_DURATION.get(settings)
+        );
+
+        assertThat(
+            "Exception message should explain the validation requirement",
+            exception2.getMessage(),
+            containsString("must be an even multiple of")
         );
     }
 

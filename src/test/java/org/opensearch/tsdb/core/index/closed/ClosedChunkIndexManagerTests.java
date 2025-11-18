@@ -49,7 +49,6 @@ public class ClosedChunkIndexManagerTests extends OpenSearchTestCase {
 
     private final Settings defaultSettings = Settings.builder()
         .put(TSDBPlugin.TSDB_ENGINE_BLOCK_DURATION.getKey(), TimeValue.timeValueHours(2))
-        .put(TSDBPlugin.TSDB_ENGINE_CHUNK_EXPIRY.getKey(), TimeValue.timeValueMinutes(30))
         .put(TSDBPlugin.TSDB_ENGINE_SAMPLES_PER_CHUNK.getKey(), 120)
         .put(TSDBPlugin.TSDB_ENGINE_TIME_UNIT.getKey(), org.opensearch.tsdb.core.utils.Constants.Time.DEFAULT_TIME_UNIT.toString())
         .build();

@@ -24,6 +24,7 @@ import org.apache.lucene.util.BytesRef;
 import org.opensearch.test.OpenSearchTestCase;
 import org.opensearch.tsdb.core.chunk.ChunkAppender;
 import org.opensearch.tsdb.core.chunk.ChunkIterator;
+import org.opensearch.tsdb.core.chunk.Encoding;
 import org.opensearch.tsdb.core.chunk.XORChunk;
 import org.opensearch.tsdb.core.head.MemChunk;
 import org.opensearch.tsdb.core.model.Labels;
@@ -370,14 +371,11 @@ public class ClosedChunkIndexLeafReaderTests extends OpenSearchTestCase {
 
     private void createTestDocument() throws IOException {
         // Create test chunk
-        MemChunk memChunk = new MemChunk(1, 1000L, 3000L, null);
-        XORChunk chunk = new XORChunk();
-        ChunkAppender appender = chunk.appender();
-        appender.append(1000L, 42.0);
-        appender.append(2000L, 43.0);
-        memChunk.setChunk(chunk);
+        MemChunk memChunk = new MemChunk(1, 1000L, 3000L, null, Encoding.XOR);
+        memChunk.append(1000L, 42.0, 1L);
+        memChunk.append(2000L, 43.0, 2L);
 
-        BytesRef serializedChunk = ClosedChunkIndexIO.serializeChunk(memChunk.getChunk());
+        BytesRef serializedChunk = ClosedChunkIndexIO.serializeChunk(memChunk.getCompoundChunk().toChunk());
 
         Document doc = new Document();
         doc.add(new BinaryDocValuesField(CHUNK, serializedChunk));

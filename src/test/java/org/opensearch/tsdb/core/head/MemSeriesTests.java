@@ -7,20 +7,22 @@
  */
 package org.opensearch.tsdb.core.head;
 
-import org.opensearch.common.unit.TimeValue;
 import org.opensearch.test.OpenSearchTestCase;
+import org.opensearch.tsdb.TestUtils;
+import org.opensearch.tsdb.core.chunk.ChunkIterator;
+import org.opensearch.tsdb.core.chunk.DedupIterator;
+import org.opensearch.tsdb.core.chunk.MergeIterator;
 import org.opensearch.tsdb.core.model.ByteLabels;
 import org.opensearch.tsdb.core.model.Labels;
 
+import java.util.List;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
 public class MemSeriesTests extends OpenSearchTestCase {
 
-    private static final long TEST_CHUNK_EXPIRY = TimeValue.timeValueMinutes(30).getMillis();
-
-    public void testAppend() {
+    public void testAppendInOrder() {
         Labels labels = ByteLabels.fromStrings("k1", "v1", "k2", "v2");
         MemSeries series = new MemSeries(123L, labels);
 
@@ -29,84 +31,230 @@ public class MemSeriesTests extends OpenSearchTestCase {
         // Append samples up to 25% of samplesPerChunk (2 samples)
         long timestamp1 = 1000L;
         double value1 = 10.0;
-        boolean created1 = series.append(0, timestamp1, value1, options);
+        series.append(1, timestamp1, value1, options);
 
         long timestamp2 = 2000L;
         double value2 = 20.0;
-        boolean created2 = series.append(0, timestamp2, value2, options);
+        series.append(2, timestamp2, value2, options);
 
-        // Verify that the first two appends didn't create a new chunk
-        assertTrue(created1);
-        assertFalse(created2);
-        assertEquals(timestamp1, series.getHeadChunk().getMinTimestamp());
-        assertEquals(timestamp2, series.getHeadChunk().getMaxTimestamp());
-        assertEquals(2, series.getHeadChunk().getChunk().numSamples());
+        // Verify that the first two appends created a single chunk
+        assertEquals(1, series.getHeadChunk().len());
+        assertEquals(0L, series.getHeadChunk().getMinTimestamp());
+        assertEquals(8000L, series.getHeadChunk().getMaxTimestamp());
+        assertEquals(2, series.getHeadChunk().getCompoundChunk().getChunkIterators().getFirst().totalSamples());
 
         // Append more samples to reach samplesPerChunk
-        for (int i = 3; i <= 8; i++) {
+        for (int i = 3; i < 8; i++) {
             long timestamp = i * 1000L;
-            double value = i * 10.0;
-            boolean created = series.append(0, timestamp, value, options);
-
-            // The 9th sample should create a new chunk because we reached samplesPerChunk
-            if (i == 8) {
-                assertTrue(created);
-                assertEquals(8000L, series.getHeadChunk().getMinTimestamp());
-                assertEquals(8000L, series.getHeadChunk().getMaxTimestamp());
-                assertEquals(1, series.getHeadChunk().getChunk().numSamples());
-            } else {
-                assertFalse(created);
-            }
-        }
-    }
-
-    public void testGetClosableChunksHeadExpiration() {
-        MemSeries series = new MemSeries(123L, ByteLabels.fromStrings("k1", "v1", "k2", "v2"));
-        MemSeries.ClosableChunkResult result = series.getClosableChunks(2000L, TEST_CHUNK_EXPIRY);
-        assertTrue(result.closableChunks().isEmpty());
-        assertEquals(Long.MAX_VALUE, result.minSeqNo());
-
-        ChunkOptions options = new ChunkOptions(8000, 8);
-
-        series.append(10, 1000L, 10.0, options);
-        series.append(11, 2000L, 20.0, options);
-
-        // cannot close the head chunk if it's modified recently
-        result = series.getClosableChunks(2000L, TEST_CHUNK_EXPIRY);
-        assertTrue(result.closableChunks().isEmpty());
-        assertEquals(10, result.minSeqNo());
-
-        // can close the head chunk if its hasn't been modified for a long time
-        result = series.getClosableChunks(2000L + TEST_CHUNK_EXPIRY + 1, TEST_CHUNK_EXPIRY);
-        assertEquals(1, result.closableChunks().size());
-        assertEquals(Long.MAX_VALUE, result.minSeqNo());
-    }
-
-    public void testGetClosableChunksHead() {
-        MemSeries series = createMemSeries(3); // creates 3 chunks with 8 samples each
-        assertEquals("3 chunks created", 3, series.getHeadChunk().len());
-
-        MemSeries.ClosableChunkResult result = series.getClosableChunks(25000L, TEST_CHUNK_EXPIRY);
-        assertEquals(2, result.closableChunks().size());
-        assertEquals(16, result.minSeqNo());
-        assertFalse("head chunk is not closable", result.closableChunks().contains(series.getHeadChunk()));
-    }
-
-    public void testGetClosableChunksHeadWithOutOfOrderSeqNoIngestion() {
-        Labels labels = ByteLabels.fromStrings("k1", "v1", "k2", "v2");
-        MemSeries series = new MemSeries(123L, labels);
-        ChunkOptions options = new ChunkOptions(8000, 8);
-
-        // Ingest samples in decreasing seqNo.
-        for (int i = 12; i > 0; i--) {
-            long timestamp = (12 - i) * 1000L;
             double value = i * 10.0;
             series.append(i, timestamp, value, options);
         }
 
-        var result = series.getClosableChunks(10000L, TEST_CHUNK_EXPIRY);
+        // Only the first chunk should exist, and holds all 7 appended samples
+        assertEquals(1, series.getHeadChunk().len());
+        assertEquals(7, series.getHeadChunk().getCompoundChunk().getChunkIterators().getFirst().totalSamples());
+
+        // Verify that appending a sample with timestamp equal to the chunk boundary creates a new chunk
+        series.append(8, 8000L, 80.0, options);
+        assertEquals(2, series.getHeadChunk().len());
+        assertEquals(8000L, series.getHeadChunk().getMinTimestamp());
+        assertEquals(16000, series.getHeadChunk().getMaxTimestamp());
+        assertEquals(1, series.getHeadChunk().getCompoundChunk().getChunkIterators().getFirst().totalSamples());
+        assertEquals(7, series.getHeadChunk().getPrev().getCompoundChunk().getChunkIterators().getFirst().totalSamples());
+    }
+
+    public void testAppendOutOfOrder() {
+        Labels labels = ByteLabels.fromStrings("k1", "v1", "k2", "v2");
+        MemSeries series = new MemSeries(123L, labels);
+
+        ChunkOptions options = new ChunkOptions(8000, 8);
+
+        // Append samples out of order
+        series.append(2, 2000L, 20.0, options);
+        series.append(1, 1000L, 10.0, options);
+        series.append(4, 4000L, 40.0, options);
+        series.append(3, 3000L, 30.0, options);
+
+        // Verify that all samples are in the same chunk and in correct order
+        assertEquals(1, series.getHeadChunk().len());
+
+        ChunkIterator it = getMergedDedupedIterator(series.getHeadChunk().getCompoundChunk().getChunkIterators());
+        TestUtils.assertIteratorEquals(it, List.of(1000L, 2000L, 3000L, 4000L), List.of(10.0, 20.0, 30.0, 40.0));
+    }
+
+    /**
+     * Test inserting old chunks in various positions (beginning, middle) maintains correct temporal order.
+     */
+    public void testAppendOutOfOrderChunkInsertion() {
+        Labels labels = ByteLabels.fromStrings("k1", "v1", "k2", "v2");
+        MemSeries series = new MemSeries(123L, labels);
+        ChunkOptions options = new ChunkOptions(8000, 8);
+
+        // Create chunks [8000-16000] and [24000-32000] with gap in between
+        series.append(1, 9000L, 9.0, options);
+        series.append(2, 25000L, 25.0, options);
+        MemChunk head = series.getHeadChunk();
+
+        // Insert chunk at beginning [0-8000]
+        series.append(3, 1000L, 1.0, options);
+        assertEquals(3, series.getHeadChunk().len());
+        assertEquals(head, series.getHeadChunk()); // Head unchanged
+        assertEquals(0L, series.getHeadChunk().oldest().getMinTimestamp());
+
+        // Insert chunk in middle [16000-24000]
+        series.append(4, 17000L, 17.0, options);
+        assertEquals(4, series.getHeadChunk().len());
+        assertEquals(head, series.getHeadChunk()); // Head unchanged
+
+        // Verify linked list structure: [0-8000] -> [8000-16000] -> [16000-24000] -> [24000-32000]
+        MemChunk chunk = series.getHeadChunk().oldest();
+        assertEquals(0L, chunk.getMinTimestamp());
+        chunk = chunk.getNext();
+        assertEquals(8000L, chunk.getMinTimestamp());
+        chunk = chunk.getNext();
+        assertEquals(16000L, chunk.getMinTimestamp());
+        chunk = chunk.getNext();
+        assertEquals(24000L, chunk.getMinTimestamp());
+        assertEquals(head, chunk);
+        assertNull(chunk.getNext());
+    }
+
+    public void testChunkRangeChangeForHeadChunks() {
+        Labels labels = ByteLabels.fromStrings("k1", "v1", "k2", "v2");
+        MemSeries series = new MemSeries(123L, labels);
+
+        // Create first chunk with range 8000: [0-8000]
+        ChunkOptions options1 = new ChunkOptions(8000, 8);
+        series.append(1, 1000L, 1.0, options1);
+        MemChunk firstChunk = series.getHeadChunk();
+
+        // Append to existing chunk with different range - should reuse existing
+        ChunkOptions options2 = new ChunkOptions(4000, 8);
+        series.append(2, 2000L, 2.0, options2);
+        assertEquals(1, series.getHeadChunk().len());
+        assertEquals(firstChunk, series.getHeadChunk());
+
+        // Create new chunk with range 4000: should be [8000-12000]
+        series.append(3, 9000L, 9.0, options2);
+        assertEquals(8000L, series.getHeadChunk().getMinTimestamp());
+        assertEquals(12000L, series.getHeadChunk().getMaxTimestamp());
+
+        // Create new chunk with range 6000: should be [12000-18000]
+        ChunkOptions options3 = new ChunkOptions(6000, 8);
+        series.append(4, 13000L, 13.0, options3);
+        assertEquals(12000L, series.getHeadChunk().getMinTimestamp());
+        assertEquals(18000L, series.getHeadChunk().getMaxTimestamp());
+    }
+
+    public void testChunkRangeChangeForOldChunks() {
+        Labels labels = ByteLabels.fromStrings("k1", "v1", "k2", "v2");
+        MemSeries series = new MemSeries(123L, labels);
+
+        // Create chunks with range 8000: [0-8000] and [16000-24000]
+        ChunkOptions options1 = new ChunkOptions(8000, 8);
+        series.append(1, 1000L, 1.0, options1);
+        series.append(2, 17000L, 17.0, options1);
+        MemChunk firstChunk = series.getHeadChunk().oldest();
+
+        // Append to existing old chunk with different range - should reuse existing [0-8000]
+        ChunkOptions options2 = new ChunkOptions(4000, 8);
+        series.append(3, 3000L, 3.0, options2);
+        assertEquals(2, series.getHeadChunk().len());
+        assertEquals(firstChunk, series.getHeadChunk().oldest());
+
+        // Insert new old chunk with range 4000: should create [8000-12000]
+        series.append(4, 9000L, 9.0, options2);
+        assertEquals(3, series.getHeadChunk().len());
+        MemChunk middle = series.getHeadChunk().getPrev();
+        assertEquals(8000L, middle.getMinTimestamp());
+        assertEquals(12000L, middle.getMaxTimestamp());
+
+        // Insert another old chunk with range 4000: should create [12000-16000]
+        series.append(5, 13000L, 13.0, options2);
+        assertEquals(4, series.getHeadChunk().len());
+        assertEquals(12000L, middle.getNext().getMinTimestamp());
+        assertEquals(16000L, middle.getNext().getMaxTimestamp());
+    }
+
+    public void testGetClosableChunksOrder() {
+        Labels labels = ByteLabels.fromStrings("k1", "v1", "k2", "v2");
+        MemSeries series = new MemSeries(123L, labels);
+        ChunkOptions options = new ChunkOptions(8000, 8);
+
+        // Create 5 chunks: [0-8000], [8000-16000], [16000-24000], [24000-32000], [32000-40000]
+        for (int i = 0; i < 40; i++) {
+            series.append(i, 1000L * (i + 1), (double) i, options);
+        }
+
+        // Get closable chunks with cutoff at 24000
+        // Should return: [0-8000], [8000-16000], [16000-24000] in that order (oldest to newest)
+        var result = series.getClosableChunks(24000L);
+        assertEquals(3, result.closableChunks().size());
+
+        // Verify chunks are ordered oldest to newest
+        assertEquals(0L, result.closableChunks().get(0).getMinTimestamp());
+        assertEquals(8000L, result.closableChunks().get(0).getMaxTimestamp());
+
+        assertEquals(8000L, result.closableChunks().get(1).getMinTimestamp());
+        assertEquals(16000L, result.closableChunks().get(1).getMaxTimestamp());
+
+        assertEquals(16000L, result.closableChunks().get(2).getMinTimestamp());
+        assertEquals(24000L, result.closableChunks().get(2).getMaxTimestamp());
+    }
+
+    public void testGetClosableChunks() {
+        MemSeries series = new MemSeries(123L, ByteLabels.fromStrings("k1", "v1", "k2", "v2"));
+
+        // No chunks: return empty
+        MemSeries.ClosableChunkResult result = series.getClosableChunks(10000L);
+        assertTrue(result.closableChunks().isEmpty());
+        assertEquals(Long.MAX_VALUE, result.minSeqNo());
+
+        // Creates 3 chunks: [0-8000], [8000-16000], [16000-24000]
+        series = createMemSeries(3);
+
+        // Cutoff before any chunk: none closable
+        result = series.getClosableChunks(7999L);
+        assertEquals(0, result.closableChunks().size());
+        assertEquals(0, result.minSeqNo());
+
+        // Cutoff at first chunk boundary: first chunk closable
+        result = series.getClosableChunks(8000L);
+        assertEquals(1, result.closableChunks().size());
+        assertEquals(8, result.minSeqNo());
+
+        // Cutoff at second chunk boundary: first two chunks closable
+        result = series.getClosableChunks(16000L);
+        assertEquals(2, result.closableChunks().size());
+        assertEquals(16, result.minSeqNo());
+        assertFalse(result.closableChunks().contains(series.getHeadChunk()));
+
+        // Cutoff at third chunk boundary: all chunks closable
+        result = series.getClosableChunks(24000L);
+        assertEquals(3, result.closableChunks().size());
+        assertEquals(Long.MAX_VALUE, result.minSeqNo());
+        assertTrue(result.closableChunks().contains(series.getHeadChunk()));
+    }
+
+    public void testGetClosableChunksMinSeqNoTracking() {
+        Labels labels = ByteLabels.fromStrings("k1", "v1", "k2", "v2");
+        MemSeries series = new MemSeries(123L, labels);
+        ChunkOptions options = new ChunkOptions(8000, 8);
+
+        // Ingest with decreasing seqNo to test minSeqNo tracking
+        for (int i = 12; i > 0; i--) {
+            series.append(i, (12 - i) * 1000L, i * 10.0, options);
+        }
+
+        // Cutoff at first chunk: minSeqNo should be minimum of remaining chunks
+        var result = series.getClosableChunks(8000L);
         assertEquals(1, result.closableChunks().size());
         assertEquals(1, result.minSeqNo());
+
+        // Cutoff at second chunk: all chunks closable
+        result = series.getClosableChunks(16000L);
+        assertEquals(2, result.closableChunks().size());
+        assertEquals(Long.MAX_VALUE, result.minSeqNo());
     }
 
     public void testDropChunks() {
@@ -165,93 +313,6 @@ public class MemSeriesTests extends OpenSearchTestCase {
 
         // Test initial state of optional fields
         assertNull(series.getHeadChunk());
-        assertEquals(0L, series.getMaxMMapTimestamp());
-
-        // Test setMaxMMapTimestamp and getMaxMMapTimestamp
-        long testTimestamp = 12345L;
-        series.setMaxMMapTimestamp(testTimestamp);
-        assertEquals(testTimestamp, series.getMaxMMapTimestamp());
-
-        // Test getHeadChunk after appending data
-        ChunkOptions options = new ChunkOptions(8000, 8);
-        series.append(0, 1000L, 10.0, options);
-        assertNotNull(series.getHeadChunk());
-        assertEquals(1000L, series.getHeadChunk().getMinTimestamp());
-        assertEquals(1000L, series.getHeadChunk().getMaxTimestamp());
-    }
-
-    public void testIsOOO() {
-        MemSeries seriesWithNoChunks = new MemSeries(123L, ByteLabels.fromStrings("k1", "v1", "k2", "v2"));
-        assertFalse(seriesWithNoChunks.isOOO(1000L));
-
-        MemSeries seriesWithChunks = createMemSeries(2);
-        assertFalse(seriesWithChunks.isOOO(16000L));
-        assertTrue(seriesWithChunks.isOOO(14000L));
-    }
-
-    public void testChunkCreationOnTimeRange() {
-        Labels labels = ByteLabels.fromStrings("k1", "v1", "k2", "v2");
-        MemSeries series = new MemSeries(123L, labels);
-
-        // Use a small chunkRange to test time-based chunk creation
-        ChunkOptions options = new ChunkOptions(5000, 100); // 5 second chunk range, high sample count
-
-        // Add first sample at timestamp 1000
-        boolean created1 = series.append(0, 1000L, 10.0, options);
-        assertTrue("First sample should create a chunk", created1);
-        MemChunk firstChunk = series.getHeadChunk();
-
-        // Add samples within the time range (should not create new chunk)
-        boolean created2 = series.append(1, 3000L, 20.0, options);
-        boolean created3 = series.append(2, 4999L, 30.0, options);
-        assertFalse("Sample within time range should not create chunk", created2);
-        assertFalse("Sample at edge of time range should not create chunk", created3);
-        assertEquals(firstChunk, series.getHeadChunk());
-
-        // Add sample that exceeds the time range (should create new chunk)
-        boolean created4 = series.append(3, 6000L, 40.0, options);
-        assertTrue("Sample beyond time range should create new chunk", created4);
-        assertNotEquals("Should have a new head chunk", firstChunk, series.getHeadChunk());
-        assertEquals(6000L, series.getHeadChunk().getMinTimestamp());
-    }
-
-    public void testAppendVariableRate() {
-        Labels labels = ByteLabels.fromStrings("k1", "v1", "k2", "v2");
-        MemSeries series = new MemSeries(123L, labels);
-
-        ChunkOptions options = new ChunkOptions(1000000L, 8);
-
-        // first 25% of samples widely spaced, predict the end
-        series.append(0, 1000L, 10.0, options);
-        series.append(1, 2000L, 10.0, options);
-
-        // next samples at different step size, try to maintain chunk boundary
-        for (int i = 2; i < 16; i++) {
-            series.append(i, 2000L + i * 100L, 10.0, options);
-        }
-        assertEquals("Should still be using the same chunk", 1, series.getHeadChunk().len());
-
-        // do not allow chunks to be too large, chunk can never contain more than 2 * samplesPerChunk
-        series.append(16, 3600L, 10.0, options);
-        assertEquals("Should have created a new chunk after exceeding max samples", 2, series.getHeadChunk().len());
-    }
-
-    public void testPreventSmallChunks() {
-        Labels labels = ByteLabels.fromStrings("k1", "v1", "k2", "v2");
-        MemSeries series = new MemSeries(123L, labels);
-
-        ChunkOptions options = new ChunkOptions(9000, 8);
-
-        for (int i = 0; i < 9; i++) {
-            long timestamp = i * 1000L;
-            double value = i * 10.0;
-            series.append(i, timestamp, value, options);
-        }
-
-        // Two relatively evenly sized chunks, despite only the 9th sample being outside the chunk range of the first chunk
-        assertEquals("Two chunks", 2, series.getHeadChunk().len());
-        assertEquals("First chunk has 5 samples", 5, series.getHeadChunk().oldest().getChunk().numSamples());
-        assertEquals("Second chunk has 4 samples", 4, series.getHeadChunk().getChunk().numSamples());
     }
 
     public void testAwaitPersistedAndMarkPersisted() throws InterruptedException {
@@ -301,5 +362,10 @@ public class MemSeriesTests extends OpenSearchTestCase {
             series.append(i, timestamp, value, options);
         }
         return series;
+    }
+
+    // Iterator containing results, merged and dedup'd
+    private ChunkIterator getMergedDedupedIterator(List<ChunkIterator> iterators) {
+        return new DedupIterator(new MergeIterator(iterators), DedupIterator.DuplicatePolicy.FIRST);
     }
 }

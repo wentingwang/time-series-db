@@ -26,11 +26,8 @@ import org.apache.lucene.search.ScoreDoc;
 import org.apache.lucene.search.TopDocs;
 import org.apache.lucene.store.AlreadyClosedException;
 import org.opensearch.test.OpenSearchTestCase;
-import org.opensearch.tsdb.core.chunk.Chunk;
-import org.opensearch.tsdb.core.chunk.ChunkAppender;
 import org.opensearch.tsdb.core.chunk.ChunkIterator;
 import org.opensearch.tsdb.core.chunk.Encoding;
-import org.opensearch.tsdb.core.chunk.XORChunk;
 import org.opensearch.tsdb.core.head.MemChunk;
 import org.opensearch.tsdb.core.head.MemSeries;
 import org.opensearch.tsdb.core.mapping.Constants;
@@ -343,15 +340,10 @@ public class ClosedChunkIndexTests extends OpenSearchTestCase {
     private MemChunk buildMemChunk(int numSamples, int minTimestamp, int maxTimestamp) {
         long interval = (maxTimestamp - minTimestamp) / numSamples;
 
-        MemChunk chunk = new MemChunk(0, 0, maxTimestamp, null);
-        Chunk rawChunk = new XORChunk();
-        ChunkAppender appender = rawChunk.appender();
+        MemChunk chunk = new MemChunk(0, minTimestamp, maxTimestamp, null, Encoding.XOR);
         for (int i = 0; i < numSamples; i++) {
-            appender.append(i, i * interval);
+            chunk.append(i, i * interval, i);
         }
-        chunk.setChunk(rawChunk);
-        chunk.setMinTimestamp(minTimestamp);
-        chunk.setMaxTimestamp(maxTimestamp);
         return chunk;
     }
 

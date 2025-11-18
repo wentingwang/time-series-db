@@ -283,6 +283,7 @@ public class TSDBEngine extends Engine {
 
         try {
             context.isNewSeriesCreated = appender.preprocess(
+                indexOp.origin(),
                 indexOp.seqNo(),
                 seriesReference,
                 metricDocument.labels(),
@@ -300,6 +301,10 @@ public class TSDBEngine extends Engine {
             // TODO: delete this once OOO is supported
             logger.error("Encountered empty label exception, operation origin " + indexOp.origin().name(), e);
             emptyLabelExceptionEncountered = true;
+        } catch (TSDBOutOfOrderException e) {
+            // OOO sample rejected - expected failure, do not log as error
+            logger.debug("Sample rejected due to OOO cutoff, writing NoOp to translog, operation origin " + indexOp.origin().name(), e);
+            context.failureException = e;
         } catch (Exception e) {
             logger.error("Index operation failed during preprocess or append, operation origin " + indexOp.origin().name(), e);
             context.failureException = e;

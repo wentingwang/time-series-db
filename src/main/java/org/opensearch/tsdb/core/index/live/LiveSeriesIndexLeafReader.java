@@ -26,7 +26,6 @@ import org.apache.lucene.index.Terms;
 import org.apache.lucene.search.AcceptDocs;
 import org.apache.lucene.search.KnnCollector;
 import org.apache.lucene.util.Bits;
-import org.opensearch.tsdb.core.chunk.Chunk;
 import org.opensearch.tsdb.core.chunk.ChunkIterator;
 import org.opensearch.tsdb.core.index.IndexUtils;
 import org.opensearch.tsdb.core.mapping.Constants;
@@ -36,7 +35,6 @@ import org.opensearch.tsdb.core.reader.TSDBLeafReader;
 
 import java.io.IOException;
 import java.util.List;
-import java.util.stream.Collectors;
 
 /**
  * Lucene leaf reader for live time series index data.
@@ -94,7 +92,7 @@ public class LiveSeriesIndexLeafReader extends TSDBLeafReader {
         // Get chunk reference from numeric doc values
         long chunkRef = chunkRefValues.longValue();
         // TODO : exclude already mapped chunks from results using mappedChunks
-        return memChunkReader.getChunks(chunkRef).stream().map(Chunk::iterator).collect(Collectors.toList());
+        return memChunkReader.getChunkIterators(chunkRef);
     }
 
     @Override

@@ -83,9 +83,10 @@ public class TSDBDirectoryReaderReferenceManagerTests extends OpenSearchTestCase
         memChunks = new ArrayList<>();
 
         // Create mock MemChunkReader
-        memChunkReader = (reference) -> {
-            return memChunks.stream().map(MemChunk::getChunk).filter(chunk -> chunk != null).collect(Collectors.toList());
-        };
+        memChunkReader = (reference) -> memChunks.stream()
+            .map(MemChunk::getCompoundChunk)
+            .flatMap(compoundChunk -> compoundChunk.getChunkIterators().stream())
+            .collect(Collectors.toList());
 
         // Set up live index
         setupLiveIndex();

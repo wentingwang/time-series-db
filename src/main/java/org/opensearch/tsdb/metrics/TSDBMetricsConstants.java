@@ -27,6 +27,15 @@ public final class TSDBMetricsConstants {
     /** Counter: Total number of memory chunks created across all shards */
     public static final String MEMCHUNKS_CREATED_TOTAL = "tsdb.memchunks.created.total";
 
+    /** Counter: Total number of out-of-order samples rejected across all shards */
+    public static final String OOO_SAMPLES_REJECTED_TOTAL = "tsdb.ooo_samples.rejected.total";
+
+    /** Counter: Total number of out-of-order chunks created across all shards */
+    public static final String OOO_CHUNKS_CREATED_TOTAL = "tsdb.ooo_chunks.created.total";
+
+    /** Counter: Total number of out-of-order chunks merged across all shards */
+    public static final String OOO_CHUNKS_MERGED_TOTAL = "tsdb.ooo_chunks.merged.total";
+
     // ============================================
     // Aggregation Metrics (TimeSeriesUnfoldAggregator)
     // ============================================
@@ -75,6 +84,9 @@ public final class TSDBMetricsConstants {
     public static final String SAMPLES_INGESTED_TOTAL_DESC = "Total number of samples ingested into TSDB across all shards";
     public static final String SERIES_CREATED_TOTAL_DESC = "Total number of time series created across all shards";
     public static final String MEMCHUNKS_CREATED_TOTAL_DESC = "Total number of memory chunks created across all shards";
+    public static final String OOO_SAMPLES_REJECTED_TOTAL_DESC = "Total number of out-of-order samples rejected across all shards";
+    public static final String OOO_CHUNKS_CREATED_TOTAL_DESC = "Total number of out-of-order chunks created across all shards";
+    public static final String OOO_CHUNKS_MERGED_TOTAL_DESC = "Total number of out-of-order chunks merged across all shards";
 
     // Aggregation Metrics
     public static final String AGGREGATION_COLLECT_LATENCY_DESC = "Latency of collect() operation per aggregation request";

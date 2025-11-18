@@ -281,4 +281,45 @@ public class XORChunkTests extends OpenSearchTestCase {
         // Verify no errors occurred
         assertNull("Iterator should not have errors", iterator.error());
     }
+
+    public void testXorWithDuplicateTimestamps() {
+        // This test illustrates that XORChunk does NOT perform deduplication.
+        // It stores all appended samples, including those with duplicate timestamps.
+        // Deduplication is the responsibility of higher-level constructs like DedupIterator.
+
+        XORChunk chunk = new XORChunk();
+        ChunkAppender appender = chunk.appender();
+
+        // Append samples with some duplicate timestamps
+        appender.append(1000L, 10.0);
+        appender.append(2000L, 20.0);
+        appender.append(2000L, 20.5);  // Duplicate timestamp, different value
+        appender.append(3000L, 30.0);
+        appender.append(3000L, 30.5);  // Duplicate timestamp, different value
+        appender.append(3000L, 30.75); // Triple timestamp
+        appender.append(4000L, 40.0);
+
+        // XORChunk stores all samples including duplicates
+        assertEquals("XORChunk stores all samples including duplicates", 7, chunk.numSamples());
+
+        // Verify that iteration returns all samples in the order they were appended
+        ChunkIterator iterator = chunk.iterator();
+
+        long[] expectedTimestamps = { 1000L, 2000L, 2000L, 3000L, 3000L, 3000L, 4000L };
+        double[] expectedValues = { 10.0, 20.0, 20.5, 30.0, 30.5, 30.75, 40.0 };
+
+        int count = 0;
+        while (iterator.next() != ChunkIterator.ValueType.NONE) {
+            ChunkIterator.TimestampValue tv = iterator.at();
+            assertTrue("Too many samples", count < expectedTimestamps.length);
+
+            assertEquals("Timestamp at index " + count, expectedTimestamps[count], tv.timestamp());
+            assertEquals("Value at index " + count, expectedValues[count], tv.value(), 0.0);
+
+            count++;
+        }
+
+        assertEquals("All samples should be readable", expectedTimestamps.length, count);
+        assertNull("Iterator should not have errors", iterator.error());
+    }
 }

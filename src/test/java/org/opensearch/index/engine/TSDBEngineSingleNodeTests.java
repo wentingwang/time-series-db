@@ -38,6 +38,7 @@ import static org.opensearch.test.hamcrest.OpenSearchAssertions.assertHitCount;
 import static org.opensearch.test.hamcrest.OpenSearchAssertions.assertSearchResponse;
 import static org.opensearch.tsdb.core.mapping.Constants.Mapping.DEFAULT_INDEX_MAPPING;
 import static org.opensearch.tsdb.utils.TSDBTestUtils.createSampleJson;
+import static org.opensearch.tsdb.utils.TSDBTestUtils.getSampleCountViaAggregation;
 
 public class TSDBEngineSingleNodeTests extends OpenSearchSingleNodeTestCase {
 
@@ -324,5 +325,74 @@ public class TSDBEngineSingleNodeTests extends OpenSearchSingleNodeTestCase {
 
         // Should have 3 successful documents (2 different series with 1 and 2 samples respectively)
         assertHitCount(searchResponse, 2);
+    }
+
+    /**
+     * Test that OOO validation is deterministic across primary and replica by verifying translog replay behavior.
+     * - When OOO sample is rejected on primary, a NoOp should be written to translog
+     * - During recovery, the NoOp should be replayed, keeping the sample rejected
+     * - Result: primary and replica have the same data (deterministic)
+     */
+    public void testOOOValidationDeterministicWithTranslogReplay() throws IOException, ExecutionException, InterruptedException {
+        // Default OOO cutoff window is 20 minutes = 1,200,000 ms
+        createMetricsIndex();
+        BulkRequest bulkRequest = new BulkRequest();
+
+        // index a sample at timestamp 1,000,000 (sets maxTime)
+        String sample1 = createSampleJson("__name__ test_metric instance server1", 1000000L, 100.0);
+        bulkRequest.add(new IndexRequest(TEST_INDEX_NAME).id("1").source(sample1, XContentType.JSON));
+
+        // index another sample at timestamp 2,000,000 to advance maxTime
+        String sample2 = createSampleJson("__name__ test_metric instance server1", 2000000L, 200.0);
+        bulkRequest.add(new IndexRequest(TEST_INDEX_NAME).id("2").source(sample2, XContentType.JSON));
+
+        // index an OOO sample that violates the cutoff window (should be rejected)
+        String oooSample = createSampleJson("__name__ test_metric instance server1", 500000L, 150.0);
+        bulkRequest.add(new IndexRequest(TEST_INDEX_NAME).id("3").source(oooSample, XContentType.JSON));
+
+        BulkResponse bulkResponse = client().bulk(bulkRequest).get();
+
+        // Verify responses
+        assertEquals("Should have 3 items in response", 3, bulkResponse.getItems().length);
+
+        assertFalse("First sample should not have failure", bulkResponse.getItems()[0].isFailed());
+        assertEquals(
+            "First sample should be created",
+            DocWriteResponse.Result.CREATED,
+            bulkResponse.getItems()[0].getResponse().getResult()
+        );
+        assertFalse("Second sample should not have failure", bulkResponse.getItems()[1].isFailed());
+        assertEquals(
+            "Second sample should be created",
+            DocWriteResponse.Result.CREATED,
+            bulkResponse.getItems()[1].getResponse().getResult()
+        );
+
+        assertTrue(
+            "OOO sample should be rejected",
+            bulkResponse.getItems()[2].isFailed() || bulkResponse.getItems()[2].getResponse().getResult() == DocWriteResponse.Result.NOOP
+        );
+
+        // initial state - should have 2 samples (the OOO one should be rejected)
+        client().admin().indices().prepareRefresh(TEST_INDEX_NAME).get();
+
+        int sampleCountBeforeRecovery = getSampleCountViaAggregation(client(), TEST_INDEX_NAME, 0L, 3000000L, 100000L);
+        logger.info("Sample count before recovery: {}", sampleCountBeforeRecovery);
+
+        // close and reopen index (triggers translog replay as LOCAL_TRANSLOG_RECOVERY)
+        client().admin().indices().prepareClose(TEST_INDEX_NAME).get();
+        client().admin().indices().prepareOpen(TEST_INDEX_NAME).get();
+        ensureGreen(TEST_INDEX_NAME);
+        client().admin().indices().prepareRefresh(TEST_INDEX_NAME).get();
+
+        int sampleCountAfterRecovery = getSampleCountViaAggregation(client(), TEST_INDEX_NAME, 0L, 3000000L, 100000L);
+
+        assertEquals(
+            "Sample count should be the same before and after recovery (deterministic behavior)",
+            sampleCountBeforeRecovery,
+            sampleCountAfterRecovery
+        );
+
+        assertEquals("Should have exactly 2 samples after recovery", 2, sampleCountAfterRecovery);
     }
 }

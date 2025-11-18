@@ -20,9 +20,9 @@ import org.apache.lucene.store.ByteBuffersDirectory;
 import org.apache.lucene.store.Directory;
 import org.apache.lucene.util.BytesRef;
 import org.opensearch.test.OpenSearchTestCase;
-import org.opensearch.tsdb.core.chunk.Chunk;
 import org.opensearch.tsdb.core.chunk.ChunkAppender;
 import org.opensearch.tsdb.core.chunk.ChunkIterator;
+import org.opensearch.tsdb.core.chunk.Encoding;
 import org.opensearch.tsdb.core.chunk.XORChunk;
 import org.opensearch.tsdb.core.head.MemChunk;
 import org.opensearch.tsdb.core.index.closed.ClosedChunkIndexTSDBDocValues;
@@ -50,7 +50,7 @@ public class TSDBLeafReaderTests extends OpenSearchTestCase {
     private Directory directory;
     private IndexWriter indexWriter;
     private MemChunkReader memChunkReader;
-    private Map<Long, List<Chunk>> referenceToChunkMap;
+    private Map<Long, List<ChunkIterator>> referenceToChunkMap;
 
     @Override
     public void setUp() throws Exception {
@@ -91,7 +91,7 @@ public class TSDBLeafReaderTests extends OpenSearchTestCase {
         cpuAppender.append(1000L, 75.5);
         cpuAppender.append(2000L, 80.2);
         cpuAppender.append(3000L, 85.1);
-        referenceToChunkMap.put(100L, List.of(cpuChunk));
+        referenceToChunkMap.put(100L, List.of(cpuChunk.iterator()));
 
         // Reference 200L: memory_usage{host="server2", region="us-east"}
         XORChunk memoryChunk = new XORChunk();
@@ -99,7 +99,7 @@ public class TSDBLeafReaderTests extends OpenSearchTestCase {
         memoryAppender.append(1000L, 2048.0);
         memoryAppender.append(2000L, 2560.0);
         memoryAppender.append(3000L, 3072.0);
-        referenceToChunkMap.put(200L, List.of(memoryChunk));
+        referenceToChunkMap.put(200L, List.of(memoryChunk.iterator()));
     }
 
     /**
@@ -212,24 +212,18 @@ public class TSDBLeafReaderTests extends OpenSearchTestCase {
 
     private void createClosedChunkTestDocuments() throws IOException {
         // Create MemChunk instances with XOR chunks and sample data
-        MemChunk memChunk1 = new MemChunk(1, 1000L, 3000L, null);
-        XORChunk chunk1 = new XORChunk();
-        ChunkAppender appender1 = chunk1.appender();
-        appender1.append(1000L, 42.0);
-        appender1.append(2000L, 43.0);
-        appender1.append(3000L, 44.0);
-        memChunk1.setChunk(chunk1);
+        MemChunk memChunk1 = new MemChunk(1, 1000L, 3000L, null, Encoding.XOR);
+        memChunk1.append(1000L, 42.0, 1L);
+        memChunk1.append(2000L, 43.0, 2L);
+        memChunk1.append(3000L, 44.0, 3L);
 
-        MemChunk memChunk2 = new MemChunk(2, 4000L, 5000L, null);
-        XORChunk chunk2 = new XORChunk();
-        ChunkAppender appender2 = chunk2.appender();
-        appender2.append(4000L, 100.0);
-        appender2.append(5000L, 101.0);
-        memChunk2.setChunk(chunk2);
+        MemChunk memChunk2 = new MemChunk(2, 4000L, 5000L, null, Encoding.XOR);
+        memChunk2.append(4000L, 100.0, 4L);
+        memChunk2.append(5000L, 101.0, 5L);
 
         // Serialize chunks
-        BytesRef serializedChunk1 = ClosedChunkIndexIO.serializeChunk(memChunk1.getChunk());
-        BytesRef serializedChunk2 = ClosedChunkIndexIO.serializeChunk(memChunk2.getChunk());
+        BytesRef serializedChunk1 = ClosedChunkIndexIO.serializeChunk(memChunk1.getCompoundChunk().toChunk());
+        BytesRef serializedChunk2 = ClosedChunkIndexIO.serializeChunk(memChunk2.getCompoundChunk().toChunk());
 
         // Document 1: http_requests_total{method="GET", status="200"}
         Document doc1 = new Document();

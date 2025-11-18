@@ -58,7 +58,9 @@ import org.opensearch.watcher.ResourceWatcherService;
 import java.io.IOException;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.TimeUnit;
@@ -132,7 +134,7 @@ public class TSDBPlugin extends Plugin implements SearchPlugin, EnginePlugin, Ac
     );
 
     /**
-     * Setting for the target number of samples to store in a single chunk.
+     * Setting for the maximum number of samples to store in a single chunk. FIXME: this will become a safety config - connect it
      * <p>
      * TODO: consume this setting in the TSDB engine implementation to allow changes to be picked up quickly.
      */
@@ -145,24 +147,106 @@ public class TSDBPlugin extends Plugin implements SearchPlugin, EnginePlugin, Ac
     );
 
     /**
-     * Setting for the chunk expiry duration. Non-full chunks will be closed after this grace period if no new samples come in. May be
-     * used to prevent sparse samples from each creating their own chunk.
-     * <p>
-     * TODO: consume this setting in the TSDB engine implementation to allow changes to be picked up quickly.
+     * Setting for the out-of-order cutoff duration. Samples with timestamps older than this cutoff will be dropped.
+     * Cutoff time is relative to the latest sample timestamp ingested.
      */
-    public static final Setting<TimeValue> TSDB_ENGINE_CHUNK_EXPIRY = Setting.positiveTimeSetting(
-        "index.tsdb_engine.chunk.expiry",
-        TimeValue.timeValueMinutes(30),
+    public static final Setting<TimeValue> TSDB_ENGINE_OOO_CUTOFF = Setting.positiveTimeSetting(
+        "index.tsdb_engine.ooo_cutoff",
+        TimeValue.timeValueMinutes(20),
+        Setting.Property.IndexScope,
+        Setting.Property.Dynamic
+    );
+
+    /**
+     * Setting for the chunk duration for closed chunk indexes.
+     * Must be a divisor of block duration (i.e., block duration must be an even multiple of chunk duration).
+     */
+    public static final Setting<TimeValue> TSDB_ENGINE_CHUNK_DURATION = new Setting<>(
+        "index.tsdb_engine.chunk.duration",
+        "20m",
+        (s) -> TimeValue.parseTimeValue(s, "index.tsdb_engine.chunk.duration"),
+        new Setting.Validator<TimeValue>() {
+            @Override
+            public void validate(TimeValue chunkDuration) {
+                if (chunkDuration.millis() <= 0) {
+                    throw new IllegalArgumentException("index.tsdb_engine.chunk.duration must be positive");
+                }
+            }
+
+            @Override
+            public void validate(TimeValue chunkDuration, Map<Setting<?>, Object> settings) {
+                TimeValue blockDuration = (TimeValue) settings.get(TSDB_ENGINE_BLOCK_DURATION);
+                if (blockDuration != null) {
+                    long chunkMillis = chunkDuration.millis();
+                    long blockMillis = blockDuration.millis();
+
+                    if (blockMillis % chunkMillis != 0) {
+                        throw new IllegalArgumentException(
+                            String.format(
+                                Locale.ROOT,
+                                "Invalid TSDB configuration: index.tsdb_engine.block.duration (%s) must be an even multiple of "
+                                    + "index.tsdb_engine.chunk.duration (%s). For example, chunk duration may be 20 minutes if block "
+                                    + "duration is 1 hour or 2 hours, but it may not be 25 minutes.",
+                                blockDuration,
+                                chunkDuration
+                            )
+                        );
+                    }
+                }
+            }
+
+            @Override
+            public Iterator<Setting<?>> settings() {
+                return Collections.<Setting<?>>singletonList(TSDB_ENGINE_BLOCK_DURATION).iterator();
+            }
+        },
         Setting.Property.IndexScope,
         Setting.Property.Dynamic
     );
 
     /**
      * Setting for the block duration for closed chunk indexes.
+     * Must be an even multiple of chunk duration.
      */
-    public static final Setting<TimeValue> TSDB_ENGINE_BLOCK_DURATION = Setting.positiveTimeSetting(
+    public static final Setting<TimeValue> TSDB_ENGINE_BLOCK_DURATION = new Setting<TimeValue>(
         "index.tsdb_engine.block.duration",
-        TimeValue.timeValueHours(2),
+        "2h",
+        (s) -> TimeValue.parseTimeValue(s, "index.tsdb_engine.block.duration"),
+        new Setting.Validator<TimeValue>() {
+            @Override
+            public void validate(TimeValue blockDuration) {
+                if (blockDuration.millis() <= 0) {
+                    throw new IllegalArgumentException("index.tsdb_engine.block.duration must be positive");
+                }
+            }
+
+            @Override
+            public void validate(TimeValue blockDuration, Map<Setting<?>, Object> settings) {
+                TimeValue chunkDuration = (TimeValue) settings.get(TSDB_ENGINE_CHUNK_DURATION);
+                if (chunkDuration != null) {
+                    long chunkMillis = chunkDuration.millis();
+                    long blockMillis = blockDuration.millis();
+
+                    if (blockMillis % chunkMillis != 0) {
+                        throw new IllegalArgumentException(
+                            String.format(
+                                Locale.ROOT,
+                                "Invalid TSDB configuration: index.tsdb_engine.block.duration (%s) must be an even multiple of "
+                                    + "index.tsdb_engine.chunk.duration (%s). For example, chunk duration may be 20 minutes if block "
+                                    + "duration is 1 hour or 2 hours, but it may not be 25 minutes.",
+                                blockDuration,
+                                chunkDuration
+                            )
+                        );
+                    }
+                }
+            }
+
+            @Override
+            public Iterator<Setting<?>> settings() {
+                return Collections.<Setting<?>>singletonList(TSDB_ENGINE_CHUNK_DURATION).iterator();
+            }
+        },
         Setting.Property.IndexScope,
         Setting.Property.Final
     );
@@ -228,9 +312,10 @@ public class TSDBPlugin extends Plugin implements SearchPlugin, EnginePlugin, Ac
             TSDB_ENGINE_COMPACTION_TYPE,
             TSDB_ENGINE_COMPACTION_FREQUENCY,
             TSDB_ENGINE_SAMPLES_PER_CHUNK,
-            TSDB_ENGINE_CHUNK_EXPIRY,
+            TSDB_ENGINE_CHUNK_DURATION,
             TSDB_ENGINE_BLOCK_DURATION,
-            TSDB_ENGINE_TIME_UNIT
+            TSDB_ENGINE_TIME_UNIT,
+            TSDB_ENGINE_OOO_CUTOFF
         );
     }
 

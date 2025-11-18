@@ -61,9 +61,11 @@ public abstract class RestTimeSeriesTestFramework extends OpenSearchRestTestCase
 
     // Default index settings for TSDB engine
     // Note: Mapping is obtained directly from Constants.Mapping.DEFAULT_INDEX_MAPPING
+    // TODO: consider making ingestion more realistic so we do not require an extended ooo_cutoff
     private static final String DEFAULT_INDEX_SETTINGS_YAML = """
         index.refresh_interval: "1s"
         index.tsdb_engine.enabled: true
+        index.tsdb_engine.ooo_cutoff: "1d"
         index.queries.cache.enabled: false
         index.requests.cache.enable: false
         index.translog.durability: async

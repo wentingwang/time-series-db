@@ -22,7 +22,6 @@ import org.apache.lucene.store.ByteBuffersDirectory;
 import org.apache.lucene.store.Directory;
 import org.apache.lucene.util.BytesRef;
 import org.opensearch.test.OpenSearchTestCase;
-import org.opensearch.tsdb.core.chunk.Chunk;
 import org.opensearch.tsdb.core.chunk.ChunkAppender;
 import org.opensearch.tsdb.core.chunk.ChunkIterator;
 import org.opensearch.tsdb.core.chunk.XORChunk;
@@ -42,7 +41,7 @@ public class LiveSeriesIndexLeafReaderTests extends OpenSearchTestCase {
     private Directory directory;
     private IndexWriter indexWriter;
     private MemChunkReader memChunkReader;
-    private Map<Long, List<Chunk>> referenceToChunkMap;
+    private Map<Long, List<ChunkIterator>> referenceToChunkMap;
 
     @Override
     public void setUp() throws Exception {
@@ -75,14 +74,14 @@ public class LiveSeriesIndexLeafReaderTests extends OpenSearchTestCase {
         cpuAppender.append(1000L, 75.5);
         cpuAppender.append(2000L, 80.2);
         cpuAppender.append(3000L, 85.1);
-        referenceToChunkMap.put(100L, List.of(cpuChunk));
+        referenceToChunkMap.put(100L, List.of(cpuChunk.iterator()));
 
         // Reference 200L: memory_usage{host="server2", region="us-east"}
         XORChunk memoryChunk = new XORChunk();
         ChunkAppender memoryAppender = memoryChunk.appender();
         memoryAppender.append(1000L, 2048.0);
         memoryAppender.append(2000L, 2560.0);
-        referenceToChunkMap.put(200L, List.of(memoryChunk));
+        referenceToChunkMap.put(200L, List.of(memoryChunk.iterator()));
 
         // Reference 300L: Empty chunks list
         referenceToChunkMap.put(300L, List.of());

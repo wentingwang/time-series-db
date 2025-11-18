@@ -7,12 +7,12 @@
  */
 package org.opensearch.tsdb.core.head;
 
-import org.opensearch.tsdb.core.chunk.ChunkAppender;
 import org.opensearch.tsdb.core.chunk.Encoding;
-import org.opensearch.tsdb.core.chunk.XORChunk;
 import org.opensearch.tsdb.core.model.Labels;
+import org.opensearch.tsdb.metrics.TSDBMetrics;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.CountDownLatch;
@@ -39,12 +39,6 @@ public class MemSeries {
 
     // Max timestamp of an already indexed chunk, this is NOT updated atomically when chunks are indexed.
     private long maxMMapTimestamp;
-
-    // The timestamp at which to cut the next chunk
-    private long nextAt;
-
-    // Appender for the head chunk
-    private ChunkAppender chunkAppender;
 
     // Indicates if the series labels have been written to the translog
     private final CountDownLatch firstWriteLatch = new CountDownLatch(1);
@@ -87,30 +81,14 @@ public class MemSeries {
      * @param timestamp the sample timestamp
      * @param value the sample value
      * @param options the chunk options
-     *
-     * @return true if a new chunk was created, false otherwise
      */
-    public boolean append(long seqNo, long timestamp, double value, ChunkOptions options) {
-        boolean created = appendPreprocessor(seqNo, timestamp, Encoding.XOR, options);
-        chunkAppender.append(timestamp, value);
-        headChunk.setMaxTimestamp(timestamp);
+    public void append(long seqNo, long timestamp, double value, ChunkOptions options) {
+        MemChunk chunk = appendPreprocessor(seqNo, timestamp, Encoding.XOR, options);
+        chunk.append(timestamp, value, seqNo);
+
         if (seqNo > this.maxSeqNo) {
             this.maxSeqNo = seqNo;
         }
-
-        if (seqNo < headChunk.getMinSeqNo()) {
-            headChunk.setMinSeqNo(seqNo);
-        }
-        return created;
-    }
-
-    /**
-     * Checks if the given timestamp is out of order (earlier than the max timestamp of the head chunk).
-     * @param t the timestamp to check
-     * @return true if the timestamp is out of order, false otherwise
-     */
-    public boolean isOOO(long t) {
-        return headChunk != null && t < headChunk.getMaxTimestamp();
     }
 
     /**
@@ -139,31 +117,31 @@ public class MemSeries {
 
     /**
      * Identify chunks that can be closed and memory-mapped.
+     * Returns all chunks where chunk.maxTimestamp is less than or equal to cutoffTimestamp.
      *
-     * @param highWatermarkTimestamp the largest timestamp seen during ingestion so far
-     * @return ClosableChunkResult contains a list of closable chunks, and the smallest seqNo of any sample still in-memory for the series
+     * @param cutoffTimestamp the cutoff timestamp used for identifying closable chunks
+     * @return ClosableChunkResult contains a list of closable chunks, and the smallest seqNo of any sample still in-memory (non-closable chunks)
      */
-    public ClosableChunkResult getClosableChunks(long highWatermarkTimestamp, long chunkExpiry) {
+    public ClosableChunkResult getClosableChunks(long cutoffTimestamp) {
         lock();
         try {
-            List<MemChunk> closableChunks = new ArrayList<>();
-            MemChunk headChunk = this.headChunk;
-            if (headChunk == null) {
-                return new ClosableChunkResult(closableChunks, Long.MAX_VALUE); // nothing to map, no samples in memory
+
+            MemChunk chunk = this.headChunk;
+            if (chunk == null) {
+                return new ClosableChunkResult(Collections.emptyList(), Long.MAX_VALUE); // nothing to map, no samples in memory
             }
 
-            // all chunks but the head chunk can always be closed, as they will not receive any more samples
-            MemChunk prevChunk = headChunk.getPrev();
-            while (prevChunk != null) {
-                closableChunks.addFirst(prevChunk);
-                prevChunk = prevChunk.getPrev();
-            }
+            // it is exceedingly rare to have more than 2 closable chunks, so we optimize for the common case
+            List<MemChunk> closableChunks = new ArrayList<>(2);
 
-            // if the head chunk hasn't been updated for a long time (based on high watermark of ingested samples), close it
-            long minSeqNo = headChunk.getMinSeqNo();
-            if (highWatermarkTimestamp - headChunk.getMaxTimestamp() > chunkExpiry) {
-                closableChunks.add(headChunk);
-                minSeqNo = Long.MAX_VALUE;
+            long minSeqNo = Long.MAX_VALUE;
+            while (chunk != null) {
+                if (chunk.getMaxTimestamp() <= cutoffTimestamp) {
+                    closableChunks.addFirst(chunk);
+                } else {
+                    minSeqNo = Math.min(minSeqNo, chunk.getMinSeqNo());
+                }
+                chunk = chunk.getPrev();
             }
 
             return new ClosableChunkResult(closableChunks, minSeqNo);
@@ -224,73 +202,103 @@ public class MemSeries {
         seriesLock.unlock();
     }
 
-    private boolean appendPreprocessor(long seqNo, long timestamp, Encoding encoding, ChunkOptions options) {
-        boolean created = false;
-        if (headChunk == null) {
-            // TODO: when supporting out-of-order samples, we need to create a special chunk
+    /**
+     * Preprocess a sample, returning the destination MemChunk if exists, or creating a new one if needed.
+     *
+     * @param seqNo sample seqNo
+     * @param timestamp sample timestamp
+     * @param encoding chunk encoding
+     * @param options chunk options
+     * @return the MemChunk to which the sample should be appended
+     */
+    private MemChunk appendPreprocessor(long seqNo, long timestamp, Encoding encoding, ChunkOptions options) {
+        if (headChunk == null || timestamp >= headChunk.getMaxTimestamp()) {
             headChunk = createHeadChunk(seqNo, timestamp, encoding, options.chunkRange());
-            created = true;
+            return headChunk; // TODO: add metric for chunk creation
         }
 
+        // iterate backwards to find a chunk that can hold the sample
         MemChunk chunk = headChunk;
-
-        int numSamples = chunk.getChunk().numSamples();
-        if (numSamples == 0) {
-            // a new chunk
-            chunk.setMinTimestamp(timestamp);
-            this.nextAt = rangeForTimestamp(timestamp, options.chunkRange());
+        while (!chunk.canHold(timestamp) && chunk.getPrev() != null) {
+            chunk = chunk.getPrev();
         }
 
-        // If we reach 25% of chunk's target sample count, predict an end time for this chunk to equally distribute samples
-        // in the remaining chunks for this chunk range. The prediction assumes future behavior will mimic past behavior within
-        // the current chunk. Subsequent chunks will be predicted when they reach 25% full as well, allowing for dynamic
-        // adjustment as sample rates change and resilience against momentary irregularities such as dropped samples.
-        if (numSamples == options.samplesPerChunk() / 4) {
-            this.nextAt = computeChunkEndTime(chunk.getMinTimestamp(), chunk.getMaxTimestamp(), this.nextAt, 4);
+        if (!chunk.canHold(timestamp)) {
+            // could not find a chunk that can hold the sample, create a new chunk in the correct position
+            return createOldChunk(seqNo, timestamp, encoding, options.chunkRange()); // TODO: add metric for chunk creation
         }
 
-        // Cut if the timestamp is larger than the nextAt or if we have too many samples
-        if (timestamp >= this.nextAt || numSamples >= options.samplesPerChunk() * 2) {
-            createHeadChunk(seqNo, timestamp, encoding, options.chunkRange());
-            created = true;
-        }
-        return created;
+        return chunk;
+    }
+
+    private MemChunk createHeadChunk(long seqNo, long timestamp, Encoding encoding, long chunkRange) {
+        long start = startRangeForTimestamp(timestamp, chunkRange);
+        long end = endRangeForTimestamp(timestamp, chunkRange);
+
+        MemChunk chunk = new MemChunk(seqNo, start, end, headChunk, encoding);
+        TSDBMetrics.incrementCounter(TSDBMetrics.INGESTION.memChunksCreated, 1);
+        return chunk;
     }
 
     /**
-     * Estimate end timestamp based on beginning timestamp, current timestamp, and upper bound end timestamp. Assumes this
-     * is called when chunk is 1 / ratio full.
+     * Creates a new chunk for an out-of-order sample and inserts it in the correct position in the linked list.
+     * The chunk is inserted such that the linked list maintains temporal order, so the new chunk is considered 'old'.
      *
-     * @return the estimated end timestamp for the chunk, strictly less than or equal to nextAt
+     * @param seqNo the sequence number for ordering
+     * @param timestamp the sample timestamp
+     * @param encoding the chunk encoding
+     * @param chunkRange the chunk range
+     * @return the newly created MemChunk
      */
-    private long computeChunkEndTime(long minTimestamp, long maxTimestamp, long nextAt, int ratio) {
-        double n = (double) (nextAt - minTimestamp) / ((double) (maxTimestamp - minTimestamp + 1) * ratio);
-        if (n <= 1) {
-            return nextAt;
+    private MemChunk createOldChunk(long seqNo, long timestamp, Encoding encoding, long chunkRange) {
+        long start = startRangeForTimestamp(timestamp, chunkRange);
+        long end = endRangeForTimestamp(timestamp, chunkRange);
+        MemChunk newChunk = new MemChunk(seqNo, start, end, null, encoding);
+        TSDBMetrics.incrementCounter(TSDBMetrics.INGESTION.memChunksCreated, 1);
+
+        MemChunk current = headChunk;
+        assert headChunk != null : "createOldChunk only called when there is at least one existing chunk";
+
+        // iterate backwards from head to find the correct insertion position
+        while (current != null) {
+            if (start >= current.getMaxTimestamp() && (current.getNext() == null || end <= current.getNext().getMinTimestamp())) {
+                break; // found the insertion point
+            }
+            current = current.getPrev();
         }
-        return (long) (minTimestamp + (nextAt - minTimestamp) / Math.floor(n));
-    }
 
-    private MemChunk createHeadChunk(long seqNo, long minTime, Encoding encoding, long chunkRange) {
-        MemChunk chunk = new MemChunk(seqNo, minTime, Long.MIN_VALUE, headChunk);
-
-        switch (encoding) {
-            case XOR:
-                chunk.setChunk(new XORChunk());
-                break;
+        if (current == null) {
+            // insert before the oldest chunk
+            MemChunk oldest = headChunk.oldest();
+            newChunk.setNext(oldest);
+            oldest.setPrev(newChunk);
+        } else {
+            // insert after current
+            MemChunk nextChunk = current.getNext();
+            newChunk.setPrev(current);
+            newChunk.setNext(nextChunk);
+            current.setNext(newChunk);
+            if (nextChunk != null) {
+                nextChunk.setPrev(newChunk);
+            }
         }
 
-        this.headChunk = chunk;
-        this.nextAt = rangeForTimestamp(minTime, chunkRange);
-        this.chunkAppender = chunk.getChunk().appender();
-        return chunk;
+        assert newChunk.getNext() != null : "createOldChunk is never called to create a new head chunk";
+        return newChunk;
     }
 
     /**
      * Calculates the end timestamp for the given timestamp based on the chunk range.
      */
-    private long rangeForTimestamp(long t, long chunkRange) {
+    private long endRangeForTimestamp(long t, long chunkRange) {
         return (t / chunkRange) * chunkRange + chunkRange;
+    }
+
+    /**
+     * Calculates the start timestamp for the given timestamp based on the chunk range.
+     */
+    private long startRangeForTimestamp(long t, long chunkRange) {
+        return (t / chunkRange) * chunkRange;
     }
 
     /**

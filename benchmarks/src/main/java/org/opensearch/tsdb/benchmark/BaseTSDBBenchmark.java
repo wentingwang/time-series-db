@@ -61,6 +61,7 @@ import org.opensearch.search.internal.SearchContext;
 import org.opensearch.search.lookup.SearchLookup;
 import org.opensearch.tsdb.TSDBPlugin;
 import org.opensearch.tsdb.core.chunk.ChunkAppender;
+import org.opensearch.tsdb.core.chunk.Encoding;
 import org.opensearch.tsdb.core.chunk.XORChunk;
 import org.opensearch.tsdb.core.head.MemChunk;
 import org.opensearch.tsdb.core.index.closed.ClosedChunkIndex;
@@ -215,16 +216,11 @@ public abstract class BaseTSDBBenchmark {
                 samples.add(new FloatSample(timestamp, (float) value));
             }
 
-            // Create XOR compressed chunk
-            XORChunk chunk = new XORChunk();
-            ChunkAppender appender = chunk.appender();
-            for (FloatSample sample : samples) {
-                appender.append(sample.getTimestamp(), sample.getValue());
-            }
-
             // Create MemChunk
-            MemChunk memChunk = new MemChunk(samples.size(), minTimestamp, maxTimestamp, null);
-            memChunk.setChunk(chunk);
+            MemChunk memChunk = new MemChunk(samples.size(), minTimestamp, maxTimestamp, null, Encoding.XOR);
+            for (FloatSample sample : samples) {
+                memChunk.append(sample.getTimestamp(), sample.getValue(), 0L);
+            }
 
             // Add the chunk using the ClosedChunkIndex API
             index.addNewChunk(labels, memChunk);
