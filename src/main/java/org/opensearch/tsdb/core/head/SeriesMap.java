@@ -12,6 +12,7 @@ import org.opensearch.common.util.concurrent.ConcurrentHashMapLong;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * A collection of series. Supports adding and removing series, and well as getting series by reference ({@link MemSeries#getReference()}).
@@ -20,6 +21,9 @@ public class SeriesMap {
 
     // TODO: Consider using a custom concurrent long-keyed map implementation to avoid boxing
     private final ConcurrentHashMapLong<MemSeries> seriesMap;
+
+    // Track count of stub series (series created during recovery without labels)
+    private final AtomicLong stubSeriesCounter = new AtomicLong(0);
 
     /**
      * Constructs a new SeriesMap instance.
@@ -77,5 +81,27 @@ public class SeriesMap {
      */
     public int size() {
         return seriesMap.size();
+    }
+
+    /**
+     * Increments the stub series counter when a stub series is created.
+     */
+    public void incrementStubSeriesCount() {
+        stubSeriesCounter.incrementAndGet();
+    }
+
+    /**
+     * Decrements the stub series counter when a stub series is upgraded to a full series.
+     */
+    public void decrementStubSeriesCount() {
+        stubSeriesCounter.decrementAndGet();
+    }
+
+    /**
+     * Returns the current count of stub series.
+     * @return the number of stub series
+     */
+    public long getStubSeriesCount() {
+        return stubSeriesCounter.get();
     }
 }

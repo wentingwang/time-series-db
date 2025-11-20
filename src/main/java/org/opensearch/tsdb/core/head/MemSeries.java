@@ -29,7 +29,10 @@ public class MemSeries {
     private final long reference;
 
     // Series Labels
-    private final Labels labels;
+    private Labels labels;
+
+    // Indicates if this is a stub series created during recovery without labels
+    private boolean isStub;
 
     // Lock generally should be held when using any vars defined below this point
     private final ReentrantLock seriesLock = new ReentrantLock();
@@ -57,6 +60,19 @@ public class MemSeries {
     public MemSeries(long reference, Labels labels) {
         this.reference = reference;
         this.labels = labels;
+        this.isStub = false;
+    }
+
+    /**
+     * Constructs a new stub MemSeries instance for recovery without labels.
+     * @param reference the unique series reference ID
+     * @param labels the series labels (can be empty/null for stub)
+     * @param isStub whether this is a stub series
+     */
+    public MemSeries(long reference, Labels labels, boolean isStub) {
+        this.reference = reference;
+        this.labels = labels;
+        this.isStub = isStub;
     }
 
     /**
@@ -345,5 +361,25 @@ public class MemSeries {
      */
     public void setMaxSeqNo(long maxSeqNo) {
         this.maxSeqNo = maxSeqNo;
+    }
+
+    /**
+     * Check if this is a stub series created during recovery without labels.
+     * @return true if this is a stub series, false otherwise
+     */
+    public boolean isStub() {
+        return isStub;
+    }
+
+    /**
+     * Upgrade a stub series with labels, making it a full series.
+     * @param labels the labels to upgrade the series with
+     */
+    public void upgradeWithLabels(Labels labels) {
+        if (!isStub) {
+            throw new IllegalStateException("Cannot upgrade a non-stub series");
+        }
+        this.labels = labels;
+        this.isStub = false;
     }
 }

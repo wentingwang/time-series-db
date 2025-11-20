@@ -1010,4 +1010,37 @@ public class TSDBEngineTests extends EngineTestCase {
         metricsEngine.translogManager().syncTranslog();
         assertEquals("Persisted checkpoint should be 2", 2L, metricsEngine.getPersistedLocalCheckpoint());
     }
+
+    public void testValidateNoStubSeriesAfterRecovery() throws Exception {
+        // Create a stub series by simulating recovery with ref-only operation
+        Labels labels = ByteLabels.fromStrings("__name__", "metric", "host", "server1");
+        long ref = labels.stableHash();
+
+        assertEquals("Stub counter should start at 0", 0L, metricsEngine.getHead().getSeriesMap().getStubSeriesCount());
+        metricsEngine.getHead().getOrCreateSeries(ref, null, 1000L);
+
+        MemSeries stubSeries = metricsEngine.getHead().getSeriesMap().getByReference(ref);
+        assertNotNull("Stub series should exist", stubSeries);
+        assertTrue("Should be stub", stubSeries.isStub());
+        assertEquals("Stub counter should be 1 after creating stub", 1L, metricsEngine.getHead().getSeriesMap().getStubSeriesCount());
+    }
+
+    public void testNoStubSeriesAfterProperRecovery() throws Exception {
+        // Create and upgrade a stub series properly
+        Labels labels = ByteLabels.fromStrings("__name__", "metric", "host", "server1");
+        long ref = labels.stableHash();
+
+        assertEquals("Stub counter should start at 0", 0L, metricsEngine.getHead().getSeriesMap().getStubSeriesCount());
+
+        // Create stub
+        metricsEngine.getHead().getOrCreateSeries(ref, null, 1000L);
+        assertTrue("Should be stub", metricsEngine.getHead().getSeriesMap().getByReference(ref).isStub());
+        assertEquals("Stub counter should be 1 after creating stub", 1L, metricsEngine.getHead().getSeriesMap().getStubSeriesCount());
+
+        // Upgrade with labels
+        metricsEngine.getHead().getOrCreateSeries(ref, labels, 2000L);
+
+        assertFalse("Should be upgraded", metricsEngine.getHead().getSeriesMap().getByReference(ref).isStub());
+        assertEquals("Stub counter should be 0 after upgrade", 0L, metricsEngine.getHead().getSeriesMap().getStubSeriesCount());
+    }
 }

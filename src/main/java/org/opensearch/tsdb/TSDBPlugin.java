@@ -149,6 +149,13 @@ public class TSDBPlugin extends Plugin implements SearchPlugin, EnginePlugin, Ac
     /**
      * Setting for the out-of-order cutoff duration. Samples with timestamps older than this cutoff will be dropped.
      * Cutoff time is relative to the latest sample timestamp ingested.
+     *
+     * <p><b>LiveSeriesIndex MIN_TIMESTAMP Field:</b> When a series is created, its document in the LiveSeriesIndex
+     * has MIN_TIMESTAMP set to <code>(sample_timestamp - OOO_cutoff)</code> and MAX_TIMESTAMP set to Long.MAX_VALUE.
+     *
+     * <p><b>Dynamic Setting Warning:</b> MIN_TIMESTAMP is only set at series creation and never updated (until LiveSeriesIndex drop it). Increasing
+     * the OOO cutoff after series creation may cause queries to miss data because the MIN_TIMESTAMP remains at the
+     * old value.
      */
     public static final Setting<TimeValue> TSDB_ENGINE_OOO_CUTOFF = Setting.positiveTimeSetting(
         "index.tsdb_engine.ooo_cutoff",

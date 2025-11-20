@@ -44,6 +44,7 @@ import org.opensearch.tsdb.core.model.ByteLabels;
 import org.opensearch.tsdb.core.model.Labels;
 import org.opensearch.tsdb.core.retention.NOOPRetention;
 import org.opensearch.tsdb.core.utils.Constants;
+import org.opensearch.tsdb.core.utils.Time;
 
 import java.io.IOException;
 import java.nio.file.Path;
@@ -52,6 +53,7 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.mockito.Mockito.doReturn;
@@ -1183,6 +1185,13 @@ public class HeadTests extends OpenSearchTestCase {
             () -> appender5.preprocess(Engine.Operation.Origin.PRIMARY, 4, hash, labels, 1999L, 500.0, () -> {})
         );
 
+        // Query liveSeriesIndex and validate MIN_TIMESTAMP for the series ref
+        long minTimestamp = getMinTimestampFromLiveSeriesIndex(head.getLiveSeriesIndex(), hash);
+        TimeUnit timeUnit = TimeUnit.valueOf(TSDBPlugin.TSDB_ENGINE_TIME_UNIT.get(defaultSettings));
+        long oooCutoffWindow = Time.toTimestamp(TSDBPlugin.TSDB_ENGINE_OOO_CUTOFF.get(defaultSettings), timeUnit);
+        long expectedMinTimestamp = 10000L - oooCutoffWindow;
+        assertEquals("MIN_TIMESTAMP should be timestamp - oooCutoffWindow", expectedMinTimestamp, minTimestamp);
+
         head.close();
         closedChunkIndexManager.close();
     }
@@ -1244,5 +1253,189 @@ public class HeadTests extends OpenSearchTestCase {
 
         head.close();
         closedChunkIndexManager.close();
+    }
+
+    public void testStubSeriesCreationDuringRecovery() throws IOException, InterruptedException {
+        ClosedChunkIndexManager cm = new ClosedChunkIndexManager(
+            createTempDir("metrics"),
+            new InMemoryMetadataStore(),
+            new NOOPRetention(),
+            new NoopCompaction(),
+            threadPool,
+            new ShardId("test", "uuid", 0),
+            defaultSettings
+        );
+        Head head = new Head(createTempDir("head"), new ShardId("test", "uuid", 0), cm, defaultSettings);
+
+        Labels labels = ByteLabels.fromStrings("k1", "v1");
+        long ref = labels.stableHash();
+
+        Head.HeadAppender appender = head.newAppender();
+        assertTrue(appender.preprocess(Engine.Operation.Origin.PEER_RECOVERY, 0, ref, null, 1000L, 100.0, () -> {}));
+        appender.append(() -> {}, () -> {});
+
+        MemSeries series = head.getSeriesMap().getByReference(ref);
+        assertTrue(series.isStub());
+        assertNull(series.getLabels());
+
+        head.close();
+        cm.close();
+    }
+
+    public void testStubSeriesUpgradeDuringRecovery() throws IOException, InterruptedException {
+        ClosedChunkIndexManager cm = new ClosedChunkIndexManager(
+            createTempDir("metrics"),
+            new InMemoryMetadataStore(),
+            new NOOPRetention(),
+            new NoopCompaction(),
+            threadPool,
+            new ShardId("test", "uuid", 0),
+            defaultSettings
+        );
+        Head head = new Head(createTempDir("head"), new ShardId("test", "uuid", 0), cm, defaultSettings);
+
+        Labels labels = ByteLabels.fromStrings("k1", "v1");
+        long ref = labels.stableHash();
+
+        // Create stub
+        Head.HeadAppender a1 = head.newAppender();
+        assertTrue(a1.preprocess(Engine.Operation.Origin.PEER_RECOVERY, 0, ref, null, 1000L, 100.0, () -> {}));
+        a1.append(() -> {}, () -> {});
+
+        // Upgrade with labels
+        Head.HeadAppender a2 = head.newAppender();
+        assertTrue(a2.preprocess(Engine.Operation.Origin.PEER_RECOVERY, 1, ref, labels, 2000L, 200.0, () -> {}));
+        a2.append(() -> {}, () -> {});
+
+        MemSeries upgraded = head.getSeriesMap().getByReference(ref);
+        assertFalse(upgraded.isStub());
+        assertEquals(labels, upgraded.getLabels());
+
+        // Query liveSeriesIndex and validate MIN_TIMESTAMP for the series ref
+        long minTimestamp = getMinTimestampFromLiveSeriesIndex(head.getLiveSeriesIndex(), ref);
+        TimeUnit timeUnit = TimeUnit.valueOf(TSDBPlugin.TSDB_ENGINE_TIME_UNIT.get(defaultSettings));
+        long oooCutoffWindow = Time.toTimestamp(TSDBPlugin.TSDB_ENGINE_OOO_CUTOFF.get(defaultSettings), timeUnit);
+        long expectedMinTimestamp = 2000L - oooCutoffWindow;
+        assertEquals("MIN_TIMESTAMP should be timestamp - oooCutoffWindow", expectedMinTimestamp, minTimestamp);
+
+        head.close();
+        cm.close();
+    }
+
+    public void testMultipleRefOnlyOperationsBeforeLabels() throws IOException, InterruptedException {
+        ClosedChunkIndexManager cm = new ClosedChunkIndexManager(
+            createTempDir("metrics"),
+            new InMemoryMetadataStore(),
+            new NOOPRetention(),
+            new NoopCompaction(),
+            threadPool,
+            new ShardId("test", "uuid", 0),
+            defaultSettings
+        );
+        Head head = new Head(createTempDir("head"), new ShardId("test", "uuid", 0), cm, defaultSettings);
+
+        Labels labels = ByteLabels.fromStrings("k1", "v1");
+        long ref = labels.stableHash();
+
+        for (int i = 0; i < 5; i++) {
+            Head.HeadAppender appender = head.newAppender();
+            appender.preprocess(Engine.Operation.Origin.PEER_RECOVERY, i, ref, null, 1000L + i * 100, 100.0, () -> {});
+            appender.append(() -> {}, () -> {});
+        }
+
+        assertTrue(head.getSeriesMap().getByReference(ref).isStub());
+
+        // Upgrade
+        Head.HeadAppender appender = head.newAppender();
+        appender.preprocess(Engine.Operation.Origin.PEER_RECOVERY, 5, ref, labels, 1500L, 105.0, () -> {});
+        appender.append(() -> {}, () -> {});
+
+        MemSeries upgraded = head.getSeriesMap().getByReference(ref);
+        assertFalse(upgraded.isStub());
+
+        // Query liveSeriesIndex and validate MIN_TIMESTAMP for the series ref
+        long minTimestamp = getMinTimestampFromLiveSeriesIndex(head.getLiveSeriesIndex(), ref);
+        TimeUnit timeUnit = TimeUnit.valueOf(TSDBPlugin.TSDB_ENGINE_TIME_UNIT.get(defaultSettings));
+        long oooCutoffWindow = Time.toTimestamp(TSDBPlugin.TSDB_ENGINE_OOO_CUTOFF.get(defaultSettings), timeUnit);
+        long expectedMinTimestamp = 1500L - oooCutoffWindow;
+        assertEquals("MIN_TIMESTAMP should be timestamp - oooCutoffWindow", expectedMinTimestamp, minTimestamp);
+
+        head.close();
+        cm.close();
+    }
+
+    public void testNonRecoveryCannotCreateStubSeries() throws IOException {
+        ClosedChunkIndexManager cm = new ClosedChunkIndexManager(
+            createTempDir("metrics"),
+            new InMemoryMetadataStore(),
+            new NOOPRetention(),
+            new NoopCompaction(),
+            threadPool,
+            new ShardId("test", "uuid", 0),
+            defaultSettings
+        );
+        Head head = new Head(createTempDir("head"), new ShardId("test", "uuid", 0), cm, defaultSettings);
+
+        Labels labels = ByteLabels.fromStrings("k1", "v1");
+        long ref = labels.stableHash();
+
+        Head.HeadAppender appender = head.newAppender();
+        assertThrows(
+            TSDBEmptyLabelException.class,
+            () -> appender.preprocess(Engine.Operation.Origin.PRIMARY, 0, ref, null, 1000L, 100.0, () -> {})
+        );
+
+        head.close();
+        cm.close();
+    }
+
+    /**
+     * Helper method to query the LiveSeriesIndex and get the MIN_TIMESTAMP for a specific series reference.
+     *
+     * @param liveSeriesIndex the LiveSeriesIndex to query
+     * @param ref the series reference to search for
+     * @return the MIN_TIMESTAMP value for the series
+     * @throws IOException if there's an error querying the index
+     */
+    private long getMinTimestampFromLiveSeriesIndex(LiveSeriesIndex liveSeriesIndex, long ref) throws IOException {
+        ReaderManager readerManager = liveSeriesIndex.getDirectoryReaderManager();
+        readerManager.maybeRefresh();
+        DirectoryReader reader = null;
+        try {
+            reader = readerManager.acquire();
+            IndexSearcher searcher = new IndexSearcher(reader);
+
+            // Search for the specific reference
+            org.apache.lucene.search.Query query = org.apache.lucene.document.LongPoint.newExactQuery(
+                org.opensearch.tsdb.core.mapping.Constants.IndexSchema.REFERENCE,
+                ref
+            );
+            TopDocs topDocs = searcher.search(query, 1);
+
+            if (topDocs.scoreDocs.length == 0) {
+                throw new IllegalStateException("No document found for reference: " + ref);
+            }
+
+            // Get MIN_TIMESTAMP for this document
+            int docId = topDocs.scoreDocs[0].doc;
+            LeafReaderContext leafContext = reader.leaves().get(org.apache.lucene.index.ReaderUtil.subIndex(docId, reader.leaves()));
+            int localDocId = docId - leafContext.docBase;
+
+            NumericDocValues minTimestampValues = leafContext.reader()
+                .getNumericDocValues(org.opensearch.tsdb.core.mapping.Constants.IndexSchema.MIN_TIMESTAMP);
+            if (minTimestampValues == null) {
+                throw new IllegalStateException("MIN_TIMESTAMP field not found");
+            }
+
+            if (!minTimestampValues.advanceExact(localDocId)) {
+                throw new IllegalStateException("MIN_TIMESTAMP value not found for document");
+            }
+
+            return minTimestampValues.longValue();
+        } finally {
+            if (reader != null) {
+                readerManager.release(reader);
+            }
+        }
     }
 }

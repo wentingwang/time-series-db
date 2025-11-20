@@ -125,30 +125,46 @@ public class Head {
 
     /**
      * Get or create a series with the given labels and hash.
+     * Can create stub series (without labels) during recovery, which are later upgraded when labels arrive.
      *
      * @param hash      the hash used to get the series
-     * @param labels    the labels of the series
+     * @param labels    the labels of the series (can be null/empty for stub series during recovery)
      * @param timestamp the timestamp of the first sample in the series, used for indexing
-     * @return the series and whether it was newly created
+     * @return the series and whether it was newly created (or upgraded from stub)
      */
     public SeriesResult getOrCreateSeries(long hash, Labels labels, long timestamp) {
         MemSeries existingSeries = seriesMap.getByReference(hash);
         boolean isFailedSeries = existingSeries != null && existingSeries.isFailed();
+        boolean hasLabels = labels != null && !labels.isEmpty();
 
-        if (existingSeries != null && isFailedSeries == false) {
+        // Handle existing series (upgrade stub if needed, or return as-is)
+        if (existingSeries != null && !isFailedSeries) {
+            // If it's a stub series and we now have labels, upgrade it
+            if (existingSeries.isStub() && hasLabels) {
+                return upgradeStubSeriesWithLabels(existingSeries, hash, labels, timestamp);
+            }
+            // Series exists and is valid, return it
             return new SeriesResult(existingSeries, false);
         }
 
-        // create a new series, or replace existing failed one
-        MemSeries newSeries = new MemSeries(hash, labels);
+        // Create new series (stub if no labels, normal if has labels)
+        MemSeries newSeries = hasLabels ? new MemSeries(hash, labels) : new MemSeries(hash, null, true);
         MemSeries actualSeries = seriesMap.putIfAbsent(newSeries);
         boolean isNewSeriesCreated = actualSeries == newSeries;
 
-        // MemSeries has been added to the seriesMap. Mark it as failed in case of any errors from here.
         try {
             if (isNewSeriesCreated) {
-                liveSeriesIndex.addSeries(labels, hash, timestamp);
-                TSDBMetrics.incrementCounter(TSDBMetrics.INGESTION.seriesCreated, 1);
+                if (hasLabels) {
+                    // Normal series: add to live index
+                    // MIN_TIMESTAMP is set to (sample_timestamp - OOO_cutoff) to allow retrieval of late-arriving samples.
+                    long minTimestampForDoc = timestamp - oooCutoffWindow;
+                    liveSeriesIndex.addSeries(labels, hash, minTimestampForDoc);
+                    TSDBMetrics.incrementCounter(TSDBMetrics.INGESTION.seriesCreated, 1);
+                } else {
+                    // Stub series created: increment counter
+                    seriesMap.incrementStubSeriesCount();
+                }
+
                 return new SeriesResult(newSeries, true);
             } else {
                 return new SeriesResult(actualSeries, false);
@@ -157,7 +173,37 @@ public class Head {
             if (isNewSeriesCreated) {
                 markSeriesAsFailed(actualSeries);
             }
+            throw e;
+        }
+    }
 
+    /**
+     * Upgrades a stub series with labels and adds it to the LiveSeriesIndex.
+     *
+     * @param series the stub series to upgrade
+     * @param hash the series reference hash
+     * @param labels the labels to add to the series
+     * @param timestamp the timestamp to use if no chunks exist yet
+     * @return SeriesResult with created=true to indicate labels should be persisted
+     */
+    private SeriesResult upgradeStubSeriesWithLabels(MemSeries series, long hash, Labels labels, long timestamp) {
+        try {
+            series.lock();
+            try {
+                series.upgradeWithLabels(labels);
+                // Decrement stub series counter since stub is now upgraded
+                seriesMap.decrementStubSeriesCount();
+                // MIN_TIMESTAMP is set to (sample_timestamp - OOO_cutoff) to allow retrieval of late-arriving samples.
+                long minTimestampForDoc = timestamp - oooCutoffWindow;
+                liveSeriesIndex.addSeries(labels, hash, minTimestampForDoc);
+                TSDBMetrics.incrementCounter(TSDBMetrics.INGESTION.seriesCreated, 1);
+                log.info("Upgraded stub series with labels: ref={}, labels={}, minTimestampForDoc={}", hash, labels, minTimestampForDoc);
+            } finally {
+                series.unlock();
+            }
+            return new SeriesResult(series, true);
+        } catch (Exception e) {
+            markSeriesAsFailed(series);
             throw e;
         }
     }
@@ -175,6 +221,11 @@ public class Head {
         } catch (Exception e) {
             // Suppress the exception. Unused series will be cleaned up from the head eventually.
             log.error("Failed to remove series from live series index", e);
+        }
+
+        // If this is a stub series, decrement the counter before removing
+        if (series.isStub()) {
+            seriesMap.decrementStubSeriesCount();
         }
 
         // remove failed series from the seriesMap and mark it as deleted
@@ -435,9 +486,18 @@ public class Head {
                 }
 
                 MemSeries series = head.getSeriesMap().getByReference(reference);
-                if (series == null || series.isFailed()) {
-                    // Create a new series if none exists or if the existing series creation failed
-                    Head.SeriesResult seriesResult = getOrCreateSeries(labels, reference, timestamp);
+
+                // Check if we need to create a new series or upgrade an existing stub
+                boolean needsCreationOrUpgrade = series == null
+                    || series.isFailed()
+                    || (series.isStub() && labels != null && !labels.isEmpty());
+
+                if (needsCreationOrUpgrade) {
+                    // If recovery with no labels, allow stub creation; otherwise require labels
+                    if (!origin.isRecovery() && (labels == null || labels.isEmpty())) {
+                        throw new TSDBEmptyLabelException("Labels cannot be empty for ref: " + reference + ", timestamp: " + timestamp);
+                    }
+                    Head.SeriesResult seriesResult = head.getOrCreateSeries(reference, labels, timestamp);
                     series = seriesResult.series();
                     seriesCreated = seriesResult.created();
                 }
@@ -469,16 +529,6 @@ public class Head {
                 }
                 throw e;
             }
-        }
-
-        private Head.SeriesResult getOrCreateSeries(Labels labels, long hash, long timestamp) {
-            if (labels == null || labels.isEmpty()) {
-                // TODO: switch back to IllegalStateException once OOO support is added
-                // throw new IllegalStateException("Labels cannot be empty for ref: " + hash + ", timestamp: " + timestamp);
-                throw new TSDBEmptyLabelException("Labels cannot be empty for ref: " + hash + ", timestamp: " + timestamp);
-            }
-
-            return head.getOrCreateSeries(hash, labels, timestamp);
         }
 
         private void validateOOO(long timestamp, Runnable failureCallback) {

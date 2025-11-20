@@ -499,6 +499,9 @@ public class TSDBEngine extends Engine {
         if (POST_RECOVERY_REFRESH_SOURCE.equals(source)) {
             postRecoveryRefreshCompleted = true;
             logger.info("Post-recovery refresh completed, empty series dropping now allowed during flush");
+
+            // Validate that no stub series remain after recovery
+            validateNoStubSeriesAfterRecovery();
         }
         refreshInternal(source, SearcherScope.EXTERNAL, true);
     }
@@ -1277,6 +1280,18 @@ public class TSDBEngine extends Engine {
 
     private Store getStore() {
         return store;
+    }
+
+    /**
+     * Validates that no stub series remain after recovery completes.
+     * All stub series should have been upgraded with labels during recovery.
+     * If any stub series remain, it indicates incomplete recovery data.
+     */
+    private void validateNoStubSeriesAfterRecovery() {
+        long stubCount = head.getSeriesMap().getStubSeriesCount();
+        if (stubCount != 0) {
+            logger.warn("Found {} stub series after recovery completion.", stubCount);
+        }
     }
 
     /**
