@@ -21,6 +21,8 @@ import org.opensearch.tsdb.core.index.ReaderManagerWithMetadata;
 import org.opensearch.tsdb.core.index.closed.ClosedChunkIndexManager;
 import org.opensearch.tsdb.core.index.live.MemChunkReader;
 
+import org.opensearch.tsdb.metrics.TSDBMetrics;
+
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
@@ -44,6 +46,8 @@ public class TSDBDirectoryReaderReferenceManager extends ReferenceManager<OpenSe
     private final ShardId shardId;
 
     private volatile List<ReaderManagerWithMetadata> closedChunkIndexReaderManagers;
+
+    private volatile long lastRefreshNanos = System.nanoTime();
 
     /**
      * Creates a new TSDBDirectoryReaderReferenceManager.
@@ -179,13 +183,34 @@ public class TSDBDirectoryReaderReferenceManager extends ReferenceManager<OpenSe
             // Update snapshot to prevent redundant structural refreshes
             this.closedChunkIndexReaderManagers = currentReaderManagers;
 
+            // Record refresh interval for structural refresh
+            recordRefreshInterval();
+
             log.info("Refreshed the tsdb directory reader");
             return reader;
         } else {
             log.info("No changes detected for refreshing the tsdb directory reader");
             // No structural change - attempt lightweight refresh
-            return (OpenSearchDirectoryReader) DirectoryReader.openIfChanged(referenceToRefresh);
+            OpenSearchDirectoryReader refreshedReader = (OpenSearchDirectoryReader) DirectoryReader.openIfChanged(referenceToRefresh);
+
+            // Only record refresh interval if an actual refresh occurred (not a no-op)
+            if (refreshedReader != null) {
+                recordRefreshInterval();
+            }
+
+            return refreshedReader;
         }
+    }
+
+    /**
+     * Records the time interval since the last successful refresh.
+     */
+    private void recordRefreshInterval() {
+        long currentNanos = System.nanoTime();
+        long intervalNanos = currentNanos - lastRefreshNanos;
+        // intervalNanos is always positive since nanoTime is monotonic
+        TSDBMetrics.recordHistogram(TSDBMetrics.ENGINE.refreshInterval, intervalNanos / 1_000_000.0);
+        lastRefreshNanos = currentNanos;
     }
 
     @Override
@@ -196,5 +221,14 @@ public class TSDBDirectoryReaderReferenceManager extends ReferenceManager<OpenSe
     @Override
     protected int getRefCount(OpenSearchDirectoryReader reference) {
         return reference.getRefCount();
+    }
+
+    /**
+     * Get the nanotime of the last successful refresh.
+     *
+     * @return nanotime of last refresh (from System.nanoTime())
+     */
+    public long getLastRefreshNanos() {
+        return lastRefreshNanos;
     }
 }

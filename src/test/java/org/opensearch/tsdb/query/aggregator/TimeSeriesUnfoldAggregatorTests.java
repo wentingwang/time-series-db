@@ -33,12 +33,17 @@ import org.opensearch.tsdb.core.chunk.ChunkIterator;
 import org.opensearch.tsdb.core.model.Labels;
 import org.opensearch.tsdb.core.reader.TSDBDocValues;
 import org.opensearch.tsdb.core.reader.TSDBLeafReader;
+import org.opensearch.tsdb.metrics.TSDBMetrics;
+import org.opensearch.telemetry.metrics.Counter;
+import org.opensearch.telemetry.metrics.Histogram;
+import org.opensearch.telemetry.metrics.MetricsRegistry;
 
 import java.io.IOException;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -265,6 +270,58 @@ public class TimeSeriesUnfoldAggregatorTests extends OpenSearchTestCase {
             this.directoryReader = directoryReader;
             this.directory = directory;
             this.indexWriter = indexWriter;
+        }
+    }
+
+    /**
+     * Tests that recordMetrics correctly records empty status when outputSeriesCount is 0.
+     */
+    public void testRecordMetricsWithEmptyResults() throws IOException {
+        // Initialize TSDBMetrics with mock registry
+        MetricsRegistry mockRegistry = mock(MetricsRegistry.class);
+        when(mockRegistry.createCounter(anyString(), anyString(), anyString())).thenReturn(mock(Counter.class));
+        when(mockRegistry.createHistogram(anyString(), anyString(), anyString())).thenReturn(mock(Histogram.class));
+        TSDBMetrics.initialize(mockRegistry);
+
+        try {
+            long minTimestamp = 1000L;
+            long maxTimestamp = 5000L;
+            long step = 100L;
+
+            TimeSeriesUnfoldAggregator aggregator = createAggregator(minTimestamp, maxTimestamp, step);
+
+            aggregator.setOutputSeriesCountForTesting(0);
+            aggregator.recordMetrics();
+            aggregator.close();
+
+        } finally {
+            TSDBMetrics.cleanup();
+        }
+    }
+
+    /**
+     * Tests that recordMetrics correctly records hits status when outputSeriesCount > 0.
+     */
+    public void testRecordMetricsWithHitsResults() throws IOException {
+        // Initialize TSDBMetrics with mock registry
+        MetricsRegistry mockRegistry = mock(MetricsRegistry.class);
+        when(mockRegistry.createCounter(anyString(), anyString(), anyString())).thenReturn(mock(Counter.class));
+        when(mockRegistry.createHistogram(anyString(), anyString(), anyString())).thenReturn(mock(Histogram.class));
+        TSDBMetrics.initialize(mockRegistry);
+
+        try {
+            long minTimestamp = 1000L;
+            long maxTimestamp = 5000L;
+            long step = 100L;
+
+            TimeSeriesUnfoldAggregator aggregator = createAggregator(minTimestamp, maxTimestamp, step);
+
+            aggregator.setOutputSeriesCountForTesting(42);
+            aggregator.recordMetrics();
+            aggregator.close();
+
+        } finally {
+            TSDBMetrics.cleanup();
         }
     }
 

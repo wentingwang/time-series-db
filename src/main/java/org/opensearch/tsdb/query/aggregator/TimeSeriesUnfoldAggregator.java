@@ -17,6 +17,7 @@ import org.opensearch.search.aggregations.LeafBucketCollector;
 import org.opensearch.search.aggregations.LeafBucketCollectorBase;
 import org.opensearch.search.aggregations.bucket.BucketsAggregator;
 import org.opensearch.search.internal.SearchContext;
+import org.opensearch.telemetry.metrics.tags.Tags;
 import org.opensearch.tsdb.core.chunk.ChunkIterator;
 import org.opensearch.tsdb.core.chunk.DedupIterator;
 import org.opensearch.tsdb.core.chunk.MergeIterator;
@@ -28,6 +29,7 @@ import org.opensearch.tsdb.core.model.Sample;
 import org.opensearch.tsdb.core.reader.TSDBDocValues;
 import org.opensearch.tsdb.core.reader.TSDBLeafReader;
 import org.opensearch.tsdb.metrics.TSDBMetrics;
+import org.opensearch.tsdb.metrics.TSDBMetricsConstants;
 import org.opensearch.tsdb.query.utils.SampleMerger;
 import org.opensearch.tsdb.query.stage.UnaryPipelineStage;
 import org.opensearch.tsdb.lang.m3.stage.AbstractGroupingStage;
@@ -95,6 +97,11 @@ import org.opensearch.tsdb.query.utils.ProfileInfoMapper;
  */
 public class TimeSeriesUnfoldAggregator extends BucketsAggregator {
 
+    private static final Tags TAGS_STATUS_EMPTY = Tags.create()
+        .addTag(TSDBMetricsConstants.TAG_STATUS, TSDBMetricsConstants.TAG_STATUS_EMPTY);
+    private static final Tags TAGS_STATUS_HITS = Tags.create()
+        .addTag(TSDBMetricsConstants.TAG_STATUS, TSDBMetricsConstants.TAG_STATUS_HITS);
+
     private final List<UnaryPipelineStage> stages;
     private final Map<Long, List<TimeSeries>> timeSeriesByBucket = new HashMap<>();
     private static final SampleMerger MERGE_HELPER = new SampleMerger(SampleMerger.DeduplicatePolicy.ANY_WINS);
@@ -122,6 +129,15 @@ public class TimeSeriesUnfoldAggregator extends BucketsAggregator {
     private int liveSamplesProcessed = 0;
     private int closedSamplesProcessed = 0;
     private int chunksForDocErrors = 0;
+    private int outputSeriesCount = 0;
+
+    /**
+     * Set output series count for testing purposes.
+     * Package-private for testing.
+     */
+    void setOutputSeriesCountForTesting(int count) {
+        this.outputSeriesCount = count;
+    }
 
     /**
      * Create a time series unfold aggregator.
@@ -450,6 +466,7 @@ public class TimeSeriesUnfoldAggregator extends BucketsAggregator {
                 }
 
                 debugInfo.outputSeriesCount += timeSeriesList.size();
+                outputSeriesCount += timeSeriesList.size();
 
                 // Get the last stage to determine the reduce behavior
                 UnaryPipelineStage lastStage = (stages == null || stages.isEmpty()) ? null : stages.getLast();
@@ -492,8 +509,9 @@ public class TimeSeriesUnfoldAggregator extends BucketsAggregator {
     /**
      * Emit all collected metrics in one batch for minimal overhead.
      * All metrics are batched and emitted together at the end in a finally block.
+     * Package-private for testing.
      */
-    private void recordMetrics() {
+    void recordMetrics() {
         if (!TSDBMetrics.isInitialized()) {
             return;
         }
@@ -544,6 +562,14 @@ public class TimeSeriesUnfoldAggregator extends BucketsAggregator {
             // Record errors
             if (chunksForDocErrors > 0) {
                 TSDBMetrics.incrementCounter(TSDBMetrics.AGGREGATION.chunksForDocErrors, chunksForDocErrors);
+            }
+
+            // Record empty/hits metrics with tags
+            if (outputSeriesCount > 0) {
+                TSDBMetrics.incrementCounter(TSDBMetrics.AGGREGATION.resultsTotal, 1, TAGS_STATUS_HITS);
+                TSDBMetrics.recordHistogram(TSDBMetrics.AGGREGATION.seriesTotal, outputSeriesCount);
+            } else {
+                TSDBMetrics.incrementCounter(TSDBMetrics.AGGREGATION.resultsTotal, 1, TAGS_STATUS_EMPTY);
             }
         } catch (Exception e) {
             // Swallow exceptions in metrics recording to avoid impacting actual operation

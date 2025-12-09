@@ -48,6 +48,8 @@ public class TSDBAggregationMetricsTests extends OpenSearchTestCase {
         Histogram samplesLive = mock(Histogram.class);
         Histogram samplesClosed = mock(Histogram.class);
         Counter chunksForDocErrors = mock(Counter.class);
+        Counter resultsTotal = mock(Counter.class);
+        Histogram seriesTotal = mock(Histogram.class);
 
         // Setup mocks
         when(
@@ -146,6 +148,22 @@ public class TSDBAggregationMetricsTests extends OpenSearchTestCase {
             )
         ).thenReturn(chunksForDocErrors);
 
+        when(
+            registry.createCounter(
+                eq(TSDBMetricsConstants.AGGREGATION_RESULTS_TOTAL),
+                eq(TSDBMetricsConstants.AGGREGATION_RESULTS_TOTAL_DESC),
+                eq(TSDBMetricsConstants.UNIT_COUNT)
+            )
+        ).thenReturn(resultsTotal);
+
+        when(
+            registry.createHistogram(
+                eq(TSDBMetricsConstants.AGGREGATION_SERIES_TOTAL),
+                eq(TSDBMetricsConstants.AGGREGATION_SERIES_TOTAL_DESC),
+                eq(TSDBMetricsConstants.UNIT_COUNT)
+            )
+        ).thenReturn(seriesTotal);
+
         metrics.initialize(registry);
 
         // Verify all metrics were created
@@ -161,6 +179,8 @@ public class TSDBAggregationMetricsTests extends OpenSearchTestCase {
         assertSame(samplesLive, metrics.samplesLive);
         assertSame(samplesClosed, metrics.samplesClosed);
         assertSame(chunksForDocErrors, metrics.chunksForDocErrors);
+        assertSame(resultsTotal, metrics.resultsTotal);
+        assertSame(seriesTotal, metrics.seriesTotal);
 
         // Verify registry interactions
         verify(registry).createHistogram(
@@ -273,6 +293,22 @@ public class TSDBAggregationMetricsTests extends OpenSearchTestCase {
             )
         ).thenReturn(mock(Counter.class));
 
+        when(
+            registry.createCounter(
+                eq(TSDBMetricsConstants.AGGREGATION_RESULTS_TOTAL),
+                eq(TSDBMetricsConstants.AGGREGATION_RESULTS_TOTAL_DESC),
+                eq(TSDBMetricsConstants.UNIT_COUNT)
+            )
+        ).thenReturn(mock(Counter.class));
+
+        when(
+            registry.createHistogram(
+                eq(TSDBMetricsConstants.AGGREGATION_SERIES_TOTAL),
+                eq(TSDBMetricsConstants.AGGREGATION_SERIES_TOTAL_DESC),
+                eq(TSDBMetricsConstants.UNIT_COUNT)
+            )
+        ).thenReturn(mock(Histogram.class));
+
         metrics.initialize(registry);
         assertNotNull(metrics.collectLatency);
         assertNotNull(metrics.chunksForDocErrors);
@@ -291,6 +327,8 @@ public class TSDBAggregationMetricsTests extends OpenSearchTestCase {
         assertNull(metrics.samplesLive);
         assertNull(metrics.samplesClosed);
         assertNull(metrics.chunksForDocErrors);
+        assertNull(metrics.resultsTotal);
+        assertNull(metrics.seriesTotal);
     }
 
     public void testCleanupBeforeInitialization() {

@@ -71,9 +71,10 @@ public class TSDBEngineMetricsTests extends OpenSearchTestCase {
         // Verify all histograms are created
         assertNotNull(metrics.closedChunkSize);
         assertNotNull(metrics.flushLatency);
+        assertNotNull(metrics.refreshInterval);
 
-        // Verify registry calls for histograms (2 histograms total)
-        verify(registry, times(2)).createHistogram(anyString(), anyString(), anyString());
+        // Verify registry calls for histograms (3 histograms total: chunk size, flush latency, refresh interval)
+        verify(registry, times(3)).createHistogram(anyString(), anyString(), anyString());
     }
 
     public void testInitializeDoesNotCreateGauges() {
@@ -164,6 +165,7 @@ public class TSDBEngineMetricsTests extends OpenSearchTestCase {
         // Verify all histograms are reset to null
         assertNull(metrics.closedChunkSize);
         assertNull(metrics.flushLatency);
+        assertNull(metrics.refreshInterval);
     }
 
     public void testCleanupClosesAllGauges() throws Exception {

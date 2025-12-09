@@ -48,8 +48,14 @@ public class TSDBAggregationMetrics {
     /** Histogram for closed samples per request */
     public Histogram samplesClosed;
 
-    /** Counter for chunksForDoc() errors */
+    /** Counter for errors in chunksForDoc operations */
     public Counter chunksForDocErrors;
+
+    /** Counter for query results (tagged with status: empty or hits) */
+    public Counter resultsTotal;
+
+    /** Histogram for number of series returned per query */
+    public Histogram seriesTotal;
 
     /**
      * Initialize aggregation metrics. Called by TSDBMetrics.initialize().
@@ -115,6 +121,16 @@ public class TSDBAggregationMetrics {
             TSDBMetricsConstants.AGGREGATION_CHUNKS_FOR_DOC_ERRORS_TOTAL_DESC,
             TSDBMetricsConstants.UNIT_COUNT
         );
+        resultsTotal = registry.createCounter(
+            TSDBMetricsConstants.AGGREGATION_RESULTS_TOTAL,
+            TSDBMetricsConstants.AGGREGATION_RESULTS_TOTAL_DESC,
+            TSDBMetricsConstants.UNIT_COUNT
+        );
+        seriesTotal = registry.createHistogram(
+            TSDBMetricsConstants.AGGREGATION_SERIES_TOTAL,
+            TSDBMetricsConstants.AGGREGATION_SERIES_TOTAL_DESC,
+            TSDBMetricsConstants.UNIT_COUNT
+        );
     }
 
     /**
@@ -133,5 +149,7 @@ public class TSDBAggregationMetrics {
         samplesLive = null;
         samplesClosed = null;
         chunksForDocErrors = null;
+        resultsTotal = null;
+        seriesTotal = null;
     }
 }

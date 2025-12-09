@@ -58,6 +58,9 @@ public class TSDBEngineMetrics {
     /** Histogram for flush operation latency */
     public Histogram flushLatency;
 
+    /** Histogram for NRT refresh interval (time between refreshes / new series visibility lag) */
+    public Histogram refreshInterval;
+
     /** Counter for total commits */
     public Counter commitTotal;
 
@@ -126,6 +129,13 @@ public class TSDBEngineMetrics {
         flushLatency = registry.createHistogram(
             TSDBMetricsConstants.FLUSH_LATENCY,
             TSDBMetricsConstants.FLUSH_LATENCY_DESC,
+            TSDBMetricsConstants.UNIT_MILLISECONDS
+        );
+
+        // Initialize refresh/visibility metrics
+        refreshInterval = registry.createHistogram(
+            TSDBMetricsConstants.REFRESH_INTERVAL,
+            TSDBMetricsConstants.REFRESH_INTERVAL_DESC,
             TSDBMetricsConstants.UNIT_MILLISECONDS
         );
 
@@ -200,6 +210,7 @@ public class TSDBEngineMetrics {
         // Cleanup histograms
         closedChunkSize = null;
         flushLatency = null;
+        refreshInterval = null;
 
         // Cleanup commit counter
         commitTotal = null;

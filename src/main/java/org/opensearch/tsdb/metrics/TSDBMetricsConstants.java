@@ -103,8 +103,21 @@ public final class TSDBMetricsConstants {
     /** Histogram: Closed samples processed per request */
     public static final String AGGREGATION_SAMPLES_CLOSED = "tsdb.aggregation.samples.closed";
 
-    /** Counter: Total chunksForDoc() errors */
+    /** Counter: Total errors in chunksForDoc() operations */
     public static final String AGGREGATION_CHUNKS_FOR_DOC_ERRORS_TOTAL = "tsdb.aggregation.chunks_for_doc.errors.total";
+
+    /** Counter: Total query results (tagged with status: empty or hits) */
+    public static final String AGGREGATION_RESULTS_TOTAL = "tsdb.aggregation.results.total";
+
+    /** Histogram: Number of time series returned per query */
+    public static final String AGGREGATION_SERIES_TOTAL = "tsdb.aggregation.series.total";
+
+    // ============================================
+    // Refresh/Visibility Metrics
+    // ============================================
+
+    /** Histogram: Time between NRT refreshes (new series visibility lag) */
+    public static final String REFRESH_INTERVAL = "tsdb.refresh.interval";
 
     // ============================================
     // Index Metrics (Retention, Compaction)
@@ -186,6 +199,10 @@ public final class TSDBMetricsConstants {
     public static final String AGGREGATION_SAMPLES_LIVE_DESC = "Live samples processed per aggregation request";
     public static final String AGGREGATION_SAMPLES_CLOSED_DESC = "Closed samples processed per aggregation request";
     public static final String AGGREGATION_CHUNKS_FOR_DOC_ERRORS_TOTAL_DESC = "Total errors in chunksForDoc() operations";
+    public static final String AGGREGATION_RESULTS_TOTAL_DESC = "Total queries tagged by result status (empty or hits)";
+    public static final String AGGREGATION_SERIES_TOTAL_DESC = "Number of time series returned per query";
+    // Refresh/Visibility Metrics
+    public static final String REFRESH_INTERVAL_DESC = "Time between NRT refreshes (new series visibility lag)";
 
     // Index Metrics
     public static final String INDEX_CREATED_TOTAL_DESC = "Total number of closed chunk indexes created";
@@ -200,6 +217,19 @@ public final class TSDBMetricsConstants {
     public static final String COMPACTION_FAILURE_TOTAL_DESC = "Total number of failed compactions";
     public static final String COMPACTION_LATENCY_DESC = "Latency (ms) of compaction operations";
     public static final String COMPACTION_DELETED_TOTAL_DESC = "Total number of indexes deleted by compaction";
+
+    // ============================================
+    // Metric Tags
+    // ============================================
+
+    /** Tag key for result status */
+    public static final String TAG_STATUS = "status";
+
+    /** Tag value for empty results */
+    public static final String TAG_STATUS_EMPTY = "empty";
+
+    /** Tag value for results with hits */
+    public static final String TAG_STATUS_HITS = "hits";
 
     // ============================================
     // Metric Units
