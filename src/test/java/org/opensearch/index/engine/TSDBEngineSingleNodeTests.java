@@ -14,7 +14,6 @@ import org.opensearch.action.index.IndexRequest;
 import org.opensearch.action.index.IndexResponse;
 import org.opensearch.action.search.SearchResponse;
 import org.opensearch.common.settings.Settings;
-import org.opensearch.common.unit.TimeValue;
 import org.opensearch.common.xcontent.XContentType;
 import org.opensearch.index.query.MatchAllQueryBuilder;
 import org.opensearch.plugins.Plugin;
@@ -397,91 +396,4 @@ public class TSDBEngineSingleNodeTests extends OpenSearchSingleNodeTestCase {
         assertEquals("Should have exactly 2 samples after recovery", 2, sampleCountAfterRecovery);
     }
 
-    /**
-     * Test that flush is actually throttled by commit_interval by checking segment generation numbers.
-     * When throttled, no new commit is created, so the generation number remains unchanged.
-     */
-    public void testFlushThrottledByCommitInterval() throws Exception {
-        TimeValue commitInterval = TimeValue.timeValueSeconds(10);
-
-        // Create index with long commit interval and settings to prevent background flushes
-        client().admin()
-            .indices()
-            .prepareCreate(TEST_INDEX_NAME)
-            .setSettings(
-                Settings.builder()
-                    .put("index.tsdb_engine.enabled", true)
-                    .put("index.tsdb_engine.commit_interval", commitInterval.getStringRep())
-                    .put("index.translog.flush_threshold_size", "512mb")  // High threshold to prevent auto-flush
-                    .build()
-            )
-            .setMapping(DEFAULT_INDEX_MAPPING)
-            .get();
-
-        // Index some data
-        String sample1 = createSampleJson("__name__ test_metric host server1", 1000, 10.0);
-        client().prepareIndex(TEST_INDEX_NAME).setSource(sample1, XContentType.JSON).get();
-
-        long generationBeforeFirstFlush = getSegmentGeneration(TEST_INDEX_NAME);
-        logger.info("Generation before first flush: {}", generationBeforeFirstFlush);
-
-        // First flush with force=true - bypasses translog size check forcing a flush
-        client().admin().indices().prepareFlush(TEST_INDEX_NAME).setForce(true).get();
-
-        // Get segment generation after first flush
-        long generationAfterFirstFlush = getSegmentGeneration(TEST_INDEX_NAME);
-        logger.info("Generation after first flush: {}", generationAfterFirstFlush);
-        assertTrue("Generation should increase after first flush", generationAfterFirstFlush > generationBeforeFirstFlush);
-
-        // Index more data to exceed flush threshold again
-        String sample2 = createSampleJson("__name__ test_metric host server2", 2000, 20.0);
-        client().prepareIndex(TEST_INDEX_NAME).setSource(sample2, XContentType.JSON).get();
-
-        // Immediate second flush with waitIfOngoing=false - should be throttled by commit_interval (no new commit)
-        client().admin().indices().prepareFlush(TEST_INDEX_NAME).setWaitIfOngoing(false).get();
-
-        // Generation should be unchanged (flush was throttled by commit_interval)
-        long generationAfterThrottledFlush = getSegmentGeneration(TEST_INDEX_NAME);
-        logger.info("Generation after throttled flush: {}", generationAfterThrottledFlush);
-        assertEquals(
-            "Generation should not change when flush is throttled by commit_interval",
-            generationAfterFirstFlush,
-            generationAfterThrottledFlush
-        );
-
-        logger.info("Waiting for commit interval to elapse (5m + 1s)...");
-        Thread.sleep(commitInterval.millis() + 1L);
-
-        // Third flush with force=true - should succeed now that interval has elapsed
-        logger.info("Calling third flush after interval elapsed");
-        client().admin().indices().prepareFlush(TEST_INDEX_NAME).setForce(true).get();
-
-        // Generation should increase (proving rate limiter was the blocker, not translog)
-        long generationAfterIntervalElapsed = getSegmentGeneration(TEST_INDEX_NAME);
-        logger.info("Generation after interval elapsed: {}", generationAfterIntervalElapsed);
-        assertTrue(
-            "Generation should increase after commit interval elapses (proves rate limiter was blocking)",
-            generationAfterIntervalElapsed > generationAfterThrottledFlush
-        );
-
-        // Data should still be searchable via refresh (verifying NRT still works)
-        client().admin().indices().prepareRefresh(TEST_INDEX_NAME).get();
-        SearchResponse searchResponse = client().prepareSearch(TEST_INDEX_NAME).setQuery(new MatchAllQueryBuilder()).get();
-        assertHitCount(searchResponse, 2);
-    }
-
-    /**
-     * Helper method to get the segment generation number from the index's store.
-     * The generation number corresponds to the segments_N file.
-     */
-    private long getSegmentGeneration(String indexName) throws Exception {
-        // Access the index shard to get to the store
-        var indexService = getInstanceFromNode(org.opensearch.indices.IndicesService.class).indexService(resolveIndex(indexName));
-        var shard = indexService.getShard(0);
-        var store = shard.store();
-
-        // Read the last committed segment infos
-        var segmentInfos = store.readLastCommittedSegmentsInfo();
-        return segmentInfos.getGeneration();
-    }
 }

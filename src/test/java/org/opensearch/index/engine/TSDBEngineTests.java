@@ -16,6 +16,7 @@ import org.opensearch.cluster.service.ClusterApplierService;
 import org.opensearch.common.lucene.Lucene;
 import org.opensearch.common.settings.IndexScopedSettings;
 import org.opensearch.common.settings.Settings;
+import org.opensearch.common.unit.TimeValue;
 import org.opensearch.common.xcontent.XContentType;
 import org.opensearch.core.common.bytes.BytesArray;
 import org.opensearch.index.IndexSettings;
@@ -32,6 +33,7 @@ import org.opensearch.index.translog.Translog;
 import org.opensearch.test.IndexSettingsModule;
 import org.opensearch.threadpool.FixedExecutorBuilder;
 import org.opensearch.threadpool.TestThreadPool;
+import org.opensearch.tsdb.MutableClock;
 import org.opensearch.tsdb.TSDBPlugin;
 import org.opensearch.tsdb.core.head.MemSeries;
 import org.opensearch.tsdb.core.index.closed.ClosedChunkIndex;
@@ -41,6 +43,7 @@ import org.junit.After;
 import org.junit.Before;
 
 import java.io.IOException;
+import java.time.Clock;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -106,6 +109,16 @@ public class TSDBEngineTests extends EngineTestCase {
         IndexSettings settings,
         ClusterApplierService clusterApplierService
     ) throws IOException {
+        return buildTSDBEngine(globalCheckpoint, store, settings, clusterApplierService, Clock.systemUTC());
+    }
+
+    private TSDBEngine buildTSDBEngine(
+        AtomicLong globalCheckpoint,
+        Store store,
+        IndexSettings settings,
+        ClusterApplierService clusterApplierService,
+        Clock clock
+    ) throws IOException {
         // Close the default thread pool and initialize mgmt threadPool.
         threadPool.shutdownNow();
         threadPool = new TestThreadPool(
@@ -132,7 +145,7 @@ public class TSDBEngineTests extends EngineTestCase {
             );
             store.associateIndexWithNewTranslog(translogUuid);
         }
-        return new TSDBEngine(engineConfig, createTempDir("metrics"));
+        return new TSDBEngine(engineConfig, createTempDir("metrics"), clock);
     }
 
     protected IndexSettings newIndexSettings() {
@@ -1057,5 +1070,152 @@ public class TSDBEngineTests extends EngineTestCase {
 
         assertFalse("Should be upgraded", metricsEngine.getHead().getSeriesMap().getByReference(ref).isStub());
         assertEquals("Stub counter should be 0 after upgrade", 0L, metricsEngine.getHead().getSeriesMap().getStubSeriesCount());
+    }
+
+    /**
+     * Test that flush is throttled by commit_interval
+     */
+    public void testFlushThrottledByCommitInterval() throws Exception {
+        TimeValue commitInterval = TimeValue.timeValueSeconds(10);
+
+        // Close existing engine and create new one with long commit interval
+        metricsEngine.close();
+        engineStore.close();
+
+        IndexSettings settingsWithInterval = IndexSettingsModule.newIndexSettings(
+            "index",
+            Settings.builder()
+                .put("index.tsdb_engine.enabled", true)
+                .put("index.queries.cache.enabled", false)
+                .put("index.requests.cache.enable", false)
+                .put("index.tsdb_engine.commit_interval", commitInterval.getStringRep())
+                .put("index.translog.flush_threshold_size", "56b") // low threshold so translog size check passes
+                .build()
+        );
+
+        MutableClock mutableClock = new MutableClock(0L);
+
+        // Reset engineConfig and rebuild engine
+        engineConfig = null;
+        final AtomicLong globalCheckpoint = new AtomicLong(SequenceNumbers.NO_OPS_PERFORMED);
+        engineStore = createStore(settingsWithInterval, newDirectory());
+        metricsEngine = buildTSDBEngine(globalCheckpoint, engineStore, settingsWithInterval, clusterApplierService, mutableClock);
+        metricsEngine.translogManager()
+            .recoverFromTranslog(this.translogHandler, metricsEngine.getProcessedLocalCheckpoint(), Long.MAX_VALUE);
+
+        // Index some data
+        String sample1 = createSampleJson("__name__ test_metric host server1", 1000, 10.0);
+        publishSample(0, sample1);
+
+        long generationBeforeFirstFlush = engineStore.readLastCommittedSegmentsInfo().getGeneration();
+
+        // First flush with force=true - bypasses translog size check forcing a flush
+        metricsEngine.flush(true, true);
+
+        // Get generation after first flush
+        long generationAfterFirstFlush = engineStore.readLastCommittedSegmentsInfo().getGeneration();
+        assertTrue("Generation should increase after first flush", generationAfterFirstFlush > generationBeforeFirstFlush);
+
+        // Index more data
+        String sample2 = createSampleJson("__name__ test_metric host server2", 2000, 20.0);
+        publishSample(1, sample2);
+
+        // Advance clock, but not enough to make flush eligible to commit
+        mutableClock.advance(commitInterval.millis() / 2);
+
+        // Immediate second flush with force=false - should be throttled by commit_interval (no new commit)
+        // waitIfOngoing = true to simulate a flush triggered due to translog size
+        metricsEngine.flush(false, true);
+
+        // Generation should be unchanged (flush was throttled by commit_interval)
+        long generationAfterThrottledFlush = engineStore.readLastCommittedSegmentsInfo().getGeneration();
+        assertEquals(
+            "Generation should not change when flush is throttled by commit_interval",
+            generationAfterFirstFlush,
+            generationAfterThrottledFlush
+        );
+
+        // Advance clock to make flush eligible to commit
+        mutableClock.advance(commitInterval.millis());
+
+        // Third flush with force=true - should succeed now that interval has elapsed
+        metricsEngine.flush(false, true);
+
+        // Generation should increase (proving rate limiter was the blocker)
+        long generationAfterIntervalElapsed = engineStore.readLastCommittedSegmentsInfo().getGeneration();
+        assertTrue(
+            "Generation should increase after commit interval elapses (proves rate limiter was blocking)",
+            generationAfterIntervalElapsed > generationAfterThrottledFlush
+        );
+
+        // Verify data is still accessible
+        metricsEngine.refresh("test");
+        assertEquals("Should have 2 series", 2L, metricsEngine.getHead().getNumSeries());
+    }
+
+    /**
+     * Test that flush is throttled by commit_interval
+     */
+    public void testForceFlushNotThrottledByCommitInterval() throws Exception {
+        TimeValue commitInterval = TimeValue.timeValueSeconds(10);
+
+        // Close existing engine and create new one with long commit interval
+        metricsEngine.close();
+        engineStore.close();
+
+        IndexSettings settingsWithInterval = IndexSettingsModule.newIndexSettings(
+            "index",
+            Settings.builder()
+                .put("index.tsdb_engine.enabled", true)
+                .put("index.queries.cache.enabled", false)
+                .put("index.requests.cache.enable", false)
+                .put("index.tsdb_engine.commit_interval", commitInterval.getStringRep())
+                .put("index.translog.flush_threshold_size", "56b") // low threshold so translog size check passes
+                .build()
+        );
+
+        MutableClock mutableClock = new MutableClock(0L);
+
+        // Reset engineConfig and rebuild engine
+        engineConfig = null;
+        final AtomicLong globalCheckpoint = new AtomicLong(SequenceNumbers.NO_OPS_PERFORMED);
+        engineStore = createStore(settingsWithInterval, newDirectory());
+        metricsEngine = buildTSDBEngine(globalCheckpoint, engineStore, settingsWithInterval, clusterApplierService, mutableClock);
+        metricsEngine.translogManager()
+            .recoverFromTranslog(this.translogHandler, metricsEngine.getProcessedLocalCheckpoint(), Long.MAX_VALUE);
+
+        // Index some data
+        String sample1 = createSampleJson("__name__ test_metric host server1", 1000, 10.0);
+        publishSample(0, sample1);
+
+        long generationBeforeFirstFlush = engineStore.readLastCommittedSegmentsInfo().getGeneration();
+
+        // First flush with force=true - bypasses translog size check forcing a flush
+        metricsEngine.flush(true, true);
+
+        // Get generation after first flush
+        long generationAfterFirstFlush = engineStore.readLastCommittedSegmentsInfo().getGeneration();
+        assertTrue("Generation should increase after first flush", generationAfterFirstFlush > generationBeforeFirstFlush);
+
+        // Index more data
+        String sample2 = createSampleJson("__name__ test_metric host server2", 2000, 20.0);
+        publishSample(1, sample2);
+
+        // Advance clock, but not enough to make flush eligible to commit
+        mutableClock.advance(commitInterval.millis() / 2);
+
+        // Test force flush, when non-forced flushes are ineligible to commit
+        metricsEngine.flush(true, true);
+
+        // Generation should increase (proving rate limiter was the blocker)
+        long generationAfterForceFlush = engineStore.readLastCommittedSegmentsInfo().getGeneration();
+        assertTrue(
+            "Generation should increase after commit interval elapses (proves rate limiter was blocking)",
+            generationAfterForceFlush > generationAfterFirstFlush
+        );
+
+        // Verify data is still accessible
+        metricsEngine.refresh("test");
+        assertEquals("Should have 2 series", 2L, metricsEngine.getHead().getNumSeries());
     }
 }

@@ -62,6 +62,7 @@ import java.io.Closeable;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Clock;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
@@ -119,7 +120,7 @@ public class TSDBEngine extends Engine {
      * @throws IOException if an I/O error occurs during initialization
      */
     public TSDBEngine(EngineConfig engineConfig) throws IOException {
-        this(engineConfig, null);
+        this(engineConfig, null, Clock.systemUTC());
     }
 
     /**
@@ -128,9 +129,10 @@ public class TSDBEngine extends Engine {
      *
      * @param engineConfig the engine configuration containing shard settings, store, and translog configuration
      * @param path the custom metrics store path
+     * @param clock the clock used for timekeeping
      * @throws IOException if an I/O error occurs during initialization
      */
-    TSDBEngine(EngineConfig engineConfig, Path path) throws IOException {
+    TSDBEngine(EngineConfig engineConfig, Path path, Clock clock) throws IOException {
         super(engineConfig);
 
         this.commitInterval = TSDBPlugin.TSDB_ENGINE_COMMIT_INTERVAL.get(engineConfig.getIndexSettings().getSettings());
@@ -139,7 +141,7 @@ public class TSDBEngine extends Engine {
             .addSettingsUpdateConsumer(TSDBPlugin.TSDB_ENGINE_COMMIT_INTERVAL, newInterval -> this.commitInterval = newInterval);
 
         // Initialize rate-limited lock for closeHeadChunks operations
-        this.closeChunksLock = new RateLimitedLock(() -> this.commitInterval);
+        this.closeChunksLock = new RateLimitedLock(() -> this.commitInterval, clock);
 
         if (engineConfig.getStore().shardPath() != null) {
             this.metricsStorePath = engineConfig.getStore().shardPath().getDataPath().resolve(METRICS_STORE_DIR);
@@ -579,7 +581,9 @@ public class TSDBEngine extends Engine {
         // acquire closeChunksLock based on waitIfOngoing flag
         // tryLock() respects the commit interval - it will return false if interval hasn't elapsed
         if (!closeChunksLock.tryLock()) {
-            if (waitIfOngoing) {
+            // If force is true, waitIfOngoing must be true. Only block when force is true, to ensure translog-size triggered flush
+            // requests (force=false, waitIfOngoing=true) are properly throttled
+            if (force) {
                 closeChunksLock.lock();
             } else {
                 logger.debug("Skipping flush request (commit interval not elapsed or ongoing flush)");

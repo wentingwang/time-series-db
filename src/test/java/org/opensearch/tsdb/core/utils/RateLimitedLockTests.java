@@ -9,55 +9,12 @@ package org.opensearch.tsdb.core.utils;
 
 import org.opensearch.common.unit.TimeValue;
 import org.opensearch.test.OpenSearchTestCase;
+import org.opensearch.tsdb.MutableClock;
 
-import java.time.Clock;
-import java.time.Instant;
-import java.time.ZoneId;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicLong;
 
 public class RateLimitedLockTests extends OpenSearchTestCase {
-
-    /**
-     * Mutable clock implementation for testing that allows advancing time.
-     */
-    private static class MutableClock extends Clock {
-        private final AtomicLong currentMillis;
-        private final ZoneId zone;
-
-        MutableClock(long initialMillis) {
-            this.currentMillis = new AtomicLong(initialMillis);
-            this.zone = ZoneId.of("UTC");
-        }
-
-        void advance(long millis) {
-            currentMillis.addAndGet(millis);
-        }
-
-        void set(long millis) {
-            currentMillis.set(millis);
-        }
-
-        @Override
-        public ZoneId getZone() {
-            return zone;
-        }
-
-        @Override
-        public Clock withZone(ZoneId zone) {
-            throw new UnsupportedOperationException();
-        }
-
-        @Override
-        public Instant instant() {
-            return Instant.ofEpochMilli(currentMillis.get());
-        }
-
-        @Override
-        public long millis() {
-            return currentMillis.get();
-        }
-    }
 
     public void testTryLockRespectsInterval() {
         MutableClock clock = new MutableClock(1000);

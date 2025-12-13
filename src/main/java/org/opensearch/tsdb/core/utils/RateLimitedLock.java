@@ -26,21 +26,12 @@ public class RateLimitedLock extends ReentrantLock {
     private final Clock clock;
 
     /**
-     * Constructs a RateLimitedLock with a dynamic interval supplier.
-     *
-     * @param intervalSupplier supplier that provides the minimum interval between lock acquisitions
-     */
-    public RateLimitedLock(Supplier<TimeValue> intervalSupplier) {
-        this(intervalSupplier, Clock.systemUTC());
-    }
-
-    /**
      * Constructs a RateLimitedLock with a dynamic interval supplier and custom clock. Package-private for testing.
      *
      * @param intervalSupplier supplier that provides the minimum interval between lock acquisitions
      * @param clock clock to use for time measurements
      */
-    RateLimitedLock(Supplier<TimeValue> intervalSupplier, Clock clock) {
+    public RateLimitedLock(Supplier<TimeValue> intervalSupplier, Clock clock) {
         this.intervalSupplier = intervalSupplier;
         this.clock = clock;
     }
