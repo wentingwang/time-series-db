@@ -25,6 +25,9 @@ import org.opensearch.telemetry.metrics.Counter;
 import org.opensearch.telemetry.metrics.MetricsRegistry;
 import org.opensearch.telemetry.metrics.tags.Tags;
 import org.opensearch.transport.client.node.NodeClient;
+
+import java.util.HashMap;
+import java.util.Map;
 import org.opensearch.tsdb.core.utils.Constants;
 import org.opensearch.tsdb.lang.m3.dsl.M3OSTranslator;
 import org.opensearch.tsdb.metrics.TSDBMetrics;
@@ -164,11 +167,14 @@ public class RestM3QLAction extends BaseRestHandler {
     protected RestChannelConsumer prepareRequest(RestRequest request, NodeClient client) throws IOException {
         // Parse and validate request parameters
         final RequestParams params;
-        final Tags tags = Tags.create().addTag("explain", "unknown").addTag("pushdown", "unknown");
+        final Map<String, String> tags = new HashMap<>();
+        tags.put("explain", "unknown");
+        tags.put("pushdown", "unknown");
         try {
             try {
                 params = parseRequestParams(request);
-                tags.addTag("explain", params.explain()).addTag("pushdown", params.pushdown());
+                tags.put("explain", String.valueOf(params.explain()));
+                tags.put("pushdown", String.valueOf(params.pushdown()));
                 if (logger.isDebugEnabled()) {
                     logger.debug(
                         "Received M3QL request: query='{}', start={}, end={}, step={}, indices={}, explain={}, pushdown={}, profile={}, include_metadata={}, federation_metadata={}",
@@ -185,7 +191,7 @@ public class RestM3QLAction extends BaseRestHandler {
                     );
                 }
             } catch (IllegalArgumentException e) {
-                tags.addTag("reached_step", "error__parse_request_params");
+                tags.put("reached_step", "error__parse_request_params");
                 return channel -> {
                     XContentBuilder response = channel.newErrorBuilder();
                     response.startObject();
@@ -197,7 +203,7 @@ public class RestM3QLAction extends BaseRestHandler {
 
             // Validate query
             if (params.query == null || params.query.trim().isEmpty()) {
-                tags.addTag("reached_step", "error__missing_query");
+                tags.put("reached_step", "error__missing_query");
                 return channel -> {
                     XContentBuilder response = channel.newErrorBuilder();
                     response.startObject();
@@ -209,27 +215,42 @@ public class RestM3QLAction extends BaseRestHandler {
 
             // Translate M3QL to OpenSearch DSL
             try {
-                tags.addTag("reached_step", "translate_query");
+                tags.put("reached_step", "translate_query");
                 final SearchSourceBuilder searchSourceBuilder = translateQuery(params);
 
                 // Handle explain mode
                 if (params.explain) {
-                    tags.addTag("reached_step", "explain");
+                    tags.put("reached_step", "explain");
                     return buildExplainResponse(params.query, searchSourceBuilder);
                 }
 
                 // Build and execute search request
-                tags.addTag("reached_step", "build_search_request");
+                tags.put("reached_step", "build_search_request");
                 final SearchRequest searchRequest = buildSearchRequest(params, searchSourceBuilder);
                 final String finalAggName = AggregationNameExtractor.getFinalAggregationName(searchSourceBuilder);
 
-                tags.addTag("reached_step", "search");
+                tags.put("reached_step", "search");
                 return channel -> client.search(
                     searchRequest,
                     new PromMatrixResponseListener(channel, finalAggName, params.profile, params.includeMetadata)
                 );
 
+            } catch (UnsupportedOperationException e) {
+                // UnsupportedOperationException indicates a known M3QL function that's not yet implemented
+                String stepReached = tags.getOrDefault("reached_step", "unknown");
+                tags.put("reached_step", "error__" + stepReached);
+                tags.put("error_type", "unimplemented_function");
+                return channel -> {
+                    XContentBuilder response = channel.newErrorBuilder();
+                    response.startObject();
+                    response.field(ERROR_FIELD, e.getMessage());
+                    response.endObject();
+                    channel.sendResponse(new BytesRestResponse(RestStatus.NOT_IMPLEMENTED, response));
+                };
             } catch (Exception e) {
+                // All other errors return BAD_REQUEST
+                String stepReached = tags.getOrDefault("reached_step", "unknown");
+                tags.put("reached_step", "error__" + stepReached);
                 return channel -> {
                     XContentBuilder response = channel.newErrorBuilder();
                     response.startObject();
@@ -239,7 +260,9 @@ public class RestM3QLAction extends BaseRestHandler {
                 };
             }
         } finally {
-            TSDBMetrics.incrementCounter(METRICS.requestsTotal, 1, tags);
+            Tags finalTags = Tags.create();
+            tags.forEach(finalTags::addTag);
+            TSDBMetrics.incrementCounter(METRICS.requestsTotal, 1, finalTags);
         }
     }
 

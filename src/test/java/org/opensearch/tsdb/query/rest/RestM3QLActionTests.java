@@ -482,6 +482,55 @@ public class RestM3QLActionTests extends OpenSearchTestCase {
         assertThat(channel.capturedResponse().content().utf8ToString(), containsString("error"));
     }
 
+    public void testKnownUnimplementedFunctionReturnsHttp501() throws Exception {
+        FakeRestRequest request = new FakeRestRequest.Builder(xContentRegistry()).withMethod(RestRequest.Method.GET)
+            .withPath("/_m3ql")
+            .withParams(Map.of("query", "fetch service:api | derivative"))
+            .build();
+        FakeRestChannel channel = new FakeRestChannel(request, true, 1);
+
+        action.handleRequest(request, channel, mockClient);
+
+        assertThat(channel.capturedResponse().status(), equalTo(RestStatus.NOT_IMPLEMENTED));
+        String responseContent = channel.capturedResponse().content().utf8ToString();
+        assertThat(responseContent, containsString("error"));
+        assertThat(responseContent, containsString("not implemented"));
+        assertThat(responseContent, containsString("derivative"));
+    }
+
+    public void testKnownUnimplementedFunctionWithExplainMode() throws Exception {
+        FakeRestRequest request = new FakeRestRequest.Builder(xContentRegistry()).withMethod(RestRequest.Method.GET)
+            .withPath("/_m3ql")
+            .withParams(Map.of("query", "fetch service:api | integral", "explain", "true"))
+            .build();
+        FakeRestChannel channel = new FakeRestChannel(request, true, 1);
+
+        action.handleRequest(request, channel, mockClient);
+
+        // Even in explain mode, known unimplemented functions should return 501
+        assertThat(channel.capturedResponse().status(), equalTo(RestStatus.NOT_IMPLEMENTED));
+        String responseContent = channel.capturedResponse().content().utf8ToString();
+        assertThat(responseContent, containsString("not implemented"));
+        assertThat(responseContent, containsString("integral"));
+    }
+
+    public void testUnknownFunctionReturnsHttp400() throws Exception {
+        FakeRestRequest request = new FakeRestRequest.Builder(xContentRegistry()).withMethod(RestRequest.Method.GET)
+            .withPath("/_m3ql")
+            .withParams(Map.of("query", "fetch service:api | randomInvalidFunction"))
+            .build();
+        FakeRestChannel channel = new FakeRestChannel(request, true, 1);
+
+        action.handleRequest(request, channel, mockClient);
+
+        // Unknown/invalid functions should return 400 BAD_REQUEST, not 501
+        assertThat(channel.capturedResponse().status(), equalTo(RestStatus.BAD_REQUEST));
+        String responseContent = channel.capturedResponse().content().utf8ToString();
+        assertThat(responseContent, containsString("error"));
+        assertThat(responseContent, containsString("Unknown function"));
+        assertThat(responseContent, containsString("randomInvalidFunction"));
+    }
+
     public void testMalformedJsonBodyReturnsError() throws Exception {
         String malformedJson = "{invalid json";
         FakeRestRequest request = new FakeRestRequest.Builder(xContentRegistry()).withMethod(RestRequest.Method.POST)
@@ -852,7 +901,7 @@ public class RestM3QLActionTests extends OpenSearchTestCase {
         // Verify counter was incremented and capture tags
         verify(mockCounter).add(eq(1.0d), tagsCaptor.capture());
         Tags capturedTags = tagsCaptor.getValue();
-        assertThat(capturedTags.getTagsMap(), equalTo(Map.of("pushdown", true, "reached_step", "search", "explain", false)));
+        assertThat(capturedTags.getTagsMap(), equalTo(Map.of("pushdown", "true", "reached_step", "search", "explain", "false")));
 
         // Cleanup
         org.opensearch.tsdb.metrics.TSDBMetrics.cleanup();
@@ -885,7 +934,7 @@ public class RestM3QLActionTests extends OpenSearchTestCase {
 
         // Verify counter was incremented and capture tags
         verify(mockCounter).add(eq(1.0d), assertArg(tags -> {
-            assertThat(tags.getTagsMap(), equalTo(Map.of("explain", true, "pushdown", true, "reached_step", "explain")));
+            assertThat(tags.getTagsMap(), equalTo(Map.of("explain", "true", "pushdown", "true", "reached_step", "explain")));
         }));
 
         // Cleanup
@@ -919,7 +968,45 @@ public class RestM3QLActionTests extends OpenSearchTestCase {
 
         // Verify counter was incremented and capture tags
         verify(mockCounter).add(eq(1.0d), assertArg(tags -> {
-            assertThat(tags.getTagsMap(), equalTo(Map.of("explain", false, "pushdown", true, "reached_step", "error__missing_query")));
+            assertThat(tags.getTagsMap(), equalTo(Map.of("explain", "false", "pushdown", "true", "reached_step", "error__missing_query")));
+        }));
+
+        // Cleanup
+        org.opensearch.tsdb.metrics.TSDBMetrics.cleanup();
+    }
+
+    /**
+     * Test that RestM3QLAction increments requestsTotal counter on known unimplemented function error.
+     */
+    public void testMetricsIncrementedOnKnownUnimplementedFunctionError() throws Exception {
+        // Setup metrics with mocks
+        org.opensearch.telemetry.metrics.MetricsRegistry mockRegistry = mock(org.opensearch.telemetry.metrics.MetricsRegistry.class);
+        org.opensearch.telemetry.metrics.Counter mockCounter = mock(org.opensearch.telemetry.metrics.Counter.class);
+
+        org.mockito.Mockito.when(
+            mockRegistry.createCounter(eq(RestM3QLAction.Metrics.REQUESTS_TOTAL_METRIC_NAME), anyString(), anyString())
+        ).thenReturn(mockCounter);
+
+        // Initialize TSDBMetrics with M3QL metrics
+        org.opensearch.tsdb.metrics.TSDBMetrics.cleanup();
+        org.opensearch.tsdb.metrics.TSDBMetrics.initialize(mockRegistry, RestM3QLAction.getMetricsInitializer());
+
+        // Execute a query with known unimplemented function
+        FakeRestRequest request = new FakeRestRequest.Builder(xContentRegistry()).withMethod(RestRequest.Method.GET)
+            .withPath("/_m3ql")
+            .withParams(Map.of("query", "fetch service:api | derivative"))
+            .build();
+        FakeRestChannel channel = new FakeRestChannel(request, true, 1);
+
+        action.handleRequest(request, channel, mockClient);
+
+        // Verify counter was incremented with proper error tag
+        verify(mockCounter).add(eq(1.0d), assertArg(tags -> {
+            Map<String, ?> tagMap = tags.getTagsMap();
+            assertThat(tagMap.get("explain"), equalTo("false"));
+            assertThat(tagMap.get("pushdown"), equalTo("true"));
+            assertThat(tagMap.get("reached_step"), equalTo("error__translate_query"));
+            assertThat(tagMap.get("error_type"), equalTo("unimplemented_function"));
         }));
 
         // Cleanup

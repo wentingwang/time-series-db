@@ -7,6 +7,8 @@
  */
 package org.opensearch.tsdb.lang.m3.common;
 
+import java.util.Set;
+
 /**
  * Constants used in M3QL processing.
  */
@@ -30,6 +32,58 @@ public class Constants {
         private Functions() {
             // Prevent instantiation
         }
+
+        /**
+         * Known M3QL functions that are not yet implemented.
+         */
+        public static final Set<String> KNOWN_UNIMPLEMENTED_FUNCTIONS = Set.of(
+            "aliasSub",
+            "aliasByDistinctTags",
+            "aliasByBucket",
+            "aliasByHistogramBucket",
+            "anomalies",
+            "asBurnRate",
+            "asMultiBurnRate",
+            "burnRateMultiplier",
+            "changed",
+            "constantLine",
+            "derivative",
+            "divideWhen",
+            "execute",
+            "exec",
+            "head",
+            "histogramCDF",
+            "integral",
+            "jainCP",
+            "logarithm",
+            "mapKey",
+            "mockFetch",
+            "mockFetchLine",
+            "mockFetchLinear",
+            "mockFetchPeriodic",
+            "nonNegativeDerivative",
+            "nPercentile",
+            "offset",
+            "promHistogramPercentile",
+            "range",
+            "removeAbovePercentile",
+            "removeBelowPercentile",
+            "round",
+            "setDiff",
+            "showAnomalyThresholds",
+            "stdev",
+            "sqrt",
+            "squareRoot",
+            "sustainedAbove",
+            "sustainedBelow",
+            "tagCompare",
+            "tagSub",
+            "tail",
+            "topK",
+            "timestamp",
+            "toHistogram",
+            "toHistogramLinearBuckets"
+        );
 
         /**
          * abs function name.

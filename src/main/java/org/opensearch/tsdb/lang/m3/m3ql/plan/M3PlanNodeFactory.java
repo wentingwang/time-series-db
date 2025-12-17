@@ -51,7 +51,8 @@ public class M3PlanNodeFactory {
      *
      * @param functionNode the function node to convert
      * @return the corresponding M3PlanNode
-     * @throws IllegalArgumentException if the function name is unknown
+     * @throws UnsupportedOperationException if the function is a known M3QL function that is not yet implemented
+     * @throws IllegalArgumentException if the function name is unknown or invalid
      */
     public static M3PlanNode create(FunctionNode functionNode) {
         switch (functionNode.getFunctionName()) {
@@ -127,7 +128,13 @@ public class M3PlanNodeFactory {
                 try {
                     return AggregationPlanNode.of(functionNode, AggregationType.fromString(functionNode.getFunctionName()));
                 } catch (IllegalArgumentException ignored) {
-                    throw new IllegalArgumentException("Unknown function: " + functionNode.getFunctionName());
+                    String functionName = functionNode.getFunctionName();
+                    // Check if this is a known M3QL function that's not yet implemented
+                    if (Constants.Functions.KNOWN_UNIMPLEMENTED_FUNCTIONS.contains(functionName)) {
+                        throw new UnsupportedOperationException("Function '" + functionName + "' is not implemented");
+                    }
+                    // For unknown/invalid function names, throw regular IllegalArgumentException
+                    throw new IllegalArgumentException("Unknown function: " + functionName);
                 }
         }
     }
