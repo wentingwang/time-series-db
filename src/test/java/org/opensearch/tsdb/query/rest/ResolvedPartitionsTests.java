@@ -193,6 +193,88 @@ public class ResolvedPartitionsTests extends OpenSearchTestCase {
         );
     }
 
+    public void testCompositeRoutingKeyCollisionWithOverlappingTime() {
+        RoutingKey region = new RoutingKey("region", "us-west");
+        RoutingKey service = new RoutingKey("service", "api");
+        RoutingKey namespace = new RoutingKey("namespace", "production");
+
+        PartitionWindow window1 = new PartitionWindow("cluster1:index-a", 1000000L, 2500000L, List.of(region, service, namespace));
+        PartitionWindow window2 = new PartitionWindow("cluster2:index-b", 2000000L, 3000000L, List.of(region, service, namespace));
+
+        ResolvedPartition partition = new ResolvedPartition("region:us-west service:api namespace:production", List.of(window1, window2));
+        ResolvedPartitions resolvedPartitions = new ResolvedPartitions(List.of(partition));
+
+        assertTrue(
+            "Collision detected when same composite routing key appears in multiple partitions with overlapping time windows",
+            resolvedPartitions.hasOverlappingPartitions()
+        );
+    }
+
+    public void testCompositeRoutingKeyNoCollisionWithDifferentKeys() {
+        RoutingKey region = new RoutingKey("region", "us-west");
+        RoutingKey service1 = new RoutingKey("service", "api");
+        RoutingKey service2 = new RoutingKey("service", "web");
+        RoutingKey namespace = new RoutingKey("namespace", "production");
+
+        PartitionWindow window1 = new PartitionWindow("cluster1:index-a", 1000000L, 2500000L, List.of(region, service1, namespace));
+        PartitionWindow window2 = new PartitionWindow("cluster2:index-b", 2000000L, 3000000L, List.of(region, service2, namespace));
+
+        ResolvedPartition partition = new ResolvedPartition("region:us-west service:* namespace:production", List.of(window1, window2));
+        ResolvedPartitions resolvedPartitions = new ResolvedPartitions(List.of(partition));
+
+        assertFalse(
+            "No collision when different composite routing keys appear in partitions despite time overlap",
+            resolvedPartitions.hasOverlappingPartitions()
+        );
+    }
+
+    public void testCompositeRoutingKeySortingWithPrefixKeys() {
+        // Tests that routing keys are properly sorted even when one key is a prefix of another
+        RoutingKey service = new RoutingKey("service", "api");
+        RoutingKey serviceTier = new RoutingKey("service-tier", "premium");
+        RoutingKey region = new RoutingKey("region", "us-west");
+        RoutingKey regionAz = new RoutingKey("region-az", "us-west-1a");
+
+        PartitionWindow window1 = new PartitionWindow(
+            "cluster1:index-a",
+            1000000L,
+            2000000L,
+            List.of(service, serviceTier, region, regionAz)
+        );
+        PartitionWindow window2 = new PartitionWindow(
+            "cluster2:index-b",
+            1500000L,
+            2500000L,
+            List.of(regionAz, serviceTier, region, service)
+        );
+
+        ResolvedPartition partition = new ResolvedPartition("test", List.of(window1, window2));
+        ResolvedPartitions resolvedPartitions = new ResolvedPartitions(List.of(partition));
+
+        assertTrue(
+            "Collision detected: same routing keys in different order should be treated as identical after sorting",
+            resolvedPartitions.hasOverlappingPartitions()
+        );
+    }
+
+    public void testCompositeRoutingKeyNoCollisionWithPrefixKeys() {
+        // Tests that different sets of prefix-like keys are correctly distinguished
+        RoutingKey service = new RoutingKey("service", "api");
+        RoutingKey serviceTier = new RoutingKey("service-tier", "premium");
+        RoutingKey region = new RoutingKey("region", "us-west");
+
+        PartitionWindow window1 = new PartitionWindow("cluster1:index-a", 1000000L, 2000000L, List.of(serviceTier, region));
+        PartitionWindow window2 = new PartitionWindow("cluster2:index-b", 1500000L, 2500000L, List.of(service, region));
+
+        ResolvedPartition partition = new ResolvedPartition("test", List.of(window1, window2));
+        ResolvedPartitions resolvedPartitions = new ResolvedPartitions(List.of(partition));
+
+        assertFalse(
+            "No collision when composite keys differ even with prefix-like key names",
+            resolvedPartitions.hasOverlappingPartitions()
+        );
+    }
+
     /**
      * Test getAllPartitionIds method
      */

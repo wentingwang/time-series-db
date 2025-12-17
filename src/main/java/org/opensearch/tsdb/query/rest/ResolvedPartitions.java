@@ -19,6 +19,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.LongSupplier;
+import java.util.stream.Collectors;
 
 /**
  * Represents resolved partitions for a federated M3QL query.
@@ -142,8 +143,9 @@ public class ResolvedPartitions implements FederationMetadata {
      * <ol>
      *   <li>Create events for all window start and end times</li>
      *   <li>Sort events by timestamp</li>
-     *   <li>Process events in order, maintaining active windows at each time point</li>
-     *   <li>At each event, check if any routing key exists in multiple active partitions</li>
+     *   <li>Process events in order, maintaining a map of composite routing keys to sets of partition IDs</li>
+     *   <li>At each START event, add the partition to the set corresponding to the composite routing key and check for collisions</li>
+     *   <li>At each END event, remove the partition from the set corresponding to the composite routing key</li>
      * </ol>
      *
      * @param windows list of partition windows to check
@@ -170,22 +172,26 @@ public class ResolvedPartitions implements FederationMetadata {
             return Boolean.compare(e1.isStart, e2.isStart);
         });
 
-        // Track active windows at current time point
-        Set<PartitionWindow> activeWindows = new HashSet<>();
+        Map<String, Set<String>> compositeKeyToPartitions = new HashMap<>();
 
-        // Process events and check for collisions at each time boundary
+        // Process events and check for collisions while encountering start events
         for (TimeEvent event : events) {
-            if (event.isStart) {
-                // Window starts: add to active set
-                activeWindows.add(event.window);
+            String compositeKey = createCompositeRoutingKey(event.window.routingKeys());
 
-                // Check if this creates a collision
-                if (hasRoutingKeyCollision(activeWindows)) {
+            if (event.isStart) {
+                Set<String> partitionIds = compositeKeyToPartitions.computeIfAbsent(compositeKey, k -> new HashSet<>());
+                partitionIds.add(event.window.partitionId());
+
+                // If multiple partitions have same composite key, collision detected
+                if (partitionIds.size() > 1) {
                     return true;
                 }
             } else {
-                // Window ends: remove from active set
-                activeWindows.remove(event.window);
+                Set<String> partitionIds = compositeKeyToPartitions.get(compositeKey);
+
+                if (partitionIds != null) {
+                    partitionIds.remove(event.window.partitionId());
+                }
             }
         }
 
@@ -193,24 +199,14 @@ public class ResolvedPartitions implements FederationMetadata {
     }
 
     /**
-     * Checks if any routing key exists in multiple different partitions among active windows.
+     * Creates a composite key from a list of routing keys by combining them into a single string.
+     * The routing keys are sorted to ensure consistent ordering.
      *
-     * @param activeWindows currently active partition windows
-     * @return true if a routing key spans multiple partitions, false otherwise
+     * @param routingKeys list of routing keys to combine
+     * @return composite key string (e.g., "region:us-west,service:api")
      */
-    private boolean hasRoutingKeyCollision(Set<PartitionWindow> activeWindows) {
-        // Map: routing key -> set of partition IDs where it appears
-        Map<String, Set<String>> routingKeyToPartitions = new HashMap<>();
-
-        for (PartitionWindow window : activeWindows) {
-            for (RoutingKey routingKey : window.routingKeys()) {
-                String routingKeyStr = routingKey.toString();
-                routingKeyToPartitions.computeIfAbsent(routingKeyStr, k -> new HashSet<>()).add(window.partitionId());
-            }
-        }
-
-        // Check if any routing key spans multiple partitions
-        return routingKeyToPartitions.values().stream().anyMatch(partitionIds -> partitionIds.size() > 1);
+    private String createCompositeRoutingKey(List<RoutingKey> routingKeys) {
+        return routingKeys.stream().map(RoutingKey::toString).sorted().collect(Collectors.joining(","));
     }
 
     /**
