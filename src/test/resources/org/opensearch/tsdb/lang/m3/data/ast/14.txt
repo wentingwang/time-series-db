@@ -20,7 +20,7 @@ ROOT
               TAG_VALUE(metric4)
           FUNCTION(sum)
           FUNCTION(alias)
-            VALUE("metric)() with parens")
+            VALUE(metric)() with parens)
         FUNCTION(avg)
     FUNCTION(moving)
       VALUE(5m)

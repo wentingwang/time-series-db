@@ -1,0 +1,3 @@
+# test quoting with alias
+fetch name:a
+  | alias "ci  ty"    [{{.name}}, value]

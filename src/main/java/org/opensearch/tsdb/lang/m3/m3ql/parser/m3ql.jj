@@ -25,6 +25,7 @@ import org.opensearch.tsdb.lang.m3.m3ql.parser.nodes.PipelineNode;
 import org.opensearch.tsdb.lang.m3.m3ql.parser.nodes.ValueNode;
 import org.opensearch.tsdb.lang.m3.common.Utils;
 import java.util.Objects;
+import java.util.ArrayList;
 import javax.annotation.Generated;
 
 @Generated("JavaCC")
@@ -63,7 +64,7 @@ TOKEN : {
   | < LITERAL_QUOTED_STRING: "\"" (~["\""])* "\"" >
   | < LITERAL_UNCLOSED_STRING: "\"" (~["\"", "\n", "\r", "|", ";"])* >
   | < LITERAL_COMMENT: "#" (~["\n", "\r"])* >
-  | < LITERAL_REGULAR_TEXT: (~["|", ";", "\"", "#", "\n", "\r", " ", "\t", "{", "}", "(", ")", "!", "=", ":", ","])+ >
+  | < LITERAL_PATTERN_TEXT: (["a"-"z", "A"-"Z", "0"-"9", "_", "-", ".", "/", "\\", "{", "}", "[", "]", "*", "?", ",", "^", "$"])+  >
   | < LITERAL_SPACE: (" " | "\t")+ >
 }
 
@@ -221,7 +222,7 @@ FunctionNode Function() :
 void AliasArgument(M3ASTNode parentNode) :
 {
     Token t;
-    StringBuilder aliasText = new StringBuilder();
+    ArrayList<String> aliasText = new ArrayList<>();
 }
 {
     (
@@ -234,23 +235,25 @@ void AliasArgument(M3ASTNode parentNode) :
             getToken(1).kind != 0
         })
         (
-            t = <LITERAL_QUOTED_STRING> { aliasText.append(t.image); }
+            t = <LITERAL_QUOTED_STRING> {
+                aliasText.add(Utils.stripDoubleQuotes(t.image));
+            }
           | t = <LITERAL_UNCLOSED_STRING> {
                 token_source.SwitchTo(DEFAULT);
                 throw new ParseException("Unclosed quoted string in alias: " + t.image);
             }
-          | t = <OPEN_CURLY> { aliasText.append(t.image); }
-          | t = <CLOSED_CURLY> { aliasText.append(t.image); }
-          | t = <LITERAL_REGULAR_TEXT> { aliasText.append(t.image); }
-          | t = <LITERAL_SPACE> { aliasText.append(t.image); }
-          | t = <EXCLAMATION_MARK> { aliasText.append(" ").append(t.image); } // if an alias contains !, M3 adds a leading space
+          | t = <LITERAL_PATTERN_TEXT> { aliasText.add(t.image); }
+          | t = <LITERAL_SPACE> { /* Consume but ignore */ }
+          | t = <EXCLAMATION_MARK> { aliasText.add(" " + t.image); } // if an alias contains !, M3 adds a leading space
         )
     )*
     {
         token_source.SwitchTo(DEFAULT);
-        String result = aliasText.toString().trim();
-        if (!result.isEmpty()) {
-            parentNode.addChildNode(new ValueNode(result));
+        if (!aliasText.isEmpty()) {
+            String result = String.join(" ", aliasText).trim();
+            if (!result.isEmpty()) {
+                parentNode.addChildNode(new ValueNode(result));
+            }
         }
     }
     // To safely transition out of LITERAL_MODE, consume tokens equivalent to SKIP
@@ -348,10 +351,7 @@ void TagValueArgument(M3ASTNode parentNode) :
                 token_source.SwitchTo(DEFAULT);
                 throw new ParseException("Unclosed quoted string in tag: " + t.image);
             }
-          | t = <OPEN_CURLY> { tagValueText.append(t.image); }
-          | t = <CLOSED_CURLY> { tagValueText.append(t.image); }
-          | t = <LITERAL_REGULAR_TEXT> { tagValueText.append(t.image); }
-          | t = <COMMA> { tagValueText.append(t.image); }
+          | t = <LITERAL_PATTERN_TEXT> { tagValueText.append(t.image); }
         )
     )*
     {

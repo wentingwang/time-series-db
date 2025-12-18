@@ -12,7 +12,7 @@ ROOT
       VALUE(1m)
       VALUE(sum)
     FUNCTION(alias)
-      VALUE("my     # alias")
+      VALUE(my     # alias)
     FUNCTION(moving)
       VALUE(3h)
       VALUE(sum)
