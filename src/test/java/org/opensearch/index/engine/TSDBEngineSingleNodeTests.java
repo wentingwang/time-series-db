@@ -435,11 +435,9 @@ public class TSDBEngineSingleNodeTests extends OpenSearchSingleNodeTestCase {
         var translogPath = shard.shardPath().resolveTranslog();
 
         long initialMaxGeneration = getMaxTranslogGeneration(translogPath);
-        logger.info("Initial max translog generation: {}", initialMaxGeneration);
 
-        // Index data in batches to exceed translog threshold multiple times
-        // Add periodic sleeps to allow afterWriteAction to run and roll translog
-        for (int batch = 0; batch < 30; batch++) {
+        int numBatches = 30;
+        for (int batch = 0; batch < numBatches; batch++) {
             BulkRequest bulkRequest = new BulkRequest();
             for (int i = 0; i < 20; i++) {
                 int id = batch * 20 + i;
@@ -449,24 +447,22 @@ public class TSDBEngineSingleNodeTests extends OpenSearchSingleNodeTestCase {
             BulkResponse bulkResponse = client().bulk(bulkRequest).get();
             assertFalse("Bulk indexing should succeed", bulkResponse.hasFailures());
 
+            // Explicitly flush to trigger translog roll (each batch exceeds generation_threshold_size of 100b)
+            client().admin().indices().prepareFlush(TEST_INDEX_NAME).setForce(false).setWaitIfOngoing(true).get();
         }
-
-        // Force a flush to ensure translog is rolled and trimmed
-        client().admin().indices().prepareFlush(TEST_INDEX_NAME).get();
 
         // Check translog files on disk
         long finalMaxGeneration = getMaxTranslogGeneration(translogPath);
-        logger.info("Final max translog generation: {}", finalMaxGeneration);
 
-        // Verify translog generations increased (ensure it rolled at least 20x; it will roll 30x, or once per batch, but is async)
+        // Verify translog generations increased at least once per batch (background processes may result in even higher gen)
         assertTrue(
             String.format(
                 Locale.ROOT,
-                "Translog should have rolled many times (initial gen: %d, final gen: %d)",
+                "Translog should have rolled (initial gen: %d, final gen: %d)",
                 initialMaxGeneration,
                 finalMaxGeneration
             ),
-            finalMaxGeneration - initialMaxGeneration > 20
+            finalMaxGeneration - initialMaxGeneration > numBatches
         );
     }
 
