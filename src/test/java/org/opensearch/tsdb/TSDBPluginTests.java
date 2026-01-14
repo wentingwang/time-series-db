@@ -9,6 +9,7 @@ package org.opensearch.tsdb;
 
 import org.apache.lucene.store.Directory;
 import org.opensearch.cluster.metadata.IndexMetadata;
+import org.opensearch.common.settings.ClusterSettings;
 import org.opensearch.common.settings.Setting;
 import org.opensearch.common.settings.Settings;
 import org.opensearch.core.common.io.stream.NamedWriteableRegistry;
@@ -29,6 +30,7 @@ import org.opensearch.tsdb.query.aggregator.TimeSeriesUnfoldAggregationBuilder;
 import org.opensearch.tsdb.query.rest.RestM3QLAction;
 
 import java.nio.file.Path;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 
@@ -68,7 +70,7 @@ public class TSDBPluginTests extends OpenSearchTestCase {
         List<Setting<?>> settings = plugin.getSettings();
 
         assertNotNull("Settings list should not be null", settings);
-        assertThat("Should have 14 settings", settings, hasSize(14));
+        assertThat("Should have 16 settings", settings, hasSize(16));
 
         // Verify TSDB_ENGINE_ENABLED is present
         assertTrue("Should contain TSDB_ENGINE_ENABLED setting", settings.contains(TSDBPlugin.TSDB_ENGINE_ENABLED));
@@ -99,6 +101,11 @@ public class TSDBPluginTests extends OpenSearchTestCase {
         assertTrue(
             "Should contain TSDB_ENGINE_WILDCARD_QUERY_CACHE_EXPIRE_AFTER setting",
             settings.contains(TSDBPlugin.TSDB_ENGINE_WILDCARD_QUERY_CACHE_EXPIRE_AFTER)
+        );
+        assertTrue("Should contain TSDB_ENGINE_FORCE_NO_PUSHDOWN setting", settings.contains(TSDBPlugin.TSDB_ENGINE_FORCE_NO_PUSHDOWN));
+        assertTrue(
+            "Should contain TSDB_ENGINE_ENABLE_INTERNAL_AGG_CHUNK_COMPRESSION setting",
+            settings.contains(TSDBPlugin.TSDB_ENGINE_ENABLE_INTERNAL_AGG_CHUNK_COMPRESSION)
         );
     }
 
@@ -199,6 +206,24 @@ public class TSDBPluginTests extends OpenSearchTestCase {
         );
     }
 
+    public void testForceNoPushdownSetting() {
+        Setting<Boolean> setting = TSDBPlugin.TSDB_ENGINE_FORCE_NO_PUSHDOWN;
+
+        assertThat("Setting key should be correct", setting.getKey(), equalTo("tsdb_engine.query.force_no_pushdown"));
+        assertThat("Default value should be false", setting.getDefault(Settings.EMPTY), equalTo(false));
+        assertTrue("Should be node-scoped", setting.hasNodeScope());
+        assertTrue("Should be dynamic", setting.isDynamic());
+    }
+
+    public void testEnableInternalAggChunkCompressionSetting() {
+        Setting<Boolean> setting = TSDBPlugin.TSDB_ENGINE_ENABLE_INTERNAL_AGG_CHUNK_COMPRESSION;
+
+        assertThat("Setting key should be correct", setting.getKey(), equalTo("tsdb_engine.query.enable_internal_agg_chunk_compression"));
+        assertThat("Default value should be false", setting.getDefault(Settings.EMPTY), equalTo(false));
+        assertTrue("Should be node-scoped", setting.hasNodeScope());
+        assertTrue("Should be dynamic", setting.isDynamic());
+    }
+
     // ========== Aggregation Tests ==========
 
     public void testGetAggregations() {
@@ -228,10 +253,16 @@ public class TSDBPluginTests extends OpenSearchTestCase {
     // ========== REST Handler Tests ==========
 
     public void testGetRestHandlers() {
+        // Create ClusterSettings with only node-scoped settings (ClusterSettings can only contain node-scoped settings)
+        ClusterSettings clusterSettings = new ClusterSettings(
+            org.opensearch.common.settings.Settings.EMPTY,
+            plugin.getSettings().stream().filter(Setting::hasNodeScope).collect(java.util.stream.Collectors.toCollection(HashSet::new))
+        );
+
         List<RestHandler> restHandlers = plugin.getRestHandlers(
             org.opensearch.common.settings.Settings.EMPTY,
             null, // RestController not needed for this test
-            null, // ClusterSettings not needed
+            clusterSettings,
             null, // IndexScopedSettings not needed
             null, // SettingsFilter not needed
             null, // IndexNameExpressionResolver not needed
@@ -244,10 +275,16 @@ public class TSDBPluginTests extends OpenSearchTestCase {
     }
 
     public void testRestM3QLActionRegistered() {
+        // Create ClusterSettings with only node-scoped settings (ClusterSettings can only contain node-scoped settings)
+        ClusterSettings clusterSettings = new ClusterSettings(
+            org.opensearch.common.settings.Settings.EMPTY,
+            plugin.getSettings().stream().filter(Setting::hasNodeScope).collect(java.util.stream.Collectors.toCollection(HashSet::new))
+        );
+
         List<RestHandler> restHandlers = plugin.getRestHandlers(
             org.opensearch.common.settings.Settings.EMPTY,
             null,
-            null,
+            clusterSettings,
             null,
             null,
             null,

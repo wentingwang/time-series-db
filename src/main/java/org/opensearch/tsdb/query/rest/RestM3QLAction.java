@@ -10,6 +10,7 @@ package org.opensearch.tsdb.query.rest;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.opensearch.action.search.SearchRequest;
+import org.opensearch.common.settings.ClusterSettings;
 import org.opensearch.common.time.DateFormatter;
 import org.opensearch.common.time.DateMathParser;
 import org.opensearch.common.time.FormatNames;
@@ -25,6 +26,7 @@ import org.opensearch.telemetry.metrics.Counter;
 import org.opensearch.telemetry.metrics.MetricsRegistry;
 import org.opensearch.telemetry.metrics.tags.Tags;
 import org.opensearch.transport.client.node.NodeClient;
+import org.opensearch.tsdb.TSDBPlugin;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -103,6 +105,8 @@ public class RestM3QLAction extends BaseRestHandler {
 
     private static final Logger logger = LogManager.getLogger(RestM3QLAction.class);
 
+    private volatile boolean forceNoPushdown;
+
     // Route path
     private static final String BASE_M3QL_PATH = "/_m3ql";
 
@@ -141,8 +145,19 @@ public class RestM3QLAction extends BaseRestHandler {
 
     /**
      * Constructs a new RestM3QLAction handler.
+     *
+     * @param clusterSettings cluster settings for accessing dynamic cluster configurations
      */
-    public RestM3QLAction() {}
+    public RestM3QLAction(ClusterSettings clusterSettings) {
+        // Initialize no-pushdown flag from current settings
+        this.forceNoPushdown = clusterSettings.get(TSDBPlugin.TSDB_ENGINE_FORCE_NO_PUSHDOWN);
+
+        // Register listener to update no-pushdown flag when setting changes
+        clusterSettings.addSettingsUpdateConsumer(TSDBPlugin.TSDB_ENGINE_FORCE_NO_PUSHDOWN, newValue -> {
+            this.forceNoPushdown = newValue;
+            logger.info("Updated force_no_pushdown setting to: {}", newValue);
+        });
+    }
 
     /**
      * Returns the metrics container initializer for M3QL REST actions.
@@ -303,6 +318,12 @@ public class RestM3QLAction extends BaseRestHandler {
         // Parse flags
         boolean explain = request.paramAsBoolean(EXPLAIN_PARAM, false);
         boolean pushdown = request.paramAsBoolean(PUSHDOWN_PARAM, true);
+
+        // if force_no_pushdown cluster setting is enabled, override pushdown to false regardless of request parameter
+        if (forceNoPushdown) {
+            pushdown = false;
+        }
+
         boolean profile = request.paramAsBoolean(PROFILE_PARAM, false);
         boolean includeMetadata = request.paramAsBoolean(INCLUDE_METADATA_PARAM, false);
 

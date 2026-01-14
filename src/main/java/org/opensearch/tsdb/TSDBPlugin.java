@@ -340,6 +340,29 @@ public class TSDBPlugin extends Plugin implements SearchPlugin, EnginePlugin, Ac
     );
 
     /**
+     * Setting to force no-pushdown mode for all queries.
+     * When enabled, all queries will execute as no-pushdown regardless of the pushdown parameter in the request.
+     * This is useful for testing, debugging, or temporarily disabling pushdown optimizations across the cluster.
+     */
+    public static final Setting<Boolean> TSDB_ENGINE_FORCE_NO_PUSHDOWN = Setting.boolSetting(
+        "tsdb_engine.query.force_no_pushdown",
+        false,  // default: false (allow pushdown)
+        Setting.Property.NodeScope,
+        Setting.Property.Dynamic
+    );
+
+    /**
+     * Setting to enable sending compressed time series data chunks to the coordinator node
+     * When enabled, data nodes will send the compressed time series data chunks to the coordinator node, reducing network costs.
+     */
+    public static final Setting<Boolean> TSDB_ENGINE_ENABLE_INTERNAL_AGG_CHUNK_COMPRESSION = Setting.boolSetting(
+        "tsdb_engine.query.enable_internal_agg_chunk_compression",
+        false,  // default: false (compression disabled)
+        Setting.Property.NodeScope,
+        Setting.Property.Dynamic
+    );
+
+    /**
      * Default constructor
      */
     public TSDBPlugin() {}
@@ -395,7 +418,9 @@ public class TSDBPlugin extends Plugin implements SearchPlugin, EnginePlugin, Ac
             TSDB_ENGINE_LABEL_STORAGE_TYPE,
             TSDB_ENGINE_COMMIT_INTERVAL,
             TSDB_ENGINE_WILDCARD_QUERY_CACHE_MAX_SIZE,
-            TSDB_ENGINE_WILDCARD_QUERY_CACHE_EXPIRE_AFTER
+            TSDB_ENGINE_WILDCARD_QUERY_CACHE_EXPIRE_AFTER,
+            TSDB_ENGINE_FORCE_NO_PUSHDOWN,
+            TSDB_ENGINE_ENABLE_INTERNAL_AGG_CHUNK_COMPRESSION
         );
     }
 
@@ -452,7 +477,7 @@ public class TSDBPlugin extends Plugin implements SearchPlugin, EnginePlugin, Ac
         IndexNameExpressionResolver indexNameExpressionResolver,
         Supplier<DiscoveryNodes> nodesInCluster
     ) {
-        return List.of(new RestM3QLAction());
+        return List.of(new RestM3QLAction(clusterSettings));
     }
 
     @Override

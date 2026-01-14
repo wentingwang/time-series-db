@@ -11,6 +11,9 @@ import org.apache.logging.log4j.core.config.Configurator;
 import org.mockito.ArgumentCaptor;
 import org.opensearch.action.search.SearchRequest;
 import org.opensearch.action.search.SearchResponse;
+import org.opensearch.common.settings.ClusterSettings;
+import org.opensearch.common.settings.Setting;
+import org.opensearch.common.settings.Settings;
 import org.opensearch.core.common.bytes.BytesArray;
 import org.opensearch.common.xcontent.XContentType;
 import org.opensearch.core.action.ActionListener;
@@ -24,9 +27,11 @@ import org.opensearch.test.OpenSearchTestCase;
 import org.opensearch.test.rest.FakeRestChannel;
 import org.opensearch.test.rest.FakeRestRequest;
 import org.opensearch.transport.client.node.NodeClient;
+import org.opensearch.tsdb.TSDBPlugin;
 import org.opensearch.tsdb.query.aggregator.TimeSeriesCoordinatorAggregationBuilder;
 import org.opensearch.tsdb.query.aggregator.TimeSeriesUnfoldAggregationBuilder;
 
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Consumer;
@@ -61,11 +66,19 @@ public class RestM3QLActionTests extends OpenSearchTestCase {
 
     private RestM3QLAction action;
     private NodeClient mockClient;
+    private ClusterSettings clusterSettings;
 
     @Override
     public void setUp() throws Exception {
         super.setUp();
-        action = new RestM3QLAction();
+        // Create ClusterSettings with only node-scoped settings (ClusterSettings can only contain node-scoped settings)
+        TSDBPlugin plugin = new TSDBPlugin();
+        clusterSettings = new ClusterSettings(
+            Settings.EMPTY,
+            plugin.getSettings().stream().filter(Setting::hasNodeScope).collect(java.util.stream.Collectors.toCollection(HashSet::new))
+        );
+
+        action = new RestM3QLAction(clusterSettings);
         // Default mock client that doesn't assert (for tests that don't need custom assertions)
         mockClient = setupMockClientWithAssertion(searchRequest -> {
             // No-op assertion - just let the request pass through
@@ -1011,5 +1024,95 @@ public class RestM3QLActionTests extends OpenSearchTestCase {
 
         // Cleanup
         org.opensearch.tsdb.metrics.TSDBMetrics.cleanup();
+    }
+
+    // ========== Cluster Settings Tests ==========
+
+    /**
+     * Tests that force_no_pushdown cluster setting overrides the request parameter and can be dynamically updated.
+     * 1. Initially set to false - pushdown should be allowed
+     * 2. Dynamically update to true - pushdown should be disabled even if request sets pushdown=true
+     */
+    public void testForceNoPushdownClusterSettingOverridesRequestParam() throws Exception {
+        // Create a RestM3QLAction with force_no_pushdown initially set to false
+        Settings initialSettings = Settings.builder().put("tsdb_engine.query.force_no_pushdown", false).build();
+        TSDBPlugin plugin = new TSDBPlugin();
+        ClusterSettings testClusterSettings = new ClusterSettings(
+            initialSettings,
+            plugin.getSettings().stream().filter(Setting::hasNodeScope).collect(java.util.stream.Collectors.toCollection(HashSet::new))
+        );
+        RestM3QLAction actionWithDynamicSetting = new RestM3QLAction(testClusterSettings);
+
+        // First, verify that with force_no_pushdown=false, pushdown works normally
+        NodeClient mockClientPushdownEnabled = setupMockClientWithAssertion(searchRequest -> {
+            assertNotNull("SearchRequest should not be null", searchRequest);
+            assertNotNull("SearchRequest source should not be null", searchRequest.source());
+
+            SearchSourceBuilder source = searchRequest.source();
+            AggregatorFactories.Builder aggs = source.aggregations();
+
+            TimeSeriesUnfoldAggregationBuilder unfoldAgg = (TimeSeriesUnfoldAggregationBuilder) aggs.getAggregatorFactories()
+                .stream()
+                .filter(agg -> agg instanceof TimeSeriesUnfoldAggregationBuilder)
+                .findFirst()
+                .orElse(null);
+            assertNotNull("Unfold aggregation should exist", unfoldAgg);
+
+            // With force_no_pushdown=false, pushdown should work: stages should be in unfold
+            assertNotNull("Stages should be in unfold when force_no_pushdown is disabled", unfoldAgg.getStages());
+            assertThat("Stages should not be empty in unfold", unfoldAgg.getStages().size(), greaterThan(0));
+        });
+
+        FakeRestRequest request1 = new FakeRestRequest.Builder(xContentRegistry()).withMethod(RestRequest.Method.GET)
+            .withPath("/_m3ql")
+            .withParams(Map.of("query", "fetch service:api | moving 5m sum", "pushdown", "true"))
+            .build();
+        FakeRestChannel channel1 = new FakeRestChannel(request1, true, 1);
+
+        actionWithDynamicSetting.handleRequest(request1, channel1, mockClientPushdownEnabled);
+        assertThat(channel1.capturedResponse().status(), equalTo(RestStatus.OK));
+
+        // Now dynamically update the setting to true
+        Settings updatedSettings = Settings.builder().put("tsdb_engine.query.force_no_pushdown", true).build();
+        testClusterSettings.applySettings(updatedSettings);
+
+        // Setup mock to verify that after dynamic update, pushdown is disabled (stages in coordinator, not in unfold)
+        NodeClient mockClientPushdownDisabled = setupMockClientWithAssertion(searchRequest -> {
+            assertNotNull("SearchRequest should not be null", searchRequest);
+            assertNotNull("SearchRequest source should not be null", searchRequest.source());
+
+            SearchSourceBuilder source = searchRequest.source();
+            AggregatorFactories.Builder aggs = source.aggregations();
+
+            TimeSeriesUnfoldAggregationBuilder unfoldAgg = (TimeSeriesUnfoldAggregationBuilder) aggs.getAggregatorFactories()
+                .stream()
+                .filter(agg -> agg instanceof TimeSeriesUnfoldAggregationBuilder)
+                .findFirst()
+                .orElse(null);
+            assertNotNull("Unfold aggregation should exist", unfoldAgg);
+
+            // After dynamic update, cluster setting forces no-pushdown: stages should NOT be in unfold
+            assertNull("Stages should not be in unfold after force_no_pushdown is dynamically enabled", unfoldAgg.getStages());
+
+            // Verify stages are in coordinator instead
+            TimeSeriesCoordinatorAggregationBuilder coordAgg = (TimeSeriesCoordinatorAggregationBuilder) aggs
+                .getPipelineAggregatorFactories()
+                .stream()
+                .filter(agg -> agg instanceof TimeSeriesCoordinatorAggregationBuilder)
+                .findFirst()
+                .orElse(null);
+            assertNotNull("Coordinator aggregation should exist", coordAgg);
+            assertThat("Stages should be in coordinator when force_no_pushdown is enabled", coordAgg.getStages().size(), greaterThan(0));
+        });
+
+        // Make request with pushdown=true explicitly set, but dynamically updated cluster setting should override it
+        FakeRestRequest request2 = new FakeRestRequest.Builder(xContentRegistry()).withMethod(RestRequest.Method.GET)
+            .withPath("/_m3ql")
+            .withParams(Map.of("query", "fetch service:api | moving 5m sum", "pushdown", "true"))
+            .build();
+        FakeRestChannel channel2 = new FakeRestChannel(request2, true, 1);
+
+        actionWithDynamicSetting.handleRequest(request2, channel2, mockClientPushdownDisabled);
+        assertThat(channel2.capturedResponse().status(), equalTo(RestStatus.OK));
     }
 }
