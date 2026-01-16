@@ -8,7 +8,10 @@
 package org.opensearch.tsdb.core.utils;
 
 import java.io.IOException;
+import java.nio.file.FileVisitResult;
 import java.nio.file.Path;
+import java.nio.file.SimpleFileVisitor;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.util.Comparator;
 
 public class Files {
@@ -35,5 +38,46 @@ public class Files {
                 java.nio.file.Files.delete(path);
             }
         }
+    }
+
+    /**
+     * Recursively copies a directory and all its contents.
+     * <p>
+     * This method creates the target directory and copies all files and subdirectories
+     * from the source to the target. If the target already exists, an IOException is thrown.
+     * </p>
+     *
+     * @param source the source directory to copy from
+     * @param target the target directory to copy to
+     * @throws IOException if there's an error during the copy operation
+     */
+    public static void copyDirectory(Path source, Path target) throws IOException {
+        if (!java.nio.file.Files.exists(source)) {
+            throw new IOException("Source directory does not exist: " + source);
+        }
+
+        if (!java.nio.file.Files.isDirectory(source)) {
+            throw new IOException("Source is not a directory: " + source);
+        }
+
+        java.nio.file.Files.walkFileTree(source, new SimpleFileVisitor<Path>() {
+            @Override
+            public FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes attrs) throws IOException {
+                // Use string-based path resolution to avoid FilterPath mismatch issues in tests
+                String relativePath = source.relativize(dir).toString();
+                Path targetDir = relativePath.isEmpty() ? target : target.resolve(relativePath);
+                java.nio.file.Files.createDirectories(targetDir);
+                return FileVisitResult.CONTINUE;
+            }
+
+            @Override
+            public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws IOException {
+                // Use string-based path resolution to avoid FilterPath mismatch issues in tests
+                String relativePath = source.relativize(file).toString();
+                Path targetFile = target.resolve(relativePath);
+                java.nio.file.Files.copy(file, targetFile);
+                return FileVisitResult.CONTINUE;
+            }
+        });
     }
 }
