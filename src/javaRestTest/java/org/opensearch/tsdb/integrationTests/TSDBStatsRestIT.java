@@ -35,7 +35,7 @@ public class TSDBStatsRestIT extends OpenSearchRestTestCase {
      */
     public void testTSDBStatsEndpointExists() throws IOException {
         Request request = new Request("GET", "/_tsdb/stats");
-        request.addParameter("query", "fetch __name__:*");
+        request.addParameter("query", "fetch name:*");
         request.addParameter("start", "now-1h");
         request.addParameter("end", "now");
 
@@ -54,7 +54,7 @@ public class TSDBStatsRestIT extends OpenSearchRestTestCase {
         Request request = new Request("POST", "/_tsdb/stats");
         request.addParameter("start", "now-1h");
         request.addParameter("end", "now");
-        request.setJsonEntity("{\"query\": \"fetch __name__:*\"}");
+        request.setJsonEntity("{\"query\": \"fetch name:*\"}");
 
         Response response = client().performRequest(request);
         assertEquals(200, response.getStatusLine().getStatusCode());
@@ -85,7 +85,7 @@ public class TSDBStatsRestIT extends OpenSearchRestTestCase {
      */
     public void testInvalidTimeRangeReturnsError() throws IOException {
         Request request = new Request("GET", "/_tsdb/stats");
-        request.addParameter("query", "fetch __name__:*");
+        request.addParameter("query", "fetch name:*");
         request.addParameter("start", "now");
         request.addParameter("end", "now-1h");
 
@@ -102,7 +102,7 @@ public class TSDBStatsRestIT extends OpenSearchRestTestCase {
      */
     public void testValidIncludeParameter() throws IOException {
         Request request = new Request("GET", "/_tsdb/stats");
-        request.addParameter("query", "fetch __name__:*");
+        request.addParameter("query", "fetch name:*");
         request.addParameter("start", "now-1h");
         request.addParameter("end", "now");
         request.addParameter("include", "headStats,labelStats");
@@ -119,7 +119,7 @@ public class TSDBStatsRestIT extends OpenSearchRestTestCase {
      */
     public void testInvalidIncludeParameterReturnsError() throws IOException {
         Request request = new Request("GET", "/_tsdb/stats");
-        request.addParameter("query", "fetch __name__:*");
+        request.addParameter("query", "fetch name:*");
         request.addParameter("start", "now-1h");
         request.addParameter("end", "now");
         request.addParameter("include", "invalidOption");
@@ -139,7 +139,7 @@ public class TSDBStatsRestIT extends OpenSearchRestTestCase {
     public void testValidFormatParameter() throws IOException {
         // Test grouped format
         Request groupedRequest = new Request("GET", "/_tsdb/stats");
-        groupedRequest.addParameter("query", "fetch __name__:*");
+        groupedRequest.addParameter("query", "fetch name:*");
         groupedRequest.addParameter("start", "now-1h");
         groupedRequest.addParameter("end", "now");
         groupedRequest.addParameter("format", "grouped");
@@ -151,7 +151,7 @@ public class TSDBStatsRestIT extends OpenSearchRestTestCase {
 
         // Test flat format
         Request flatRequest = new Request("GET", "/_tsdb/stats");
-        flatRequest.addParameter("query", "fetch __name__:*");
+        flatRequest.addParameter("query", "fetch name:*");
         flatRequest.addParameter("start", "now-1h");
         flatRequest.addParameter("end", "now");
         flatRequest.addParameter("format", "flat");
@@ -167,7 +167,7 @@ public class TSDBStatsRestIT extends OpenSearchRestTestCase {
      */
     public void testInvalidFormatParameterReturnsError() throws IOException {
         Request request = new Request("GET", "/_tsdb/stats");
-        request.addParameter("query", "fetch __name__:*");
+        request.addParameter("query", "fetch name:*");
         request.addParameter("start", "now-1h");
         request.addParameter("end", "now");
         request.addParameter("format", "invalidFormat");
@@ -186,7 +186,7 @@ public class TSDBStatsRestIT extends OpenSearchRestTestCase {
      */
     public void testDefaultParameterValues() throws IOException {
         Request request = new Request("GET", "/_tsdb/stats");
-        request.addParameter("query", "fetch __name__:*");
+        request.addParameter("query", "fetch name:*");
         request.addParameter("start", "now-1h");
         request.addParameter("end", "now");
 
@@ -199,7 +199,7 @@ public class TSDBStatsRestIT extends OpenSearchRestTestCase {
     }
 
     /**
-     * Tests that query without service or __name__ filters returns error.
+     * Tests that query without service or name filters returns error.
      */
     public void testQueryWithoutRequiredFiltersReturnsError() throws IOException {
         Request request = new Request("GET", "/_tsdb/stats");
@@ -214,7 +214,7 @@ public class TSDBStatsRestIT extends OpenSearchRestTestCase {
         assertTrue(responseBody.containsKey("error"));
         Object error = responseBody.get("error");
         String errorMessage = error instanceof String ? (String) error : error.toString();
-        assertTrue(errorMessage.contains("service") || errorMessage.contains("__name__"));
+        assertTrue(errorMessage.contains("service") || errorMessage.contains("name"));
     }
 
     /**
@@ -231,11 +231,11 @@ public class TSDBStatsRestIT extends OpenSearchRestTestCase {
     }
 
     /**
-     * Tests that query with __name__ filter is accepted.
+     * Tests that query with name filter is accepted.
      */
     public void testQueryWithNameFilter() throws IOException {
         Request request = new Request("GET", "/_tsdb/stats");
-        request.addParameter("query", "fetch __name__:http_*");
+        request.addParameter("query", "fetch name:http_*");
         request.addParameter("start", "now-1h");
         request.addParameter("end", "now");
 
@@ -244,11 +244,11 @@ public class TSDBStatsRestIT extends OpenSearchRestTestCase {
     }
 
     /**
-     * Tests that query with both service and __name__ filters is accepted.
+     * Tests that query with both service and name filters is accepted.
      */
     public void testQueryWithBothFilters() throws IOException {
         Request request = new Request("GET", "/_tsdb/stats");
-        request.addParameter("query", "fetch service:api __name__:http_*");
+        request.addParameter("query", "fetch service:api name:http_*");
         request.addParameter("start", "now-1h");
         request.addParameter("end", "now");
 
@@ -257,18 +257,16 @@ public class TSDBStatsRestIT extends OpenSearchRestTestCase {
     }
 
     /**
-     * Tests that non-fetch query returns error.
+     * Tests that query with pipeline operations after fetch is allowed (pipeline is ignored).
      */
-    public void testNonFetchQueryReturnsError() throws IOException {
+    public void testQueryWithPipelineOperationsIsAllowed() throws IOException {
         Request request = new Request("GET", "/_tsdb/stats");
         request.addParameter("query", "fetch service:api | sum");
         request.addParameter("start", "now-1h");
         request.addParameter("end", "now");
 
-        ResponseException exception = expectThrows(ResponseException.class, () -> client().performRequest(request));
-
-        assertEquals(400, exception.getResponse().getStatusLine().getStatusCode());
-        Map<String, Object> responseBody = entityAsMap(exception.getResponse());
-        assertTrue(responseBody.containsKey("error"));
+        // Pipeline operations after fetch are allowed (but ignored for stats aggregation)
+        Response response = client().performRequest(request);
+        assertEquals(200, response.getStatusLine().getStatusCode());
     }
 }
