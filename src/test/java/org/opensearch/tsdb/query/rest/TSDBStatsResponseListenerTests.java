@@ -78,7 +78,7 @@ public class TSDBStatsResponseListenerTests extends OpenSearchTestCase {
     public void testGroupedFormatWithAllFields() throws IOException {
         // Arrange
         FakeRestChannel channel = new FakeRestChannel(new FakeRestRequest(), true, 1);
-        TSDBStatsResponseListener listener = new TSDBStatsResponseListener(channel, List.of(), "grouped");
+        TSDBStatsResponseListener listener = new TSDBStatsResponseListener(channel, List.of("all"), "grouped");
 
         // Create test data - same as flat format test to show different formatting
         InternalTSDBStats.HeadStats headStats = new InternalTSDBStats.HeadStats(508L, 937L, 1591516800000L, 1598896800143L);
@@ -93,11 +93,16 @@ public class TSDBStatsResponseListenerTests extends OpenSearchTestCase {
         clusterValues.put("staging", 15L);
         clusterValues.put("dev", 5L);
 
-        Map<String, InternalTSDBStats.LabelStats> labelStats = new HashMap<>();
-        labelStats.put("name", new InternalTSDBStats.LabelStats(100L, nameValues));
-        labelStats.put("cluster", new InternalTSDBStats.LabelStats(100L, clusterValues));
+        Map<String, InternalTSDBStats.CoordinatorLevelStats.LabelStats> labelStats = new HashMap<>();
+        labelStats.put("name", new InternalTSDBStats.CoordinatorLevelStats.LabelStats(100L, nameValues));
+        labelStats.put("cluster", new InternalTSDBStats.CoordinatorLevelStats.LabelStats(100L, clusterValues));
 
-        InternalTSDBStats tsdbStats = new InternalTSDBStats("tsdb_stats", headStats, 25644L, labelStats, Map.of());
+        InternalTSDBStats tsdbStats = InternalTSDBStats.forCoordinatorLevel(
+            "tsdb_stats",
+            headStats,
+            new InternalTSDBStats.CoordinatorLevelStats(25644L, labelStats),
+            Map.of()
+        );
         SearchResponse searchResponse = createSearchResponse(tsdbStats);
 
         // Act
@@ -150,10 +155,15 @@ public class TSDBStatsResponseListenerTests extends OpenSearchTestCase {
         TSDBStatsResponseListener listener = new TSDBStatsResponseListener(channel, List.of("labelStats"), "grouped");
 
         Map<String, Long> clusterValues = Map.of("prod", 80L);
-        Map<String, InternalTSDBStats.LabelStats> labelStats = new HashMap<>();
-        labelStats.put("cluster", new InternalTSDBStats.LabelStats(100L, clusterValues));
+        Map<String, InternalTSDBStats.CoordinatorLevelStats.LabelStats> labelStats = new HashMap<>();
+        labelStats.put("cluster", new InternalTSDBStats.CoordinatorLevelStats.LabelStats(100L, clusterValues));
 
-        InternalTSDBStats tsdbStats = new InternalTSDBStats("tsdb_stats", null, 500L, labelStats, Map.of());
+        InternalTSDBStats tsdbStats = InternalTSDBStats.forCoordinatorLevel(
+            "tsdb_stats",
+            null,
+            new InternalTSDBStats.CoordinatorLevelStats(500L, labelStats),
+            Map.of()
+        );
         SearchResponse searchResponse = createSearchResponse(tsdbStats);
 
         // Act
@@ -185,10 +195,15 @@ public class TSDBStatsResponseListenerTests extends OpenSearchTestCase {
         TSDBStatsResponseListener listener = new TSDBStatsResponseListener(channel, List.of("headStats", "labelStats"), "grouped");
 
         Map<String, Long> clusterValues = Map.of("prod", 80L);
-        Map<String, InternalTSDBStats.LabelStats> labelStats = new HashMap<>();
-        labelStats.put("cluster", new InternalTSDBStats.LabelStats(100L, clusterValues));
+        Map<String, InternalTSDBStats.CoordinatorLevelStats.LabelStats> labelStats = new HashMap<>();
+        labelStats.put("cluster", new InternalTSDBStats.CoordinatorLevelStats.LabelStats(100L, clusterValues));
 
-        InternalTSDBStats tsdbStats = new InternalTSDBStats("tsdb_stats", null, 500L, labelStats, Map.of());
+        InternalTSDBStats tsdbStats = InternalTSDBStats.forCoordinatorLevel(
+            "tsdb_stats",
+            null,
+            new InternalTSDBStats.CoordinatorLevelStats(500L, labelStats),
+            Map.of()
+        );
         SearchResponse searchResponse = createSearchResponse(tsdbStats);
 
         // Act
@@ -219,7 +234,7 @@ public class TSDBStatsResponseListenerTests extends OpenSearchTestCase {
     public void testFlatFormatWithAllFields() throws IOException {
         // Arrange
         FakeRestChannel channel = new FakeRestChannel(new FakeRestRequest(), true, 1);
-        TSDBStatsResponseListener listener = new TSDBStatsResponseListener(channel, List.of(), "flat");
+        TSDBStatsResponseListener listener = new TSDBStatsResponseListener(channel, List.of("all"), "flat");
 
         // Create test data - same as grouped format test to show different formatting
         InternalTSDBStats.HeadStats headStats = new InternalTSDBStats.HeadStats(508L, 937L, 1591516800000L, 1598896800143L);
@@ -234,11 +249,16 @@ public class TSDBStatsResponseListenerTests extends OpenSearchTestCase {
         clusterValues.put("staging", 15L);
         clusterValues.put("dev", 5L);
 
-        Map<String, InternalTSDBStats.LabelStats> labelStats = new HashMap<>();
-        labelStats.put("name", new InternalTSDBStats.LabelStats(100L, nameValues));
-        labelStats.put("cluster", new InternalTSDBStats.LabelStats(100L, clusterValues));
+        Map<String, InternalTSDBStats.CoordinatorLevelStats.LabelStats> labelStats = new HashMap<>();
+        labelStats.put("name", new InternalTSDBStats.CoordinatorLevelStats.LabelStats(100L, nameValues));
+        labelStats.put("cluster", new InternalTSDBStats.CoordinatorLevelStats.LabelStats(100L, clusterValues));
 
-        InternalTSDBStats tsdbStats = new InternalTSDBStats("tsdb_stats", headStats, 25644L, labelStats, Map.of());
+        InternalTSDBStats tsdbStats = InternalTSDBStats.forCoordinatorLevel(
+            "tsdb_stats",
+            headStats,
+            new InternalTSDBStats.CoordinatorLevelStats(25644L, labelStats),
+            Map.of()
+        );
         SearchResponse searchResponse = createSearchResponse(tsdbStats);
 
         // Act
@@ -288,10 +308,15 @@ public class TSDBStatsResponseListenerTests extends OpenSearchTestCase {
         TSDBStatsResponseListener listener = new TSDBStatsResponseListener(channel, List.of("headStats", "labelStats"), "flat");
 
         Map<String, Long> nameValues = Map.of("http_requests_total", 60L);
-        Map<String, InternalTSDBStats.LabelStats> labelStats = new HashMap<>();
-        labelStats.put("name", new InternalTSDBStats.LabelStats(100L, nameValues));
+        Map<String, InternalTSDBStats.CoordinatorLevelStats.LabelStats> labelStats = new HashMap<>();
+        labelStats.put("name", new InternalTSDBStats.CoordinatorLevelStats.LabelStats(100L, nameValues));
 
-        InternalTSDBStats tsdbStats = new InternalTSDBStats("tsdb_stats", null, 100L, labelStats, Map.of());
+        InternalTSDBStats tsdbStats = InternalTSDBStats.forCoordinatorLevel(
+            "tsdb_stats",
+            null,
+            new InternalTSDBStats.CoordinatorLevelStats(100L, labelStats),
+            Map.of()
+        );
         SearchResponse searchResponse = createSearchResponse(tsdbStats);
 
         // Act
@@ -322,7 +347,7 @@ public class TSDBStatsResponseListenerTests extends OpenSearchTestCase {
     public void testFlatFormatSortsMetricsByCount() throws IOException {
         // Arrange
         FakeRestChannel channel = new FakeRestChannel(new FakeRestRequest(), true, 1);
-        TSDBStatsResponseListener listener = new TSDBStatsResponseListener(channel, List.of(), "flat");
+        TSDBStatsResponseListener listener = new TSDBStatsResponseListener(channel, List.of("all"), "flat");
 
         // Create metrics with different counts (should be sorted descending)
         // Use LinkedHashMap to maintain insertion order for predictable test results
@@ -330,10 +355,15 @@ public class TSDBStatsResponseListenerTests extends OpenSearchTestCase {
         nameValues.put("metric_a", 100L);
         nameValues.put("metric_b", 500L);
         nameValues.put("metric_c", 50L);
-        Map<String, InternalTSDBStats.LabelStats> labelStats = new HashMap<>();
-        labelStats.put("name", new InternalTSDBStats.LabelStats(650L, nameValues));
+        Map<String, InternalTSDBStats.CoordinatorLevelStats.LabelStats> labelStats = new HashMap<>();
+        labelStats.put("name", new InternalTSDBStats.CoordinatorLevelStats.LabelStats(650L, nameValues));
 
-        InternalTSDBStats tsdbStats = new InternalTSDBStats("tsdb_stats", null, 650L, labelStats, Map.of());
+        InternalTSDBStats tsdbStats = InternalTSDBStats.forCoordinatorLevel(
+            "tsdb_stats",
+            null,
+            new InternalTSDBStats.CoordinatorLevelStats(650L, labelStats),
+            Map.of()
+        );
         SearchResponse searchResponse = createSearchResponse(tsdbStats);
 
         // Act
@@ -374,9 +404,14 @@ public class TSDBStatsResponseListenerTests extends OpenSearchTestCase {
     public void testEmptyLabelStats() throws IOException {
         // Arrange
         FakeRestChannel channel = new FakeRestChannel(new FakeRestRequest(), true, 1);
-        TSDBStatsResponseListener listener = new TSDBStatsResponseListener(channel, List.of(), "grouped");
+        TSDBStatsResponseListener listener = new TSDBStatsResponseListener(channel, List.of("all"), "grouped");
 
-        InternalTSDBStats tsdbStats = new InternalTSDBStats("tsdb_stats", null, null, new HashMap<>(), Map.of());
+        InternalTSDBStats tsdbStats = InternalTSDBStats.forCoordinatorLevel(
+            "tsdb_stats",
+            null,
+            new InternalTSDBStats.CoordinatorLevelStats(null, new HashMap<>()),
+            Map.of()
+        );
         SearchResponse searchResponse = createSearchResponse(tsdbStats);
 
         // Act
@@ -505,10 +540,15 @@ public class TSDBStatsResponseListenerTests extends OpenSearchTestCase {
         TSDBStatsResponseListener listener = new TSDBStatsResponseListener(channel, List.of("headStats"), "grouped");
 
         InternalTSDBStats.HeadStats headStats = new InternalTSDBStats.HeadStats(100L, 200L, 1000L, 2000L);
-        Map<String, InternalTSDBStats.LabelStats> labelStats = new HashMap<>();
-        labelStats.put("cluster", new InternalTSDBStats.LabelStats(100L, Map.of("prod", 80L)));
+        Map<String, InternalTSDBStats.CoordinatorLevelStats.LabelStats> labelStats = new HashMap<>();
+        labelStats.put("cluster", new InternalTSDBStats.CoordinatorLevelStats.LabelStats(100L, Map.of("prod", 80L)));
 
-        InternalTSDBStats tsdbStats = new InternalTSDBStats("tsdb_stats", headStats, 500L, labelStats, Map.of());
+        InternalTSDBStats tsdbStats = InternalTSDBStats.forCoordinatorLevel(
+            "tsdb_stats",
+            headStats,
+            new InternalTSDBStats.CoordinatorLevelStats(500L, labelStats),
+            Map.of()
+        );
         SearchResponse searchResponse = createSearchResponse(tsdbStats);
 
         // Act
@@ -539,10 +579,15 @@ public class TSDBStatsResponseListenerTests extends OpenSearchTestCase {
         TSDBStatsResponseListener listener = new TSDBStatsResponseListener(channel, List.of("labelStats"), "grouped");
 
         InternalTSDBStats.HeadStats headStats = new InternalTSDBStats.HeadStats(100L, 200L, 1000L, 2000L);
-        Map<String, InternalTSDBStats.LabelStats> labelStats = new HashMap<>();
-        labelStats.put("cluster", new InternalTSDBStats.LabelStats(100L, Map.of("prod", 80L)));
+        Map<String, InternalTSDBStats.CoordinatorLevelStats.LabelStats> labelStats = new HashMap<>();
+        labelStats.put("cluster", new InternalTSDBStats.CoordinatorLevelStats.LabelStats(100L, Map.of("prod", 80L)));
 
-        InternalTSDBStats tsdbStats = new InternalTSDBStats("tsdb_stats", headStats, 500L, labelStats, Map.of());
+        InternalTSDBStats tsdbStats = InternalTSDBStats.forCoordinatorLevel(
+            "tsdb_stats",
+            headStats,
+            new InternalTSDBStats.CoordinatorLevelStats(500L, labelStats),
+            Map.of()
+        );
         SearchResponse searchResponse = createSearchResponse(tsdbStats);
 
         // Act
@@ -571,13 +616,18 @@ public class TSDBStatsResponseListenerTests extends OpenSearchTestCase {
     public void testEmptyIncludeOptionsIncludesAll() throws IOException {
         // Arrange
         FakeRestChannel channel = new FakeRestChannel(new FakeRestRequest(), true, 1);
-        TSDBStatsResponseListener listener = new TSDBStatsResponseListener(channel, List.of(), "grouped");
+        TSDBStatsResponseListener listener = new TSDBStatsResponseListener(channel, List.of("all"), "grouped");
 
         InternalTSDBStats.HeadStats headStats = new InternalTSDBStats.HeadStats(100L, 200L, 1000L, 2000L);
-        Map<String, InternalTSDBStats.LabelStats> labelStats = new HashMap<>();
-        labelStats.put("cluster", new InternalTSDBStats.LabelStats(100L, Map.of("prod", 80L)));
+        Map<String, InternalTSDBStats.CoordinatorLevelStats.LabelStats> labelStats = new HashMap<>();
+        labelStats.put("cluster", new InternalTSDBStats.CoordinatorLevelStats.LabelStats(100L, Map.of("prod", 80L)));
 
-        InternalTSDBStats tsdbStats = new InternalTSDBStats("tsdb_stats", headStats, 500L, labelStats, Map.of());
+        InternalTSDBStats tsdbStats = InternalTSDBStats.forCoordinatorLevel(
+            "tsdb_stats",
+            headStats,
+            new InternalTSDBStats.CoordinatorLevelStats(500L, labelStats),
+            Map.of()
+        );
         SearchResponse searchResponse = createSearchResponse(tsdbStats);
 
         // Act

@@ -7,13 +7,18 @@
  */
 package org.opensearch.tsdb.query.rest;
 
+import org.opensearch.action.search.SearchRequest;
 import org.opensearch.common.settings.ClusterSettings;
 import org.opensearch.core.common.Strings;
 import org.opensearch.core.rest.RestStatus;
 import org.opensearch.core.xcontent.XContentBuilder;
 import org.opensearch.core.xcontent.XContentParser;
+import org.opensearch.index.query.BoolQueryBuilder;
+import org.opensearch.index.query.QueryBuilder;
+import org.opensearch.index.query.QueryBuilders;
 import org.opensearch.rest.BytesRestResponse;
 import org.opensearch.rest.RestRequest;
+import org.opensearch.search.builder.SearchSourceBuilder;
 import org.opensearch.transport.client.node.NodeClient;
 import org.opensearch.tsdb.lang.m3.m3ql.parser.generated.M3QLParser;
 import org.opensearch.tsdb.lang.m3.m3ql.parser.generated.ParseException;
@@ -22,6 +27,9 @@ import org.opensearch.tsdb.lang.m3.m3ql.plan.M3ASTConverter;
 import org.opensearch.tsdb.lang.m3.m3ql.plan.M3PlannerContext;
 import org.opensearch.tsdb.lang.m3.m3ql.plan.nodes.FetchPlanNode;
 import org.opensearch.tsdb.lang.m3.m3ql.plan.nodes.M3PlanNode;
+import org.opensearch.tsdb.query.aggregator.TSDBStatsAggregationBuilder;
+import org.opensearch.tsdb.query.search.CachedWildcardQueryBuilder;
+import org.opensearch.tsdb.query.search.TimeRangePruningQueryBuilder;
 
 import java.io.IOException;
 import java.util.Arrays;
@@ -385,92 +393,114 @@ public class RestTSDBStatsAction extends BaseTSDBAction {
             };
         }
 
-        // TODO: Implement aggregator in next PR (PR #2)
-        // For now, return a placeholder response showing the parsed parameters
-        return channel -> {
-            XContentBuilder response = channel.newBuilder();
-            response.startObject();
-            response.field("message", "TSDB Stats endpoint - aggregator implementation pending");
-            response.field("query", query);
-            response.field("start", startMs);
-            response.field("end", endMs);
-            if (includeOptions.size() == 1 && includeOptions.get(0).equals(INCLUDE_TYPE_ALL)) {
-                response.field("include", "all");
-            } else {
-                response.field("include", includeOptions);
-            }
-            response.field("format", format);
-            if (indices.length > 0) {
-                response.field("indices", indices);
-            }
-            response.field("explain", explain);
-            response.endObject();
-            channel.sendResponse(new BytesRestResponse(RestStatus.OK, response));
-        };
+        // Determine what statistics to include
+        boolean includeValueStats = includeOptions.contains(INCLUDE_TYPE_ALL) || includeOptions.contains(INCLUDE_TYPE_VALUE_STATS);
 
-        /*
-         * TODO: Uncomment this section in PR #2 when TSDBStatsAggregator is implemented:
-         *
-         * try {
-         *     // Translate M3QL fetch to QueryBuilder
-         *     QueryBuilder filter = FetchQueryBuilder.buildQuery(query, startMs, endMs);
-         *
-         *     // Build aggregation
-         *     TSDBStatsAggregationBuilder aggBuilder = new TSDBStatsAggregationBuilder(
-         *         "tsdb_stats",
-         *         startMs,
-         *         endMs,
-         *         includeOptions,
-         *         format
-         *     );
-         *
-         *     // Build search request
-         *     SearchSourceBuilder searchSourceBuilder = new SearchSourceBuilder()
-         *         .query(filter)
-         *         .aggregation(aggBuilder)
-         *         .size(0);
-         *
-         *     // Handle explain mode
-         *     if (explain) {
-         *         return buildExplainResponse(query, searchSourceBuilder);
-         *     }
-         *
-         *     SearchRequest searchRequest = new SearchRequest();
-         *     searchRequest.source(searchSourceBuilder);
-         *     searchRequest.requestCache(false);
-         *
-         *     if (indices.length > 0) {
-         *         searchRequest.indices(indices);
-         *     }
-         *
-         *     // Execute search
-         *     return channel -> client.search(
-         *         searchRequest,
-         *         new TSDBStatsResponseListener(channel, includeOptions, format)
-         *     );
-         *
-         * } catch (Exception e) {
-         *     return channel -> {
-         *         XContentBuilder response = channel.newErrorBuilder();
-         *         response.startObject();
-         *         response.field(ERROR_FIELD, e.getMessage());
-         *         response.endObject();
-         *         channel.sendResponse(new BytesRestResponse(RestStatus.BAD_REQUEST, response));
-         *     };
-         * }
-         */
+        try {
+            // Translate M3QL fetch to QueryBuilder
+            QueryBuilder filter = buildQueryFromFetch(query, startMs, endMs);
+
+            // Build aggregation
+            TSDBStatsAggregationBuilder aggBuilder = new TSDBStatsAggregationBuilder("tsdb_stats", startMs, endMs, includeValueStats);
+
+            // Build search request
+            SearchSourceBuilder searchSourceBuilder = new SearchSourceBuilder().query(filter).aggregation(aggBuilder).size(0);
+
+            // Handle explain mode
+            if (explain) {
+                return buildExplainResponse(query, searchSourceBuilder);
+            }
+
+            SearchRequest searchRequest = new SearchRequest();
+            searchRequest.source(searchSourceBuilder);
+            searchRequest.requestCache(false);
+
+            if (indices.length > 0) {
+                searchRequest.indices(indices);
+            }
+
+            // Execute search
+            return channel -> client.search(searchRequest, new TSDBStatsResponseListener(channel, includeOptions, format));
+
+        } catch (Exception e) {
+            return channel -> {
+                XContentBuilder response = channel.newErrorBuilder();
+                response.startObject();
+                response.field(ERROR_FIELD, e.getMessage());
+                response.endObject();
+                channel.sendResponse(new BytesRestResponse(RestStatus.BAD_REQUEST, response));
+            };
+        }
+    }
+
+    /**
+     * Builds a QueryBuilder from an M3QL fetch expression.
+     *
+     * @param query the M3QL fetch query
+     * @param startMs the start timestamp in milliseconds
+     * @param endMs the end timestamp in milliseconds
+     * @return a QueryBuilder matching the fetch filters and time range
+     * @throws ParseException if the query cannot be parsed
+     */
+    private QueryBuilder buildQueryFromFetch(String query, long startMs, long endMs) throws ParseException {
+        try (M3PlannerContext context = M3PlannerContext.create()) {
+            // Parse the M3QL query
+            RootNode astRoot = M3QLParser.parse(query, true);
+
+            // Convert AST to plan
+            M3ASTConverter astConverter = new M3ASTConverter(context);
+            M3PlanNode planRoot = astConverter.buildPlan(astRoot);
+
+            // Find the FetchPlanNode
+            FetchPlanNode fetchPlan = findFetchPlanNode(planRoot);
+            if (fetchPlan == null) {
+                throw new IllegalArgumentException("Query must contain a fetch expression");
+            }
+
+            // Build a simple match query from the filters
+            Map<String, List<String>> matchFilters = fetchPlan.getMatchFilters();
+            BoolQueryBuilder boolQuery = QueryBuilders.boolQuery();
+
+            // Add label filters
+            for (Map.Entry<String, List<String>> entry : matchFilters.entrySet()) {
+                String labelKey = entry.getKey();
+                List<String> values = entry.getValue();
+
+                // For each value, create a term or wildcard query
+                BoolQueryBuilder labelQuery = QueryBuilders.boolQuery();
+                for (String value : values) {
+                    String labelFilter = labelKey + ":" + value;  // Format: "service:api"
+                    if (value.contains("*") || value.contains("?")) {
+                        // Wildcard query on labels field
+                        labelQuery.should(
+                            new CachedWildcardQueryBuilder(org.opensearch.tsdb.core.mapping.Constants.IndexSchema.LABELS, labelFilter)
+                        );
+                    } else {
+                        // Exact term query on labels field
+                        labelQuery.should(
+                            QueryBuilders.termQuery(org.opensearch.tsdb.core.mapping.Constants.IndexSchema.LABELS, labelFilter)
+                        );
+                    }
+                }
+                boolQuery.filter(labelQuery);
+            }
+
+            // Wrap with time range pruning query
+            return new TimeRangePruningQueryBuilder(boolQuery, startMs, endMs);
+        } catch (ParseException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new IllegalArgumentException("Failed to build query from fetch expression: " + e.getMessage(), e);
+        }
     }
 
     /**
      * Builds a response for explain mode that returns the translated DSL.
      *
-     * TODO: Implement in PR #2
-     *
      * @param query the original M3QL fetch query
      * @param searchSourceBuilder the translated DSL
      * @return a RestChannelConsumer that sends the explain response
      */
-    /*
     private RestChannelConsumer buildExplainResponse(String query, SearchSourceBuilder searchSourceBuilder) {
         return channel -> {
             XContentBuilder response = channel.newBuilder();
@@ -482,5 +512,4 @@ public class RestTSDBStatsAction extends BaseTSDBAction {
             channel.sendResponse(new BytesRestResponse(RestStatus.OK, response));
         };
     }
-    */
 }
