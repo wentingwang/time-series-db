@@ -30,8 +30,6 @@ import java.util.Objects;
  *   <li><strong>Total Time Series Count:</strong> Total number of unique time series</li>
  *   <li><strong>Tag Statistics:</strong> Per-tag cardinality and value distribution</li>
  *   <li><strong>Optional Value Stats:</strong> Detailed per-value counts when enabled</li>
- *   <li><strong>Serialization:</strong> Supports streaming serialization/deserialization
- *       for distributed processing</li>
  * </ul>
  */
 public class InternalTSDBStats extends InternalAggregation {
@@ -105,32 +103,31 @@ public class InternalTSDBStats extends InternalAggregation {
 
     /**
      * Statistics for a single label.
+     *
+     * @param numSeries the number of time series using this label (null if not requested)
+     * @param valuesStats map of label value to time series count (null if not requested)
      */
-    public static class LabelStats {
-        private final Long numSeries;
-        private final Map<String, Long> valuesStats;
+    public record LabelStats(Long numSeries, Map<String, Long> valuesStats) {
 
         /**
-         * Constructor for LabelStats.
+         * Deserializes LabelStats from a stream.
+         *
+         * @param in the stream input to read from
+         * @throws IOException if an I/O error occurs during reading
          */
-        public LabelStats(Long numSeries, Map<String, Long> valuesStats) {
-            this.numSeries = numSeries;
-            this.valuesStats = valuesStats;
-        }
-
         public LabelStats(StreamInput in) throws IOException {
-            boolean hasNumSeries = in.readBoolean();
-            this.numSeries = hasNumSeries ? in.readVLong() : null;
-
-            // Read valuesStats (counts)
-            boolean hasValuesStats = in.readBoolean();
-            if (hasValuesStats) {
-                this.valuesStats = in.readMap(StreamInput::readString, StreamInput::readVLong);
-            } else {
-                this.valuesStats = null;
-            }
+            this(
+                in.readBoolean() ? in.readVLong() : null,
+                in.readBoolean() ? in.readMap(StreamInput::readString, StreamInput::readVLong) : null
+            );
         }
 
+        /**
+         * Serializes LabelStats to a stream.
+         *
+         * @param out the stream output to write to
+         * @throws IOException if an I/O error occurs during writing
+         */
         public void writeTo(StreamOutput out) throws IOException {
             if (numSeries != null) {
                 out.writeBoolean(true);
@@ -148,29 +145,31 @@ public class InternalTSDBStats extends InternalAggregation {
             }
         }
 
-        public Long getNumSeries() {
-            return numSeries;
-        }
-
+        /**
+         * Returns the list of label values.
+         *
+         * @return list of label values, empty list if valuesStats is null
+         */
         public List<String> getValues() {
             return valuesStats != null ? new ArrayList<>(valuesStats.keySet()) : List.of();
         }
 
+        /**
+         * Accessor for numSeries (provides explicit method for clarity).
+         *
+         * @return the number of time series using this label
+         */
+        public Long getNumSeries() {
+            return numSeries;
+        }
+
+        /**
+         * Accessor for valuesStats (provides explicit method for clarity).
+         *
+         * @return map of label value to time series count
+         */
         public Map<String, Long> getValuesStats() {
             return valuesStats;
-        }
-
-        @Override
-        public boolean equals(Object o) {
-            if (this == o) return true;
-            if (o == null || getClass() != o.getClass()) return false;
-            LabelStats labelStats = (LabelStats) o;
-            return Objects.equals(numSeries, labelStats.numSeries) && Objects.equals(valuesStats, labelStats.valuesStats);
-        }
-
-        @Override
-        public int hashCode() {
-            return Objects.hash(numSeries, valuesStats);
         }
     }
 
@@ -212,13 +211,8 @@ public class InternalTSDBStats extends InternalAggregation {
         boolean hasNumSeries = in.readBoolean();
         this.numSeries = hasNumSeries ? in.readVLong() : null;
 
-        int labelCount = in.readVInt();
-        this.labelStatsMap = new HashMap<>(labelCount);
-        for (int i = 0; i < labelCount; i++) {
-            String labelName = in.readString();
-            LabelStats stats = new LabelStats(in);
-            this.labelStatsMap.put(labelName, stats);
-        }
+        // Read labelStatsMap using readMap
+        this.labelStatsMap = in.readMap(StreamInput::readString, LabelStats::new);
     }
 
     /**
@@ -244,11 +238,8 @@ public class InternalTSDBStats extends InternalAggregation {
             out.writeBoolean(false);
         }
 
-        out.writeVInt(labelStatsMap.size());
-        for (Map.Entry<String, LabelStats> entry : labelStatsMap.entrySet()) {
-            out.writeString(entry.getKey());
-            entry.getValue().writeTo(out);
-        }
+        // Write labelStatsMap using writeMap
+        out.writeMap(labelStatsMap, StreamOutput::writeString, (o, stats) -> stats.writeTo(o));
     }
 
     /**

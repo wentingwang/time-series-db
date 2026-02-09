@@ -220,16 +220,37 @@ public class TSDBStatsResponseListener implements ActionListener<SearchResponse>
             writeNameValueArray(builder, "labelValueCountByLabelName", labelValueCounts);
 
             // memoryInBytesByLabelName - estimated memory usage by label name
-            // Estimate: sum of lengths of all value strings for each label
+            // Follows Prometheus approach: (len(name) + header + len(value) + header) * numSeries
+            // See: https://github.com/prometheus/prometheus/blob/main/model/labels/labels_slicelabels.go#L520
             List<NameValuePair> memoryByLabel = new ArrayList<>();
             for (Map.Entry<String, InternalTSDBStats.LabelStats> entry : labelStatsMap.entrySet()) {
                 String labelName = entry.getKey();
                 InternalTSDBStats.LabelStats labelStat = entry.getValue();
                 long memoryBytes = 0;
-                if (labelStat.getValues() != null) {
+
+                // String header overhead in Java: ~24 bytes (object header + hashcode + length)
+                final long STRING_HEADER_BYTES = 24;
+
+                if (labelStat.getValuesStats() != null) {
+                    // Calculate memory for each label name/value pair weighted by series count
+                    for (Map.Entry<String, Long> valueEntry : labelStat.getValuesStats().entrySet()) {
+                        String value = valueEntry.getKey();
+                        long numSeries = valueEntry.getValue();
+
+                        // Memory for label name: UTF-16 chars (2 bytes each) + header
+                        long nameBytes = (labelName.length() * 2L) + STRING_HEADER_BYTES;
+                        // Memory for label value: UTF-16 chars (2 bytes each) + header
+                        long valueBytes = (value.length() * 2L) + STRING_HEADER_BYTES;
+                        // Total memory = (name + value) * number of series with this label value
+                        memoryBytes += (nameBytes + valueBytes) * numSeries;
+                    }
+                } else if (labelStat.getValues() != null) {
+                    // Fallback when valuesStats is null but values list exists
+                    // Assume 1 series per value for estimation
                     for (String value : labelStat.getValues()) {
-                        // Estimate: length of string (each char is 2 bytes in UTF-16)
-                        memoryBytes += value.length() * 2L;
+                        long nameBytes = (labelName.length() * 2L) + STRING_HEADER_BYTES;
+                        long valueBytes = (value.length() * 2L) + STRING_HEADER_BYTES;
+                        memoryBytes += nameBytes + valueBytes;
                     }
                 }
                 memoryByLabel.add(new NameValuePair(labelName, memoryBytes));

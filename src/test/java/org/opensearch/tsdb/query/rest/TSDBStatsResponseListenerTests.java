@@ -264,8 +264,8 @@ public class TSDBStatsResponseListenerTests extends OpenSearchTestCase {
                 {"name": "name", "value": 2}
               ],
               "memoryInBytesByLabelName": [
-                {"name": "name", "value": 96},
-                {"name": "cluster", "value": 28}
+                {"name": "name", "value": 10200},
+                {"name": "cluster", "value": 7080}
               ],
               "seriesCountByLabelValuePair": [
                 {"name": "cluster=prod", "value": 80},
@@ -309,7 +309,7 @@ public class TSDBStatsResponseListenerTests extends OpenSearchTestCase {
                 {"name": "name", "value": 1}
               ],
               "memoryInBytesByLabelName": [
-                {"name": "name", "value": 38}
+                {"name": "name", "value": 5640}
               ]
             }
             """;
@@ -354,7 +354,7 @@ public class TSDBStatsResponseListenerTests extends OpenSearchTestCase {
                 {"name": "name", "value": 3}
               ],
               "memoryInBytesByLabelName": [
-                {"name": "name", "value": 48}
+                {"name": "name", "value": 46800}
               ],
               "seriesCountByLabelValuePair": [
                 {"name": "name=metric_b", "value": 500},

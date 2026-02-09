@@ -329,7 +329,7 @@ public class RestTSDBStatsAction extends BaseTSDBAction {
         boolean explain = request.paramAsBoolean(EXPLAIN_PARAM, false);
         String[] indices = Strings.splitStringByCommaToArray(request.param(PARTITIONS_PARAM));
 
-        // Parse query from body (POST) or URL param (GET) - do this early to consume the parameter
+        // Parse query from body (POST) or URL param (GET) - consume parameter early
         RequestBody requestBody;
         try {
             requestBody = parseRequestBody(request);
@@ -344,6 +344,17 @@ public class RestTSDBStatsAction extends BaseTSDBAction {
             };
         }
         String query = (requestBody != null && requestBody.query() != null) ? requestBody.query() : request.param(QUERY_PARAM);
+
+        // Validate time range first (fail fast)
+        if (startMs >= endMs) {
+            return channel -> {
+                XContentBuilder response = channel.newErrorBuilder();
+                response.startObject();
+                response.field(ERROR_FIELD, "Start time must be before end time");
+                response.endObject();
+                channel.sendResponse(new BytesRestResponse(RestStatus.BAD_REQUEST, response));
+            };
+        }
 
         // Parse include and format parameters with validation
         List<String> includeOptions;
@@ -369,17 +380,6 @@ public class RestTSDBStatsAction extends BaseTSDBAction {
                 XContentBuilder response = channel.newErrorBuilder();
                 response.startObject();
                 response.field(ERROR_FIELD, e.getMessage());
-                response.endObject();
-                channel.sendResponse(new BytesRestResponse(RestStatus.BAD_REQUEST, response));
-            };
-        }
-
-        // Validate time range
-        if (startMs >= endMs) {
-            return channel -> {
-                XContentBuilder response = channel.newErrorBuilder();
-                response.startObject();
-                response.field(ERROR_FIELD, "Start time must be before end time");
                 response.endObject();
                 channel.sendResponse(new BytesRestResponse(RestStatus.BAD_REQUEST, response));
             };
