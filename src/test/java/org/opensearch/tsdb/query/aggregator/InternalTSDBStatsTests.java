@@ -88,10 +88,10 @@ public class InternalTSDBStatsTests extends OpenSearchTestCase {
         InternalTSDBStats.HeadStats headStats = new InternalTSDBStats.HeadStats(100L, 200L, 1000L, 2000L);
 
         // Assert
-        assertEquals(100L, headStats.getNumSeries());
-        assertEquals(200L, headStats.getChunkCount());
-        assertEquals(1000L, headStats.getMinTime());
-        assertEquals(2000L, headStats.getMaxTime());
+        assertEquals(100L, headStats.numSeries());
+        assertEquals(200L, headStats.chunkCount());
+        assertEquals(1000L, headStats.minTime());
+        assertEquals(2000L, headStats.maxTime());
     }
 
     public void testHeadStatsEquals() {

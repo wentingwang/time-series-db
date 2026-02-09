@@ -41,24 +41,10 @@ public class InternalTSDBStats extends InternalAggregation {
     /**
      * Statistics for the head (in-memory time series).
      */
-    public static class HeadStats {
-        private final long numSeries;
-        private final long chunkCount;
-        private final long minTime;
-        private final long maxTime;
-
-        public HeadStats(long numSeries, long chunkCount, long minTime, long maxTime) {
-            this.numSeries = numSeries;
-            this.chunkCount = chunkCount;
-            this.minTime = minTime;
-            this.maxTime = maxTime;
-        }
+    public record HeadStats(long numSeries, long chunkCount, long minTime, long maxTime) {
 
         public HeadStats(StreamInput in) throws IOException {
-            this.numSeries = in.readVLong();
-            this.chunkCount = in.readVLong();
-            this.minTime = in.readVLong();
-            this.maxTime = in.readVLong();
+            this(in.readVLong(), in.readVLong(), in.readVLong(), in.readVLong());
         }
 
         public void writeTo(StreamOutput out) throws IOException {
@@ -66,38 +52,6 @@ public class InternalTSDBStats extends InternalAggregation {
             out.writeVLong(chunkCount);
             out.writeVLong(minTime);
             out.writeVLong(maxTime);
-        }
-
-        public long getNumSeries() {
-            return numSeries;
-        }
-
-        public long getChunkCount() {
-            return chunkCount;
-        }
-
-        public long getMinTime() {
-            return minTime;
-        }
-
-        public long getMaxTime() {
-            return maxTime;
-        }
-
-        @Override
-        public boolean equals(Object o) {
-            if (this == o) return true;
-            if (o == null || getClass() != o.getClass()) return false;
-            HeadStats headStats = (HeadStats) o;
-            return numSeries == headStats.numSeries
-                && chunkCount == headStats.chunkCount
-                && minTime == headStats.minTime
-                && maxTime == headStats.maxTime;
-        }
-
-        @Override
-        public int hashCode() {
-            return Objects.hash(numSeries, chunkCount, minTime, maxTime);
         }
     }
 
@@ -339,10 +293,10 @@ public class InternalTSDBStats extends InternalAggregation {
         // Write headStats if present
         if (headStats != null) {
             builder.startObject("headStats");
-            builder.field("numSeries", headStats.numSeries);
-            builder.field("chunkCount", headStats.chunkCount);
-            builder.field("minTime", headStats.minTime);
-            builder.field("maxTime", headStats.maxTime);
+            builder.field("numSeries", headStats.numSeries());
+            builder.field("chunkCount", headStats.chunkCount());
+            builder.field("minTime", headStats.minTime());
+            builder.field("maxTime", headStats.maxTime());
             builder.endObject();
         }
 

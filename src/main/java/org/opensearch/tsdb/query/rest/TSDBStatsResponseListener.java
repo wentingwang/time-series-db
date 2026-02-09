@@ -117,10 +117,10 @@ public class TSDBStatsResponseListener implements ActionListener<SearchResponse>
         if (includeHeadStats && stats.getHeadStats() != null) {
             InternalTSDBStats.HeadStats headStats = stats.getHeadStats();
             builder.startObject("headStats");
-            builder.field("numSeries", headStats.getNumSeries());
-            builder.field("chunkCount", headStats.getChunkCount());
-            builder.field("minTime", headStats.getMinTime());
-            builder.field("maxTime", headStats.getMaxTime());
+            builder.field("numSeries", headStats.numSeries());
+            builder.field("chunkCount", headStats.chunkCount());
+            builder.field("minTime", headStats.minTime());
+            builder.field("maxTime", headStats.maxTime());
             builder.endObject();
         }
 
@@ -184,10 +184,10 @@ public class TSDBStatsResponseListener implements ActionListener<SearchResponse>
         if (includeHeadStats && stats.getHeadStats() != null) {
             InternalTSDBStats.HeadStats headStats = stats.getHeadStats();
             builder.startObject("headStats");
-            builder.field("numSeries", headStats.getNumSeries());
-            builder.field("chunkCount", headStats.getChunkCount());
-            builder.field("minTime", headStats.getMinTime());
-            builder.field("maxTime", headStats.getMaxTime());
+            builder.field("numSeries", headStats.numSeries());
+            builder.field("chunkCount", headStats.chunkCount());
+            builder.field("minTime", headStats.minTime());
+            builder.field("maxTime", headStats.maxTime());
             builder.endObject();
         }
 
