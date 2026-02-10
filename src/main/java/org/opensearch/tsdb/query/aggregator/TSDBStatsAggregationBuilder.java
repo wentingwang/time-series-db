@@ -49,7 +49,7 @@ import java.util.Map;
  */
 public class TSDBStatsAggregationBuilder extends AbstractAggregationBuilder<TSDBStatsAggregationBuilder> {
     /** The name of the aggregation type */
-    public static final String NAME = "tsdb_stats";
+    public static final String NAME = "tsdb_stats_agg";
 
     private final long minTimestamp;
     private final long maxTimestamp;

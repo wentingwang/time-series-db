@@ -78,7 +78,7 @@ public class TSDBStatsResponseListenerTests extends OpenSearchTestCase {
     public void testGroupedFormatWithAllFields() throws IOException {
         // Arrange
         FakeRestChannel channel = new FakeRestChannel(new FakeRestRequest(), true, 1);
-        TSDBStatsResponseListener listener = new TSDBStatsResponseListener(channel, List.of(), "grouped");
+        TSDBStatsResponseListener listener = new TSDBStatsResponseListener(channel, List.of("all"), "grouped");
 
         // Create test data - same as flat format test to show different formatting
         InternalTSDBStats.HeadStats headStats = new InternalTSDBStats.HeadStats(508L, 937L, 1591516800000L, 1598896800143L);
@@ -234,7 +234,7 @@ public class TSDBStatsResponseListenerTests extends OpenSearchTestCase {
     public void testFlatFormatWithAllFields() throws IOException {
         // Arrange
         FakeRestChannel channel = new FakeRestChannel(new FakeRestRequest(), true, 1);
-        TSDBStatsResponseListener listener = new TSDBStatsResponseListener(channel, List.of(), "flat");
+        TSDBStatsResponseListener listener = new TSDBStatsResponseListener(channel, List.of("all"), "flat");
 
         // Create test data - same as grouped format test to show different formatting
         InternalTSDBStats.HeadStats headStats = new InternalTSDBStats.HeadStats(508L, 937L, 1591516800000L, 1598896800143L);
@@ -347,7 +347,7 @@ public class TSDBStatsResponseListenerTests extends OpenSearchTestCase {
     public void testFlatFormatSortsMetricsByCount() throws IOException {
         // Arrange
         FakeRestChannel channel = new FakeRestChannel(new FakeRestRequest(), true, 1);
-        TSDBStatsResponseListener listener = new TSDBStatsResponseListener(channel, List.of(), "flat");
+        TSDBStatsResponseListener listener = new TSDBStatsResponseListener(channel, List.of("all"), "flat");
 
         // Create metrics with different counts (should be sorted descending)
         // Use LinkedHashMap to maintain insertion order for predictable test results
@@ -404,7 +404,7 @@ public class TSDBStatsResponseListenerTests extends OpenSearchTestCase {
     public void testEmptyLabelStats() throws IOException {
         // Arrange
         FakeRestChannel channel = new FakeRestChannel(new FakeRestRequest(), true, 1);
-        TSDBStatsResponseListener listener = new TSDBStatsResponseListener(channel, List.of(), "grouped");
+        TSDBStatsResponseListener listener = new TSDBStatsResponseListener(channel, List.of("all"), "grouped");
 
         InternalTSDBStats tsdbStats = InternalTSDBStats.forCoordinatorLevel(
             "tsdb_stats",
@@ -616,7 +616,7 @@ public class TSDBStatsResponseListenerTests extends OpenSearchTestCase {
     public void testEmptyIncludeOptionsIncludesAll() throws IOException {
         // Arrange
         FakeRestChannel channel = new FakeRestChannel(new FakeRestRequest(), true, 1);
-        TSDBStatsResponseListener listener = new TSDBStatsResponseListener(channel, List.of(), "grouped");
+        TSDBStatsResponseListener listener = new TSDBStatsResponseListener(channel, List.of("all"), "grouped");
 
         InternalTSDBStats.HeadStats headStats = new InternalTSDBStats.HeadStats(100L, 200L, 1000L, 2000L);
         Map<String, InternalTSDBStats.CoordinatorLevelStats.LabelStats> labelStats = new HashMap<>();

@@ -109,9 +109,9 @@ public class TSDBStatsResponseListener implements ActionListener<SearchResponse>
      * @throws IOException if an I/O error occurs
      */
     private void formatGroupedResponse(InternalTSDBStats stats, XContentBuilder builder) throws IOException {
-        boolean includeValueStats = includeOptions.isEmpty() || includeOptions.contains("valueStats");
-        boolean includeHeadStats = includeOptions.isEmpty() || includeOptions.contains("headStats");
-        boolean includeLabelStats = includeOptions.isEmpty() || includeOptions.contains("labelStats");
+        boolean includeValueStats = includeOptions.contains("all") || includeOptions.contains("valueStats");
+        boolean includeHeadStats = includeOptions.contains("all") || includeOptions.contains("headStats");
+        boolean includeLabelStats = includeOptions.contains("all") || includeOptions.contains("labelStats");
 
         // Write headStats if included
         if (includeHeadStats && stats.getHeadStats() != null) {
@@ -136,13 +136,13 @@ public class TSDBStatsResponseListener implements ActionListener<SearchResponse>
             for (Map.Entry<String, InternalTSDBStats.CoordinatorLevelStats.LabelStats> entry : stats.getLabelStats().entrySet()) {
                 builder.startObject(entry.getKey());
                 InternalTSDBStats.CoordinatorLevelStats.LabelStats labelStats = entry.getValue();
-                if (labelStats.getNumSeries() != null) {
-                    builder.field("numSeries", labelStats.getNumSeries());
+                if (labelStats.numSeries() != null) {
+                    builder.field("numSeries", labelStats.numSeries());
                 }
-                builder.field("values", labelStats.getValues());
+                builder.field("values", labelStats.values());
                 // Only include valuesStats if valueStats is in includeOptions
-                if (includeValueStats && labelStats.getValuesStats() != null) {
-                    builder.field("valuesStats", labelStats.getValuesStats());
+                if (includeValueStats && labelStats.valuesStats() != null) {
+                    builder.field("valuesStats", labelStats.valuesStats());
                 }
                 builder.endObject();
             }
@@ -176,9 +176,9 @@ public class TSDBStatsResponseListener implements ActionListener<SearchResponse>
      * @throws IOException if an I/O error occurs
      */
     private void formatFlatResponse(InternalTSDBStats stats, XContentBuilder builder) throws IOException {
-        boolean includeValueStats = includeOptions.isEmpty() || includeOptions.contains("valueStats");
-        boolean includeHeadStats = includeOptions.isEmpty() || includeOptions.contains("headStats");
-        boolean includeLabelStats = includeOptions.isEmpty() || includeOptions.contains("labelStats");
+        boolean includeValueStats = includeOptions.contains("all") || includeOptions.contains("valueStats");
+        boolean includeHeadStats = includeOptions.contains("all") || includeOptions.contains("headStats");
+        boolean includeLabelStats = includeOptions.contains("all") || includeOptions.contains("labelStats");
 
         // Write headStats if included
         if (includeHeadStats && stats.getHeadStats() != null) {
@@ -198,8 +198,8 @@ public class TSDBStatsResponseListener implements ActionListener<SearchResponse>
             // seriesCountByMetricName - series count for each name value
             List<NameValuePair> seriesCountByMetricName = new ArrayList<>();
             InternalTSDBStats.CoordinatorLevelStats.LabelStats nameLabelStats = labelStatsMap.get("name");
-            if (nameLabelStats != null && nameLabelStats.getValuesStats() != null) {
-                for (Map.Entry<String, Long> entry : nameLabelStats.getValuesStats().entrySet()) {
+            if (nameLabelStats != null && nameLabelStats.valuesStats() != null) {
+                for (Map.Entry<String, Long> entry : nameLabelStats.valuesStats().entrySet()) {
                     seriesCountByMetricName.add(new NameValuePair(entry.getKey(), entry.getValue()));
                 }
                 // Sort by count descending
@@ -212,7 +212,7 @@ public class TSDBStatsResponseListener implements ActionListener<SearchResponse>
             for (Map.Entry<String, InternalTSDBStats.CoordinatorLevelStats.LabelStats> entry : labelStatsMap.entrySet()) {
                 String labelName = entry.getKey();
                 InternalTSDBStats.CoordinatorLevelStats.LabelStats labelStat = entry.getValue();
-                long valueCount = labelStat.getValues() != null ? labelStat.getValues().size() : 0;
+                long valueCount = labelStat.values() != null ? labelStat.values().size() : 0;
                 labelValueCounts.add(new NameValuePair(labelName, valueCount));
             }
             // Sort by count descending
@@ -231,9 +231,9 @@ public class TSDBStatsResponseListener implements ActionListener<SearchResponse>
                 // String header overhead in Java: ~24 bytes (object header + hashcode + length)
                 final long STRING_HEADER_BYTES = 24;
 
-                if (labelStat.getValuesStats() != null) {
+                if (labelStat.valuesStats() != null) {
                     // Calculate memory for each label name/value pair weighted by series count
-                    for (Map.Entry<String, Long> valueEntry : labelStat.getValuesStats().entrySet()) {
+                    for (Map.Entry<String, Long> valueEntry : labelStat.valuesStats().entrySet()) {
                         String value = valueEntry.getKey();
                         long numSeries = valueEntry.getValue();
 
@@ -244,10 +244,10 @@ public class TSDBStatsResponseListener implements ActionListener<SearchResponse>
                         // Total memory = (name + value) * number of series with this label value
                         memoryBytes += (nameBytes + valueBytes) * numSeries;
                     }
-                } else if (labelStat.getValues() != null) {
+                } else if (labelStat.values() != null) {
                     // Fallback when valuesStats is null but values list exists
                     // Assume 1 series per value for estimation
-                    for (String value : labelStat.getValues()) {
+                    for (String value : labelStat.values()) {
                         long nameBytes = (labelName.length() * 2L) + STRING_HEADER_BYTES;
                         long valueBytes = (value.length() * 2L) + STRING_HEADER_BYTES;
                         memoryBytes += nameBytes + valueBytes;
@@ -265,8 +265,8 @@ public class TSDBStatsResponseListener implements ActionListener<SearchResponse>
                 for (Map.Entry<String, InternalTSDBStats.CoordinatorLevelStats.LabelStats> entry : labelStatsMap.entrySet()) {
                     String labelName = entry.getKey();
                     InternalTSDBStats.CoordinatorLevelStats.LabelStats labelStat = entry.getValue();
-                    if (labelStat.getValuesStats() != null) {
-                        for (Map.Entry<String, Long> valueEntry : labelStat.getValuesStats().entrySet()) {
+                    if (labelStat.valuesStats() != null) {
+                        for (Map.Entry<String, Long> valueEntry : labelStat.valuesStats().entrySet()) {
                             String pairName = labelName + "=" + valueEntry.getKey();
                             seriesCountByPair.add(new NameValuePair(pairName, valueEntry.getValue()));
                         }

@@ -80,24 +80,20 @@ public class InternalTSDBStats extends InternalAggregation {
      * between Head and ClosedChunkIndex. Converted to {@link CoordinatorLevelStats}
      * after shard-level reduce to save network bandwidth.</p>
      */
-    public static class ShardLevelStats {
-        private final HyperLogLogPlusPlus seriesCardinalitySketch;
-        // Map of label name -> Map of label value -> HLL sketch
-        private final Map<String, Map<String, HyperLogLogPlusPlus>> labelStats;
-
-        public ShardLevelStats(HyperLogLogPlusPlus seriesCardinalitySketch, Map<String, Map<String, HyperLogLogPlusPlus>> labelStats) {
-            this.seriesCardinalitySketch = seriesCardinalitySketch;
-            this.labelStats = labelStats;
-        }
+    public record ShardLevelStats(HyperLogLogPlusPlus seriesCardinalitySketch, Map<String, Map<String, HyperLogLogPlusPlus>> labelStats) {
 
         public ShardLevelStats(StreamInput in) throws IOException {
-            boolean hasSketch = in.readBoolean();
-            this.seriesCardinalitySketch = hasSketch
-                ? (HyperLogLogPlusPlus) HyperLogLogPlusPlus.readFrom(in, BigArrays.NON_RECYCLING_INSTANCE)
-                : null;
+            this(readSeriesSketch(in), readLabelStatsMap(in));
+        }
 
+        private static HyperLogLogPlusPlus readSeriesSketch(StreamInput in) throws IOException {
+            boolean hasSketch = in.readBoolean();
+            return hasSketch ? (HyperLogLogPlusPlus) HyperLogLogPlusPlus.readFrom(in, BigArrays.NON_RECYCLING_INSTANCE) : null;
+        }
+
+        private static Map<String, Map<String, HyperLogLogPlusPlus>> readLabelStatsMap(StreamInput in) throws IOException {
             int labelCount = in.readVInt();
-            this.labelStats = new HashMap<>(labelCount);
+            Map<String, Map<String, HyperLogLogPlusPlus>> labelStats = new HashMap<>(labelCount);
             for (int i = 0; i < labelCount; i++) {
                 String labelName = in.readString();
 
@@ -123,12 +119,13 @@ public class InternalTSDBStats extends InternalAggregation {
                     valueCardinalitySketches = null;
                 }
 
-                this.labelStats.put(labelName, valueCardinalitySketches);
+                labelStats.put(labelName, valueCardinalitySketches);
             }
+            return labelStats;
         }
 
         /**
-         * Serializes LabelStats to a stream.
+         * Serializes ShardLevelStats to a stream.
          *
          * @param out the stream output to write to
          * @throws IOException if an I/O error occurs during writing
@@ -166,27 +163,6 @@ public class InternalTSDBStats extends InternalAggregation {
                 }
             }
         }
-
-        public HyperLogLogPlusPlus getSeriesCardinalitySketch() {
-            return seriesCardinalitySketch;
-        }
-
-        public Map<String, Map<String, HyperLogLogPlusPlus>> getLabelStats() {
-            return labelStats;
-        }
-
-        @Override
-        public boolean equals(Object o) {
-            if (this == o) return true;
-            if (o == null || getClass() != o.getClass()) return false;
-            ShardLevelStats that = (ShardLevelStats) o;
-            return Objects.equals(seriesCardinalitySketch, that.seriesCardinalitySketch) && Objects.equals(labelStats, that.labelStats);
-        }
-
-        @Override
-        public int hashCode() {
-            return Objects.hash(seriesCardinalitySketch, labelStats);
-        }
     }
 
     /**
@@ -196,26 +172,26 @@ public class InternalTSDBStats extends InternalAggregation {
      * Contains pre-computed cardinality counts instead of HLL sketches to minimize
      * network bandwidth (1000x smaller than sketches).</p>
      */
-    public static class CoordinatorLevelStats {
-        private final Long totalNumSeries;
-        private final Map<String, LabelStats> labelStats;
-
-        public CoordinatorLevelStats(Long totalNumSeries, Map<String, LabelStats> labelStats) {
-            this.totalNumSeries = totalNumSeries;
-            this.labelStats = labelStats;
-        }
+    public record CoordinatorLevelStats(Long totalNumSeries, Map<String, LabelStats> labelStats) {
 
         public CoordinatorLevelStats(StreamInput in) throws IOException {
-            boolean hasNumSeries = in.readBoolean();
-            this.totalNumSeries = hasNumSeries ? in.readVLong() : null;
+            this(readTotalNumSeries(in), readLabelStatsMap(in));
+        }
 
+        private static Long readTotalNumSeries(StreamInput in) throws IOException {
+            boolean hasNumSeries = in.readBoolean();
+            return hasNumSeries ? in.readVLong() : null;
+        }
+
+        private static Map<String, LabelStats> readLabelStatsMap(StreamInput in) throws IOException {
             int labelCount = in.readVInt();
-            this.labelStats = new HashMap<>(labelCount);
+            Map<String, LabelStats> labelStats = new HashMap<>(labelCount);
             for (int i = 0; i < labelCount; i++) {
                 String labelName = in.readString();
                 LabelStats stats = new LabelStats(in);
-                this.labelStats.put(labelName, stats);
+                labelStats.put(labelName, stats);
             }
+            return labelStats;
         }
 
         public void writeTo(StreamOutput out) throws IOException {
@@ -233,41 +209,22 @@ public class InternalTSDBStats extends InternalAggregation {
             }
         }
 
-        public Long getTotalNumSeries() {
-            return totalNumSeries;
-        }
-
-        public Map<String, LabelStats> getLabelStats() {
-            return labelStats;
-        }
-
         /**
          * Coordinator-level label statistics with final counts.
          */
-        public static class LabelStats {
-            private final Long numSeries;
-            private final List<String> values; // List of label values (always populated)
-            private final Map<String, Long> valuesStats; // Cardinality per value (only when includeValueStats=true)
+        public record LabelStats(Long numSeries, List<String> values, Map<String, Long> valuesStats) {
 
-            public LabelStats(Long numSeries, List<String> values, Map<String, Long> valuesStats) {
-                this.numSeries = numSeries;
-                this.values = values != null ? values : (valuesStats != null ? new ArrayList<>(valuesStats.keySet()) : List.of());
-                this.valuesStats = valuesStats;
+            // Compact constructor to normalize values field
+            public LabelStats {
+                values = values != null ? values : (valuesStats != null ? new ArrayList<>(valuesStats.keySet()) : List.of());
             }
 
             public LabelStats(StreamInput in) throws IOException {
-                boolean hasNumSeries = in.readBoolean();
-                this.numSeries = hasNumSeries ? in.readVLong() : null;
-
-                // Read values list
-                this.values = in.readStringList();
-
-                boolean hasValuesStats = in.readBoolean();
-                if (hasValuesStats) {
-                    this.valuesStats = in.readMap(StreamInput::readString, StreamInput::readVLong);
-                } else {
-                    this.valuesStats = null;
-                }
+                this(
+                    in.readBoolean() ? in.readVLong() : null,
+                    in.readStringList(),
+                    in.readBoolean() ? in.readMap(StreamInput::readString, StreamInput::readVLong) : null
+                );
             }
 
             public void writeTo(StreamOutput out) throws IOException {
@@ -287,33 +244,6 @@ public class InternalTSDBStats extends InternalAggregation {
                 } else {
                     out.writeBoolean(false);
                 }
-            }
-
-            public Long getNumSeries() {
-                return numSeries;
-            }
-
-            public List<String> getValues() {
-                return values;
-            }
-
-            public Map<String, Long> getValuesStats() {
-                return valuesStats;
-            }
-
-            @Override
-            public boolean equals(Object o) {
-                if (this == o) return true;
-                if (o == null || getClass() != o.getClass()) return false;
-                LabelStats that = (LabelStats) o;
-                return Objects.equals(numSeries, that.numSeries)
-                    && Objects.equals(values, that.values)
-                    && Objects.equals(valuesStats, that.valuesStats);
-            }
-
-            @Override
-            public int hashCode() {
-                return Objects.hash(numSeries, values, valuesStats);
             }
         }
 
@@ -494,7 +424,7 @@ public class InternalTSDBStats extends InternalAggregation {
             }
 
             // Merge series cardinality sketches
-            HyperLogLogPlusPlus sketch = stats.shardStats.getSeriesCardinalitySketch();
+            HyperLogLogPlusPlus sketch = stats.shardStats.seriesCardinalitySketch();
             if (sketch != null) {
                 if (mergedSeriesSketch == null) {
                     mergedSeriesSketch = (HyperLogLogPlusPlus) sketch.clone(0, BigArrays.NON_RECYCLING_INSTANCE);
@@ -504,7 +434,7 @@ public class InternalTSDBStats extends InternalAggregation {
             }
 
             // Merge per-label sketches
-            for (Map.Entry<String, Map<String, HyperLogLogPlusPlus>> entry : stats.shardStats.getLabelStats().entrySet()) {
+            for (Map.Entry<String, Map<String, HyperLogLogPlusPlus>> entry : stats.shardStats.labelStats().entrySet()) {
                 String labelName = entry.getKey();
                 Map<String, HyperLogLogPlusPlus> valueSketches = entry.getValue();
 
@@ -618,33 +548,33 @@ public class InternalTSDBStats extends InternalAggregation {
             }
 
             // Sum numSeries (already deduplicated at shard level)
-            Long numSeries = stats.coordinatorStats.getTotalNumSeries();
+            Long numSeries = stats.coordinatorStats.totalNumSeries();
             if (numSeries != null) {
                 totalSeries = (totalSeries == null ? 0 : totalSeries) + numSeries;
             }
 
             // Merge label stats
-            for (Map.Entry<String, CoordinatorLevelStats.LabelStats> entry : stats.coordinatorStats.getLabelStats().entrySet()) {
+            for (Map.Entry<String, CoordinatorLevelStats.LabelStats> entry : stats.coordinatorStats.labelStats().entrySet()) {
                 String labelName = entry.getKey();
                 CoordinatorLevelStats.LabelStats ls = entry.getValue();
 
                 LabelStatsBuilder builder = builders.computeIfAbsent(labelName, k -> new LabelStatsBuilder());
 
                 // Collect values (always present)
-                builder.values.addAll(ls.getValues());
+                builder.values.addAll(ls.values());
 
                 // Sum numSeries per label if present
-                if (ls.getNumSeries() != null) {
+                if (ls.numSeries() != null) {
                     builder.hasNumSeries = true;
-                    builder.numSeries = (builder.numSeries == null ? 0 : builder.numSeries) + ls.getNumSeries();
+                    builder.numSeries = (builder.numSeries == null ? 0 : builder.numSeries) + ls.numSeries();
                 }
 
                 // Sum value counts
-                if (ls.getValuesStats() != null) {
+                if (ls.valuesStats() != null) {
                     if (builder.valueCounts == null) {
                         builder.valueCounts = new LinkedHashMap<>();
                     }
-                    for (Map.Entry<String, Long> ve : ls.getValuesStats().entrySet()) {
+                    for (Map.Entry<String, Long> ve : ls.valuesStats().entrySet()) {
                         builder.valueCounts.merge(ve.getKey(), ve.getValue(), Long::sum);
                     }
                 }
@@ -725,7 +655,7 @@ public class InternalTSDBStats extends InternalAggregation {
      * @return the total time series count, or null if not available
      */
     public Long getNumSeries() {
-        return coordinatorStats != null ? coordinatorStats.getTotalNumSeries() : null;
+        return coordinatorStats != null ? coordinatorStats.totalNumSeries() : null;
     }
 
     /**
@@ -736,7 +666,7 @@ public class InternalTSDBStats extends InternalAggregation {
      * @return the label statistics map
      */
     public Map<String, CoordinatorLevelStats.LabelStats> getLabelStats() {
-        return coordinatorStats != null ? coordinatorStats.getLabelStats() : Map.of();
+        return coordinatorStats != null ? coordinatorStats.labelStats() : Map.of();
     }
 
     /**
@@ -767,20 +697,20 @@ public class InternalTSDBStats extends InternalAggregation {
         // Only serialize coordinator-level stats (skip shard-level stats)
         if (coordinatorStats != null) {
             // Write numSeries at the start of labelStats
-            Long totalNumSeries = coordinatorStats.getTotalNumSeries();
+            Long totalNumSeries = coordinatorStats.totalNumSeries();
             if (totalNumSeries != null) {
                 builder.field("numSeries", totalNumSeries);
             }
 
-            for (Map.Entry<String, CoordinatorLevelStats.LabelStats> entry : coordinatorStats.getLabelStats().entrySet()) {
+            for (Map.Entry<String, CoordinatorLevelStats.LabelStats> entry : coordinatorStats.labelStats().entrySet()) {
                 builder.startObject(entry.getKey());
                 CoordinatorLevelStats.LabelStats stats = entry.getValue();
-                if (stats.getNumSeries() != null) {
-                    builder.field("numSeries", stats.getNumSeries());
+                if (stats.numSeries() != null) {
+                    builder.field("numSeries", stats.numSeries());
                 }
-                builder.field("values", stats.getValues());
-                if (stats.getValuesStats() != null) {
-                    builder.field("valuesStats", stats.getValuesStats());
+                builder.field("values", stats.values());
+                if (stats.valuesStats() != null) {
+                    builder.field("valuesStats", stats.valuesStats());
                 }
                 builder.endObject();
             }

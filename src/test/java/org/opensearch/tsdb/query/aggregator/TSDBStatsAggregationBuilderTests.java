@@ -17,6 +17,7 @@ import org.opensearch.search.aggregations.AggregationBuilder;
 import org.opensearch.test.OpenSearchTestCase;
 
 import java.io.IOException;
+import java.util.Locale;
 import java.util.Map;
 
 /**
@@ -112,7 +113,7 @@ public class TSDBStatsAggregationBuilderTests extends OpenSearchTestCase {
         TSDBStatsAggregationBuilder builder = new TSDBStatsAggregationBuilder(TEST_NAME, MIN_TIMESTAMP, MAX_TIMESTAMP, true);
 
         // Act & Assert
-        assertEquals("tsdb_stats", builder.getType());
+        assertEquals("tsdb_stats_agg", builder.getType());
     }
 
     public void testBucketCardinality() {
@@ -211,6 +212,7 @@ public class TSDBStatsAggregationBuilderTests extends OpenSearchTestCase {
     public void testXContentParsing() throws IOException {
         // Arrange
         String json = String.format(
+            Locale.ROOT,
             "{\"min_timestamp\":%d,\"max_timestamp\":%d,\"include_value_stats\":true}",
             MIN_TIMESTAMP,
             MAX_TIMESTAMP
@@ -232,6 +234,7 @@ public class TSDBStatsAggregationBuilderTests extends OpenSearchTestCase {
     public void testXContentParsingWithValueStatsDisabled() throws IOException {
         // Arrange
         String json = String.format(
+            Locale.ROOT,
             "{\"min_timestamp\":%d,\"max_timestamp\":%d,\"include_value_stats\":false}",
             MIN_TIMESTAMP,
             MAX_TIMESTAMP
@@ -296,6 +299,7 @@ public class TSDBStatsAggregationBuilderTests extends OpenSearchTestCase {
     public void testXContentParsingWithUnknownFields() throws IOException {
         // Arrange - Should ignore unknown fields
         String json = String.format(
+            Locale.ROOT,
             "{\"min_timestamp\":%d,\"max_timestamp\":%d,\"include_value_stats\":true,\"unknown_field\":\"value\"}",
             MIN_TIMESTAMP,
             MAX_TIMESTAMP

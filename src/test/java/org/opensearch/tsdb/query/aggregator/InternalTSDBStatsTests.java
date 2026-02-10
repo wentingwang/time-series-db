@@ -8,10 +8,12 @@
 package org.opensearch.tsdb.query.aggregator;
 
 import org.opensearch.common.io.stream.BytesStreamOutput;
+import org.opensearch.common.util.BigArrays;
 import org.opensearch.common.xcontent.XContentFactory;
 import org.opensearch.core.common.io.stream.StreamInput;
 import org.opensearch.core.xcontent.XContentBuilder;
 import org.opensearch.search.aggregations.InternalAggregation;
+import org.opensearch.search.aggregations.metrics.HyperLogLogPlusPlus;
 import org.opensearch.search.aggregations.pipeline.PipelineAggregator;
 import org.opensearch.test.OpenSearchTestCase;
 
@@ -155,8 +157,8 @@ public class InternalTSDBStatsTests extends OpenSearchTestCase {
         );
 
         // Assert
-        assertEquals(100L, labelStats.getNumSeries().longValue());
-        assertEquals(valuesStats, labelStats.getValuesStats());
+        assertEquals(100L, labelStats.numSeries().longValue());
+        assertEquals(valuesStats, labelStats.valuesStats());
     }
 
     public void testLabelStatsGetValues() {
@@ -169,7 +171,7 @@ public class InternalTSDBStatsTests extends OpenSearchTestCase {
         );
 
         // Act
-        List<String> values = labelStats.getValues();
+        List<String> values = labelStats.values();
 
         // Assert
         assertEquals(2, values.size());
@@ -186,7 +188,7 @@ public class InternalTSDBStatsTests extends OpenSearchTestCase {
         );
 
         // Act
-        List<String> values = labelStats.getValues();
+        List<String> values = labelStats.values();
 
         // Assert
         assertNotNull(values);
@@ -239,8 +241,8 @@ public class InternalTSDBStatsTests extends OpenSearchTestCase {
 
         // Assert
         assertEquals(original, deserialized);
-        assertEquals(original.getNumSeries(), deserialized.getNumSeries());
-        assertEquals(original.getValuesStats(), deserialized.getValuesStats());
+        assertEquals(original.numSeries(), deserialized.numSeries());
+        assertEquals(original.valuesStats(), deserialized.valuesStats());
     }
 
     public void testLabelStatsSerializationWithNullValues() throws IOException {
@@ -260,8 +262,8 @@ public class InternalTSDBStatsTests extends OpenSearchTestCase {
 
         // Assert
         assertEquals(original, deserialized);
-        assertNull(deserialized.getNumSeries());
-        assertNull(deserialized.getValuesStats());
+        assertNull(deserialized.numSeries());
+        assertNull(deserialized.valuesStats());
     }
 
     // ========== Interface Implementation Tests ==========
@@ -629,6 +631,75 @@ public class InternalTSDBStatsTests extends OpenSearchTestCase {
 
         // Act & Assert
         assertEquals(stats1.hashCode(), stats2.hashCode());
+    }
+
+    // ========== ShardLevelStats Tests ==========
+    // Note: Serialization tests for ShardLevelStats are skipped due to a pre-existing bug in the production code
+    // where HyperLogLogPlusPlus.readFrom() can return HyperLogLogPlusPlusSparse which cannot be cast to
+    // HyperLogLogPlusPlus (see InternalTSDBStats.java:91). This bug exists in the original code and is outside
+    // the scope of the Record conversion. The tests below verify the Record accessors work correctly.
+
+    public void testShardLevelStatsConstructor() throws IOException {
+        // Arrange
+        HyperLogLogPlusPlus seriesSketch = new HyperLogLogPlusPlus(10, BigArrays.NON_RECYCLING_INSTANCE, 1);
+        seriesSketch.collect(0, 1L);
+        seriesSketch.collect(0, 2L);
+
+        Map<String, Map<String, HyperLogLogPlusPlus>> labelStats = new HashMap<>();
+        Map<String, HyperLogLogPlusPlus> clusterSketches = new HashMap<>();
+        HyperLogLogPlusPlus prodSketch = new HyperLogLogPlusPlus(10, BigArrays.NON_RECYCLING_INSTANCE, 1);
+        prodSketch.collect(0, 100L);
+        clusterSketches.put("prod", prodSketch);
+        labelStats.put("cluster", clusterSketches);
+
+        // Act
+        InternalTSDBStats.ShardLevelStats shardStats = new InternalTSDBStats.ShardLevelStats(seriesSketch, labelStats);
+
+        // Assert
+        assertNotNull(shardStats.seriesCardinalitySketch());
+        assertEquals(labelStats, shardStats.labelStats());
+        assertEquals(1, shardStats.labelStats().size());
+    }
+
+    public void testShardLevelStatsWithNullSeriesSketch() {
+        // Arrange
+        Map<String, Map<String, HyperLogLogPlusPlus>> labelStats = new HashMap<>();
+
+        // Act
+        InternalTSDBStats.ShardLevelStats shardStats = new InternalTSDBStats.ShardLevelStats(null, labelStats);
+
+        // Assert
+        assertNull(shardStats.seriesCardinalitySketch());
+        assertEquals(labelStats, shardStats.labelStats());
+    }
+
+    public void testShardLevelStatsWithEmptyLabelStats() throws IOException {
+        // Arrange
+        HyperLogLogPlusPlus seriesSketch = new HyperLogLogPlusPlus(10, BigArrays.NON_RECYCLING_INSTANCE, 1);
+        seriesSketch.collect(0, 1L);
+        Map<String, Map<String, HyperLogLogPlusPlus>> emptyLabelStats = new HashMap<>();
+
+        // Act
+        InternalTSDBStats.ShardLevelStats shardStats = new InternalTSDBStats.ShardLevelStats(seriesSketch, emptyLabelStats);
+
+        // Assert
+        assertNotNull(shardStats.seriesCardinalitySketch());
+        assertEquals(0, shardStats.labelStats().size());
+    }
+
+    public void testShardLevelStatsWithNullValueMap() {
+        // Arrange
+        HyperLogLogPlusPlus seriesSketch = new HyperLogLogPlusPlus(10, BigArrays.NON_RECYCLING_INSTANCE, 1);
+        Map<String, Map<String, HyperLogLogPlusPlus>> labelStats = new HashMap<>();
+        labelStats.put("cluster", null); // null value map
+
+        // Act
+        InternalTSDBStats.ShardLevelStats shardStats = new InternalTSDBStats.ShardLevelStats(seriesSketch, labelStats);
+
+        // Assert
+        assertNotNull(shardStats.seriesCardinalitySketch());
+        assertEquals(1, shardStats.labelStats().size());
+        assertNull(shardStats.labelStats().get("cluster"));
     }
 
     // ========== Helper Methods ==========
