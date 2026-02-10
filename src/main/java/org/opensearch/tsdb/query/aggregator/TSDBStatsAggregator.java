@@ -15,6 +15,7 @@ import org.opensearch.search.aggregations.Aggregator;
 import org.opensearch.search.aggregations.InternalAggregation;
 import org.opensearch.search.aggregations.LeafBucketCollector;
 import org.opensearch.search.aggregations.LeafBucketCollectorBase;
+import org.opensearch.search.aggregations.metrics.AbstractHyperLogLogPlusPlus;
 import org.opensearch.search.aggregations.metrics.HyperLogLogPlusPlus;
 import org.opensearch.search.aggregations.metrics.MetricsAggregator;
 import org.opensearch.search.internal.SearchContext;
@@ -166,7 +167,7 @@ public class TSDBStatsAggregator extends MetricsAggregator {
     @Override
     public InternalAggregation buildAggregation(long bucket) throws IOException {
         // Build map of label name -> Map of label value -> HLL sketch
-        Map<String, Map<String, HyperLogLogPlusPlus>> shardLabelStats = new HashMap<>();
+        Map<String, Map<String, AbstractHyperLogLogPlusPlus>> shardLabelStats = new HashMap<>();
 
         // Reusable BytesRef for lookups
         BytesRef scratch = new BytesRef();
@@ -186,7 +187,7 @@ public class TSDBStatsAggregator extends MetricsAggregator {
             String value = keyValue.substring(colonIndex + 1); // "api"
 
             // Get or create value sketches map for this key (always create to track which values exist)
-            Map<String, HyperLogLogPlusPlus> valueSketches = shardLabelStats.computeIfAbsent(key, k -> new LinkedHashMap<>());
+            Map<String, AbstractHyperLogLogPlusPlus> valueSketches = shardLabelStats.computeIfAbsent(key, k -> new LinkedHashMap<>());
 
             // Add HLL sketch for this value if includeValueStats is enabled, otherwise add null as marker
             if (includeValueStats && ordinalSketches != null) {

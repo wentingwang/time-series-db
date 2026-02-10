@@ -13,6 +13,7 @@ import org.opensearch.common.xcontent.XContentFactory;
 import org.opensearch.core.common.io.stream.StreamInput;
 import org.opensearch.core.xcontent.XContentBuilder;
 import org.opensearch.search.aggregations.InternalAggregation;
+import org.opensearch.search.aggregations.metrics.AbstractHyperLogLogPlusPlus;
 import org.opensearch.search.aggregations.metrics.HyperLogLogPlusPlus;
 import org.opensearch.search.aggregations.pipeline.PipelineAggregator;
 import org.opensearch.test.OpenSearchTestCase;
@@ -291,7 +292,7 @@ public class InternalTSDBStatsTests extends OpenSearchTestCase {
         );
 
         // Act & Assert
-        assertFalse(internal.mustReduceOnSingleInternalAgg());
+        assertTrue(internal.mustReduceOnSingleInternalAgg());
     }
 
     // ========== Serialization Tests ==========
@@ -645,8 +646,8 @@ public class InternalTSDBStatsTests extends OpenSearchTestCase {
         seriesSketch.collect(0, 1L);
         seriesSketch.collect(0, 2L);
 
-        Map<String, Map<String, HyperLogLogPlusPlus>> labelStats = new HashMap<>();
-        Map<String, HyperLogLogPlusPlus> clusterSketches = new HashMap<>();
+        Map<String, Map<String, AbstractHyperLogLogPlusPlus>> labelStats = new HashMap<>();
+        Map<String, AbstractHyperLogLogPlusPlus> clusterSketches = new HashMap<>();
         HyperLogLogPlusPlus prodSketch = new HyperLogLogPlusPlus(10, BigArrays.NON_RECYCLING_INSTANCE, 1);
         prodSketch.collect(0, 100L);
         clusterSketches.put("prod", prodSketch);
@@ -663,7 +664,7 @@ public class InternalTSDBStatsTests extends OpenSearchTestCase {
 
     public void testShardLevelStatsWithNullSeriesSketch() {
         // Arrange
-        Map<String, Map<String, HyperLogLogPlusPlus>> labelStats = new HashMap<>();
+        Map<String, Map<String, AbstractHyperLogLogPlusPlus>> labelStats = new HashMap<>();
 
         // Act
         InternalTSDBStats.ShardLevelStats shardStats = new InternalTSDBStats.ShardLevelStats(null, labelStats);
@@ -677,7 +678,7 @@ public class InternalTSDBStatsTests extends OpenSearchTestCase {
         // Arrange
         HyperLogLogPlusPlus seriesSketch = new HyperLogLogPlusPlus(10, BigArrays.NON_RECYCLING_INSTANCE, 1);
         seriesSketch.collect(0, 1L);
-        Map<String, Map<String, HyperLogLogPlusPlus>> emptyLabelStats = new HashMap<>();
+        Map<String, Map<String, AbstractHyperLogLogPlusPlus>> emptyLabelStats = new HashMap<>();
 
         // Act
         InternalTSDBStats.ShardLevelStats shardStats = new InternalTSDBStats.ShardLevelStats(seriesSketch, emptyLabelStats);
@@ -690,7 +691,7 @@ public class InternalTSDBStatsTests extends OpenSearchTestCase {
     public void testShardLevelStatsWithNullValueMap() {
         // Arrange
         HyperLogLogPlusPlus seriesSketch = new HyperLogLogPlusPlus(10, BigArrays.NON_RECYCLING_INSTANCE, 1);
-        Map<String, Map<String, HyperLogLogPlusPlus>> labelStats = new HashMap<>();
+        Map<String, Map<String, AbstractHyperLogLogPlusPlus>> labelStats = new HashMap<>();
         labelStats.put("cluster", null); // null value map
 
         // Act

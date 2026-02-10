@@ -12,6 +12,7 @@ import org.opensearch.core.common.io.stream.StreamInput;
 import org.opensearch.core.common.io.stream.StreamOutput;
 import org.opensearch.core.xcontent.XContentBuilder;
 import org.opensearch.search.aggregations.InternalAggregation;
+import org.opensearch.search.aggregations.metrics.AbstractHyperLogLogPlusPlus;
 import org.opensearch.search.aggregations.metrics.HyperLogLogPlusPlus;
 
 import java.io.IOException;
@@ -79,27 +80,33 @@ public class InternalTSDBStats extends InternalAggregation {
      * <p>Used during shard-level aggregation and reduce to deduplicate time series
      * between Head and ClosedChunkIndex. Converted to {@link CoordinatorLevelStats}
      * after shard-level reduce to save network bandwidth.</p>
+     *
+     * <p><b>Note:</b> Uses {@link AbstractHyperLogLogPlusPlus} instead of {@link HyperLogLogPlusPlus}
+     * to support both sparse and dense HLL representations, as {@code readFrom()} and {@code clone()}
+     * return the abstract base class.</p>
      */
-    public record ShardLevelStats(HyperLogLogPlusPlus seriesCardinalitySketch, Map<String, Map<String, HyperLogLogPlusPlus>> labelStats) {
+    public record ShardLevelStats(AbstractHyperLogLogPlusPlus seriesCardinalitySketch, Map<
+        String,
+        Map<String, AbstractHyperLogLogPlusPlus>> labelStats) {
 
         public ShardLevelStats(StreamInput in) throws IOException {
             this(readSeriesSketch(in), readLabelStatsMap(in));
         }
 
-        private static HyperLogLogPlusPlus readSeriesSketch(StreamInput in) throws IOException {
+        private static AbstractHyperLogLogPlusPlus readSeriesSketch(StreamInput in) throws IOException {
             boolean hasSketch = in.readBoolean();
-            return hasSketch ? (HyperLogLogPlusPlus) HyperLogLogPlusPlus.readFrom(in, BigArrays.NON_RECYCLING_INSTANCE) : null;
+            return hasSketch ? HyperLogLogPlusPlus.readFrom(in, BigArrays.NON_RECYCLING_INSTANCE) : null;
         }
 
-        private static Map<String, Map<String, HyperLogLogPlusPlus>> readLabelStatsMap(StreamInput in) throws IOException {
+        private static Map<String, Map<String, AbstractHyperLogLogPlusPlus>> readLabelStatsMap(StreamInput in) throws IOException {
             int labelCount = in.readVInt();
-            Map<String, Map<String, HyperLogLogPlusPlus>> labelStats = new HashMap<>(labelCount);
+            Map<String, Map<String, AbstractHyperLogLogPlusPlus>> labelStats = new HashMap<>(labelCount);
             for (int i = 0; i < labelCount; i++) {
                 String labelName = in.readString();
 
                 // Read value sketches for this label
                 boolean hasSketches = in.readBoolean();
-                Map<String, HyperLogLogPlusPlus> valueCardinalitySketches;
+                Map<String, AbstractHyperLogLogPlusPlus> valueCardinalitySketches;
                 if (hasSketches) {
                     int mapSize = in.readVInt();
                     valueCardinalitySketches = new LinkedHashMap<>(mapSize);
@@ -107,9 +114,9 @@ public class InternalTSDBStats extends InternalAggregation {
                         String key = in.readString();
                         // Read whether this value has a sketch (null when includeValueStats=false)
                         boolean hasValueSketch = in.readBoolean();
-                        HyperLogLogPlusPlus sketch;
+                        AbstractHyperLogLogPlusPlus sketch;
                         if (hasValueSketch) {
-                            sketch = (HyperLogLogPlusPlus) HyperLogLogPlusPlus.readFrom(in, BigArrays.NON_RECYCLING_INSTANCE);
+                            sketch = HyperLogLogPlusPlus.readFrom(in, BigArrays.NON_RECYCLING_INSTANCE);
                         } else {
                             sketch = null;
                         }
@@ -139,18 +146,18 @@ public class InternalTSDBStats extends InternalAggregation {
             }
 
             out.writeVInt(labelStats.size());
-            for (Map.Entry<String, Map<String, HyperLogLogPlusPlus>> entry : labelStats.entrySet()) {
+            for (Map.Entry<String, Map<String, AbstractHyperLogLogPlusPlus>> entry : labelStats.entrySet()) {
                 out.writeString(entry.getKey());
 
                 // Write value sketches for this label
-                Map<String, HyperLogLogPlusPlus> valueCardinalitySketches = entry.getValue();
+                Map<String, AbstractHyperLogLogPlusPlus> valueCardinalitySketches = entry.getValue();
                 if (valueCardinalitySketches != null) {
                     out.writeBoolean(true);
                     out.writeVInt(valueCardinalitySketches.size());
-                    for (Map.Entry<String, HyperLogLogPlusPlus> ve : valueCardinalitySketches.entrySet()) {
+                    for (Map.Entry<String, AbstractHyperLogLogPlusPlus> ve : valueCardinalitySketches.entrySet()) {
                         out.writeString(ve.getKey());
                         // Write whether this value has a sketch (null when includeValueStats=false)
-                        HyperLogLogPlusPlus sketch = ve.getValue();
+                        AbstractHyperLogLogPlusPlus sketch = ve.getValue();
                         if (sketch != null) {
                             out.writeBoolean(true);
                             sketch.writeTo(0, out);
@@ -412,6 +419,9 @@ public class InternalTSDBStats extends InternalAggregation {
      * returns {@link CoordinatorLevelStats} to minimize network bandwidth.</p>
      */
     private InternalTSDBStats reduceShardLevel(List<InternalAggregation> aggregations) {
+        // Default precision for HyperLogLog++ (log2m = 14) - matches TSDBStatsAggregator
+        final int PRECISION = 14;
+
         HyperLogLogPlusPlus mergedSeriesSketch = null;
         Map<String, ShardLevelLabelStatsBuilder> builders = new HashMap<>();
 
@@ -424,19 +434,21 @@ public class InternalTSDBStats extends InternalAggregation {
             }
 
             // Merge series cardinality sketches
-            HyperLogLogPlusPlus sketch = stats.shardStats.seriesCardinalitySketch();
+            AbstractHyperLogLogPlusPlus sketch = stats.shardStats.seriesCardinalitySketch();
             if (sketch != null) {
                 if (mergedSeriesSketch == null) {
-                    mergedSeriesSketch = (HyperLogLogPlusPlus) sketch.clone(0, BigArrays.NON_RECYCLING_INSTANCE);
-                } else {
-                    mergedSeriesSketch.merge(0, sketch, 0);
+                    // Create new DENSE sketch instead of cloning
+                    // This avoids ClassCastException when the input sketch is Sparse
+                    mergedSeriesSketch = new HyperLogLogPlusPlus(PRECISION, BigArrays.NON_RECYCLING_INSTANCE, 1);
                 }
+                // merge() accepts AbstractHyperLogLogPlusPlus, so works with both Sparse and Dense
+                mergedSeriesSketch.merge(0, sketch, 0);
             }
 
             // Merge per-label sketches
-            for (Map.Entry<String, Map<String, HyperLogLogPlusPlus>> entry : stats.shardStats.labelStats().entrySet()) {
+            for (Map.Entry<String, Map<String, AbstractHyperLogLogPlusPlus>> entry : stats.shardStats.labelStats().entrySet()) {
                 String labelName = entry.getKey();
-                Map<String, HyperLogLogPlusPlus> valueSketches = entry.getValue();
+                Map<String, AbstractHyperLogLogPlusPlus> valueSketches = entry.getValue();
 
                 ShardLevelLabelStatsBuilder builder = builders.computeIfAbsent(labelName, k -> new ShardLevelLabelStatsBuilder());
 
@@ -445,27 +457,23 @@ public class InternalTSDBStats extends InternalAggregation {
                     if (builder.valueSketches == null) {
                         builder.valueSketches = new LinkedHashMap<>();
                     }
-                    for (Map.Entry<String, HyperLogLogPlusPlus> ve : valueSketches.entrySet()) {
+                    for (Map.Entry<String, AbstractHyperLogLogPlusPlus> ve : valueSketches.entrySet()) {
                         String valueKey = ve.getKey();
-                        HyperLogLogPlusPlus newSketch = ve.getValue();
+                        AbstractHyperLogLogPlusPlus newSketch = ve.getValue();
                         HyperLogLogPlusPlus existing = builder.valueSketches.get(valueKey);
 
                         if (existing == null) {
-                            // First time seeing this value - clone the sketch (or keep null if newSketch is null)
+                            // First time seeing this value - create new dense sketch and merge
                             if (newSketch != null) {
-                                builder.valueSketches.put(
-                                    valueKey,
-                                    (HyperLogLogPlusPlus) newSketch.clone(0, BigArrays.NON_RECYCLING_INSTANCE)
-                                );
+                                HyperLogLogPlusPlus denseSketch = new HyperLogLogPlusPlus(PRECISION, BigArrays.NON_RECYCLING_INSTANCE, 1);
+                                denseSketch.merge(0, newSketch, 0);
+                                builder.valueSketches.put(valueKey, denseSketch);
                             } else {
                                 builder.valueSketches.put(valueKey, null);
                             }
                         } else if (existing != null && newSketch != null) {
                             // Both are non-null - merge them
                             existing.merge(0, newSketch, 0);
-                        } else if (existing == null && newSketch != null) {
-                            // Existing is null but new is not - replace with clone
-                            builder.valueSketches.put(valueKey, (HyperLogLogPlusPlus) newSketch.clone(0, BigArrays.NON_RECYCLING_INSTANCE));
                         }
                         // If both are null, or existing is non-null and new is null, keep existing
                     }
@@ -503,10 +511,10 @@ public class InternalTSDBStats extends InternalAggregation {
 
                             // Merge into label sketch for total label cardinality
                             if (labelSketch == null) {
-                                labelSketch = (HyperLogLogPlusPlus) sketch.clone(0, BigArrays.NON_RECYCLING_INSTANCE);
-                            } else {
-                                labelSketch.merge(0, sketch, 0);
+                                // Create new dense sketch instead of cloning
+                                labelSketch = new HyperLogLogPlusPlus(PRECISION, BigArrays.NON_RECYCLING_INSTANCE, 1);
                             }
+                            labelSketch.merge(0, sketch, 0);
                         }
                     }
 
@@ -601,6 +609,10 @@ public class InternalTSDBStats extends InternalAggregation {
 
     /**
      * Helper class for building shard-level label stats during reduce.
+     *
+     * <p>Uses {@link HyperLogLogPlusPlus} (dense) instead of {@link AbstractHyperLogLogPlusPlus}
+     * to enable calling the merge() method. When assigning from Abstract type, we cast to the
+     * concrete type.</p>
      */
     private static class ShardLevelLabelStatsBuilder {
         Map<String, HyperLogLogPlusPlus> valueSketches = null;
@@ -724,11 +736,16 @@ public class InternalTSDBStats extends InternalAggregation {
      * Indicates whether this aggregation must be reduced even when there's only
      * a single internal aggregation.
      *
-     * @return false, as InternalTSDBStats does not require reduction for single aggregations
+     * <p>Returns true because this aggregation uses a two-phase strategy where
+     * shard-level results (ShardLevelStats with HLL sketches) must be converted
+     * to coordinator-level results (CoordinatorLevelStats with final counts) via
+     * the reduce phase, even when there's only one shard.</p>
+     *
+     * @return true, as InternalTSDBStats requires reduction to convert shard-level to coordinator-level stats
      */
     @Override
     protected boolean mustReduceOnSingleInternalAgg() {
-        return false;
+        return true;
     }
 
     @Override
