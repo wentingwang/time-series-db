@@ -15,8 +15,6 @@ import org.opensearch.search.aggregations.Aggregator;
 import org.opensearch.search.aggregations.InternalAggregation;
 import org.opensearch.search.aggregations.LeafBucketCollector;
 import org.opensearch.search.aggregations.LeafBucketCollectorBase;
-import org.opensearch.search.aggregations.metrics.AbstractHyperLogLogPlusPlus;
-import org.opensearch.search.aggregations.metrics.HyperLogLogPlusPlus;
 import org.opensearch.search.aggregations.metrics.MetricsAggregator;
 import org.opensearch.search.internal.SearchContext;
 import org.opensearch.tsdb.core.model.Labels;
@@ -25,47 +23,42 @@ import org.opensearch.tsdb.core.reader.TSDBLeafReader;
 
 import java.io.IOException;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Aggregator that collects TSDB statistics from time series data.
  *
  * <p>This aggregator processes time series documents and builds statistics about
- * label keys and their values, including cardinality information using HyperLogLog++
- * for efficient approximate counting.</p>
+ * label keys and their values, using exact fingerprint counting for precise results.</p>
  *
  * <h2>Features:</h2>
  * <ul>
- *   <li><strong>Label Cardinality:</strong> Tracks unique label values per key using HLL++</li>
- *   <li><strong>Time Series Counting:</strong> Counts unique time series with ~2% error using HLL++</li>
- *   <li><strong>Value Statistics:</strong> Per-value cardinality estimates</li>
- *   <li><strong>Memory Efficiency:</strong> Fixed-size HLL sketches (~11KB each) regardless of cardinality</li>
+ *   <li><strong>Label Cardinality:</strong> Tracks unique label values per key using exact fingerprints</li>
+ *   <li><strong>Time Series Counting:</strong> Counts unique time series exactly using fingerprints</li>
+ *   <li><strong>Value Statistics:</strong> Per-value exact cardinality counts</li>
+ *   <li><strong>Exact Counting:</strong> No approximation errors</li>
  * </ul>
  *
  * @since 0.0.1
  */
 public class TSDBStatsAggregator extends MetricsAggregator {
 
-    /**
-     * Default precision for HyperLogLog++ (log2m = 14).
-     * This gives ~11KB per sketch with ~2% error.
-     */
-    private static final int DEFAULT_PRECISION = 14;
-
     private final long minTimestamp;
     private final long maxTimestamp;
     private final boolean includeValueStats;
 
-    // HLL sketch for tracking unique time series
-    private final HyperLogLogPlusPlus uniqueSeriesSketch;
+    // Fingerprint set for tracking unique time series
+    private final Set<Long> uniqueSeriesFingerprints;
 
     // BytesRefHash to store "key:value" strings and assign ordinals (shard-level, shared across segments)
     private final BytesRefHash labelValuePairOrdinalMap;
 
-    // Track HLL sketch per ordinal: ordinal -> HyperLogLogPlusPlus
+    // Track fingerprint set per ordinal: ordinal -> Set<Long>
     // Key grouping is deferred to buildAggregation() to avoid parsing in hot path
-    private final Map<Integer, HyperLogLogPlusPlus> ordinalSketches;
+    private final Map<Integer, Set<Long>> ordinalFingerprintSets;
 
     /**
      * Creates a TSDB stats aggregator.
@@ -93,14 +86,14 @@ public class TSDBStatsAggregator extends MetricsAggregator {
         this.maxTimestamp = maxTimestamp;
         this.includeValueStats = includeValueStats;
 
-        // Always initialize HLL for total series tracking
-        this.uniqueSeriesSketch = new HyperLogLogPlusPlus(DEFAULT_PRECISION, context.bigArrays(), 1);
+        // Initialize fingerprint set for exact series tracking
+        this.uniqueSeriesFingerprints = new HashSet<>();
 
         // Initialize BytesRefHash for ordinals
         ByteBlockPool pool = new ByteBlockPool(new ByteBlockPool.DirectAllocator());
         this.labelValuePairOrdinalMap = new BytesRefHash(pool);
 
-        this.ordinalSketches = includeValueStats ? new HashMap<>() : null;
+        this.ordinalFingerprintSets = includeValueStats ? new HashMap<>() : null;
     }
 
     @Override
@@ -135,11 +128,11 @@ public class TSDBStatsAggregator extends MetricsAggregator {
             // Get labels for this document
             Labels labels = tsdbLeafReader.labelsForDoc(doc, tsdbDocValues);
 
-            // Use labels hashCode as fingerprint for deduplication across chunks/indexes
+            // Use labels hashCode as fingerprint for exact deduplication across chunks/indexes
             long fingerprint = labels.hashCode();
 
-            // Add to total series cardinality
-            uniqueSeriesSketch.collect(bucket, fingerprint);
+            // Add to total series fingerprint set
+            uniqueSeriesFingerprints.add(fingerprint);
 
             // Process each label using BytesRef directly (avoid String conversion)
             BytesRef[] keyValuePairs = labels.toKeyValueBytesRefs();
@@ -152,13 +145,10 @@ public class TSDBStatsAggregator extends MetricsAggregator {
                 }
                 int ordinal = (int) ord;
 
-                // Track cardinality per value if enabled
-                if (ordinalSketches != null) {
-                    HyperLogLogPlusPlus sketch = ordinalSketches.computeIfAbsent(
-                        ordinal,
-                        k -> new HyperLogLogPlusPlus(DEFAULT_PRECISION, context().bigArrays(), 1)
-                    );
-                    sketch.collect(bucket, fingerprint);
+                // Track fingerprints per value if enabled
+                if (ordinalFingerprintSets != null) {
+                    Set<Long> fingerprintSet = ordinalFingerprintSets.computeIfAbsent(ordinal, k -> new HashSet<>());
+                    fingerprintSet.add(fingerprint);
                 }
             }
         }
@@ -166,8 +156,8 @@ public class TSDBStatsAggregator extends MetricsAggregator {
 
     @Override
     public InternalAggregation buildAggregation(long bucket) throws IOException {
-        // Build map of label name -> Map of label value -> HLL sketch
-        Map<String, Map<String, AbstractHyperLogLogPlusPlus>> shardLabelStats = new HashMap<>();
+        // Build map of label name -> Map of label value -> fingerprint Set
+        Map<String, Map<String, Set<Long>>> shardLabelStats = new HashMap<>();
 
         // Reusable BytesRef for lookups
         BytesRef scratch = new BytesRef();
@@ -186,23 +176,23 @@ public class TSDBStatsAggregator extends MetricsAggregator {
             String key = keyValue.substring(0, colonIndex); // "service"
             String value = keyValue.substring(colonIndex + 1); // "api"
 
-            // Get or create value sketches map for this key (always create to track which values exist)
-            Map<String, AbstractHyperLogLogPlusPlus> valueSketches = shardLabelStats.computeIfAbsent(key, k -> new LinkedHashMap<>());
+            // Get or create value fingerprint sets map for this key (always create to track which values exist)
+            Map<String, Set<Long>> valueFingerprintSets = shardLabelStats.computeIfAbsent(key, k -> new LinkedHashMap<>());
 
-            // Add HLL sketch for this value if includeValueStats is enabled, otherwise add null as marker
-            if (includeValueStats && ordinalSketches != null) {
-                HyperLogLogPlusPlus sketch = ordinalSketches.get(ordinal);
-                if (sketch != null) {
-                    valueSketches.put(value, sketch);
+            // Add fingerprint set for this value if includeValueStats is enabled, otherwise add null as marker
+            if (includeValueStats && ordinalFingerprintSets != null) {
+                Set<Long> fingerprintSet = ordinalFingerprintSets.get(ordinal);
+                if (fingerprintSet != null) {
+                    valueFingerprintSets.put(value, fingerprintSet);
                 }
             } else {
-                // Track that this value exists, but use null sketch (will be converted to count=0 in reduce)
-                valueSketches.put(value, null);
+                // Track that this value exists, but use null set (will be converted to count=0 in reduce)
+                valueFingerprintSets.put(value, null);
             }
         }
 
-        // Create shard-level stats with HLL sketches
-        InternalTSDBStats.ShardLevelStats shardStats = new InternalTSDBStats.ShardLevelStats(uniqueSeriesSketch, shardLabelStats);
+        // Create shard-level stats with fingerprint sets
+        InternalTSDBStats.ShardLevelStats shardStats = new InternalTSDBStats.ShardLevelStats(uniqueSeriesFingerprints, shardLabelStats);
 
         // Return using factory method
         return InternalTSDBStats.forShardLevel(name, shardStats, metadata());
@@ -217,21 +207,12 @@ public class TSDBStatsAggregator extends MetricsAggregator {
 
     @Override
     public void doClose() {
-        // Close HLL sketches
-        if (ordinalSketches != null) {
-            for (HyperLogLogPlusPlus sketch : ordinalSketches.values()) {
-                try {
-                    sketch.close();
-                } catch (Exception e) {
-                    // Log and continue closing other resources
-                }
-            }
-            ordinalSketches.clear();
+        // Clear fingerprint sets
+        if (ordinalFingerprintSets != null) {
+            ordinalFingerprintSets.clear();
         }
-        try {
-            uniqueSeriesSketch.close();
-        } catch (Exception e) {
-            // Log and continue
+        if (uniqueSeriesFingerprints != null) {
+            uniqueSeriesFingerprints.clear();
         }
         // Close BytesRefHash
         if (labelValuePairOrdinalMap != null) {

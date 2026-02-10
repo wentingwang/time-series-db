@@ -8,21 +8,21 @@
 package org.opensearch.tsdb.query.aggregator;
 
 import org.opensearch.common.io.stream.BytesStreamOutput;
-import org.opensearch.common.util.BigArrays;
 import org.opensearch.common.xcontent.XContentFactory;
 import org.opensearch.core.common.io.stream.StreamInput;
 import org.opensearch.core.xcontent.XContentBuilder;
 import org.opensearch.search.aggregations.InternalAggregation;
-import org.opensearch.search.aggregations.metrics.AbstractHyperLogLogPlusPlus;
-import org.opensearch.search.aggregations.metrics.HyperLogLogPlusPlus;
+
 import org.opensearch.search.aggregations.pipeline.PipelineAggregator;
 import org.opensearch.test.OpenSearchTestCase;
 
 import java.io.IOException;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 public class InternalTSDBStatsTests extends OpenSearchTestCase {
 
@@ -642,63 +642,63 @@ public class InternalTSDBStatsTests extends OpenSearchTestCase {
 
     public void testShardLevelStatsConstructor() throws IOException {
         // Arrange
-        HyperLogLogPlusPlus seriesSketch = new HyperLogLogPlusPlus(10, BigArrays.NON_RECYCLING_INSTANCE, 1);
-        seriesSketch.collect(0, 1L);
-        seriesSketch.collect(0, 2L);
+        Set<Long> seriesFingerprintSet = new HashSet<>();
+        seriesFingerprintSet.add(1L);
+        seriesFingerprintSet.add(2L);
 
-        Map<String, Map<String, AbstractHyperLogLogPlusPlus>> labelStats = new HashMap<>();
-        Map<String, AbstractHyperLogLogPlusPlus> clusterSketches = new HashMap<>();
-        HyperLogLogPlusPlus prodSketch = new HyperLogLogPlusPlus(10, BigArrays.NON_RECYCLING_INSTANCE, 1);
-        prodSketch.collect(0, 100L);
-        clusterSketches.put("prod", prodSketch);
-        labelStats.put("cluster", clusterSketches);
+        Map<String, Map<String, Set<Long>>> labelStats = new HashMap<>();
+        Map<String, Set<Long>> clusterFingerprintSets = new HashMap<>();
+        Set<Long> prodFingerprints = new HashSet<>();
+        prodFingerprints.add(100L);
+        clusterFingerprintSets.put("prod", prodFingerprints);
+        labelStats.put("cluster", clusterFingerprintSets);
 
         // Act
-        InternalTSDBStats.ShardLevelStats shardStats = new InternalTSDBStats.ShardLevelStats(seriesSketch, labelStats);
+        InternalTSDBStats.ShardLevelStats shardStats = new InternalTSDBStats.ShardLevelStats(seriesFingerprintSet, labelStats);
 
         // Assert
-        assertNotNull(shardStats.seriesCardinalitySketch());
+        assertNotNull(shardStats.seriesFingerprintSet());
         assertEquals(labelStats, shardStats.labelStats());
         assertEquals(1, shardStats.labelStats().size());
     }
 
-    public void testShardLevelStatsWithNullSeriesSketch() {
+    public void testShardLevelStatsWithNullSeriesFingerprints() {
         // Arrange
-        Map<String, Map<String, AbstractHyperLogLogPlusPlus>> labelStats = new HashMap<>();
+        Map<String, Map<String, Set<Long>>> labelStats = new HashMap<>();
 
         // Act
         InternalTSDBStats.ShardLevelStats shardStats = new InternalTSDBStats.ShardLevelStats(null, labelStats);
 
         // Assert
-        assertNull(shardStats.seriesCardinalitySketch());
+        assertNull(shardStats.seriesFingerprintSet());
         assertEquals(labelStats, shardStats.labelStats());
     }
 
     public void testShardLevelStatsWithEmptyLabelStats() throws IOException {
         // Arrange
-        HyperLogLogPlusPlus seriesSketch = new HyperLogLogPlusPlus(10, BigArrays.NON_RECYCLING_INSTANCE, 1);
-        seriesSketch.collect(0, 1L);
-        Map<String, Map<String, AbstractHyperLogLogPlusPlus>> emptyLabelStats = new HashMap<>();
+        Set<Long> seriesFingerprintSet = new HashSet<>();
+        seriesFingerprintSet.add(1L);
+        Map<String, Map<String, Set<Long>>> emptyLabelStats = new HashMap<>();
 
         // Act
-        InternalTSDBStats.ShardLevelStats shardStats = new InternalTSDBStats.ShardLevelStats(seriesSketch, emptyLabelStats);
+        InternalTSDBStats.ShardLevelStats shardStats = new InternalTSDBStats.ShardLevelStats(seriesFingerprintSet, emptyLabelStats);
 
         // Assert
-        assertNotNull(shardStats.seriesCardinalitySketch());
+        assertNotNull(shardStats.seriesFingerprintSet());
         assertEquals(0, shardStats.labelStats().size());
     }
 
     public void testShardLevelStatsWithNullValueMap() {
         // Arrange
-        HyperLogLogPlusPlus seriesSketch = new HyperLogLogPlusPlus(10, BigArrays.NON_RECYCLING_INSTANCE, 1);
-        Map<String, Map<String, AbstractHyperLogLogPlusPlus>> labelStats = new HashMap<>();
+        Set<Long> seriesFingerprintSet = new HashSet<>();
+        Map<String, Map<String, Set<Long>>> labelStats = new HashMap<>();
         labelStats.put("cluster", null); // null value map
 
         // Act
-        InternalTSDBStats.ShardLevelStats shardStats = new InternalTSDBStats.ShardLevelStats(seriesSketch, labelStats);
+        InternalTSDBStats.ShardLevelStats shardStats = new InternalTSDBStats.ShardLevelStats(seriesFingerprintSet, labelStats);
 
         // Assert
-        assertNotNull(shardStats.seriesCardinalitySketch());
+        assertNotNull(shardStats.seriesFingerprintSet());
         assertEquals(1, shardStats.labelStats().size());
         assertNull(shardStats.labelStats().get("cluster"));
     }

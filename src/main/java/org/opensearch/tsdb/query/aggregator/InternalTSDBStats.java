@@ -7,17 +7,15 @@
  */
 package org.opensearch.tsdb.query.aggregator;
 
-import org.opensearch.common.util.BigArrays;
 import org.opensearch.core.common.io.stream.StreamInput;
 import org.opensearch.core.common.io.stream.StreamOutput;
 import org.opensearch.core.xcontent.XContentBuilder;
 import org.opensearch.search.aggregations.InternalAggregation;
-import org.opensearch.search.aggregations.metrics.AbstractHyperLogLogPlusPlus;
-import org.opensearch.search.aggregations.metrics.HyperLogLogPlusPlus;
 
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -75,58 +73,64 @@ public class InternalTSDBStats extends InternalAggregation {
     }
 
     /**
-     * Shard-level statistics containing HLL++ sketches.
+     * Shard-level statistics containing exact fingerprint sets.
      *
      * <p>Used during shard-level aggregation and reduce to deduplicate time series
-     * between Head and ClosedChunkIndex. Converted to {@link CoordinatorLevelStats}
+     * between Head and ClosedChunkIndex using exact fingerprints. Converted to {@link CoordinatorLevelStats}
      * after shard-level reduce to save network bandwidth.</p>
-     *
-     * <p><b>Note:</b> Uses {@link AbstractHyperLogLogPlusPlus} instead of {@link HyperLogLogPlusPlus}
-     * to support both sparse and dense HLL representations, as {@code readFrom()} and {@code clone()}
-     * return the abstract base class.</p>
      */
-    public record ShardLevelStats(AbstractHyperLogLogPlusPlus seriesCardinalitySketch, Map<
-        String,
-        Map<String, AbstractHyperLogLogPlusPlus>> labelStats) {
+    public record ShardLevelStats(Set<Long> seriesFingerprintSet, Map<String, Map<String, Set<Long>>> labelStats) {
 
         public ShardLevelStats(StreamInput in) throws IOException {
-            this(readSeriesSketch(in), readLabelStatsMap(in));
+            this(readSeriesFingerprintSet(in), readLabelStatsMap(in));
         }
 
-        private static AbstractHyperLogLogPlusPlus readSeriesSketch(StreamInput in) throws IOException {
-            boolean hasSketch = in.readBoolean();
-            return hasSketch ? HyperLogLogPlusPlus.readFrom(in, BigArrays.NON_RECYCLING_INSTANCE) : null;
+        private static Set<Long> readSeriesFingerprintSet(StreamInput in) throws IOException {
+            boolean hasSet = in.readBoolean();
+            if (!hasSet) {
+                return null;
+            }
+            int setSize = in.readVInt();
+            Set<Long> fingerprintSet = new HashSet<>(setSize);
+            for (int i = 0; i < setSize; i++) {
+                fingerprintSet.add(in.readVLong());
+            }
+            return fingerprintSet;
         }
 
-        private static Map<String, Map<String, AbstractHyperLogLogPlusPlus>> readLabelStatsMap(StreamInput in) throws IOException {
+        private static Map<String, Map<String, Set<Long>>> readLabelStatsMap(StreamInput in) throws IOException {
             int labelCount = in.readVInt();
-            Map<String, Map<String, AbstractHyperLogLogPlusPlus>> labelStats = new HashMap<>(labelCount);
+            Map<String, Map<String, Set<Long>>> labelStats = new HashMap<>(labelCount);
             for (int i = 0; i < labelCount; i++) {
                 String labelName = in.readString();
 
-                // Read value sketches for this label
-                boolean hasSketches = in.readBoolean();
-                Map<String, AbstractHyperLogLogPlusPlus> valueCardinalitySketches;
-                if (hasSketches) {
+                // Read value fingerprint sets for this label
+                boolean hasSets = in.readBoolean();
+                Map<String, Set<Long>> valueFingerprintSets;
+                if (hasSets) {
                     int mapSize = in.readVInt();
-                    valueCardinalitySketches = new LinkedHashMap<>(mapSize);
+                    valueFingerprintSets = new LinkedHashMap<>(mapSize);
                     for (int j = 0; j < mapSize; j++) {
                         String key = in.readString();
-                        // Read whether this value has a sketch (null when includeValueStats=false)
-                        boolean hasValueSketch = in.readBoolean();
-                        AbstractHyperLogLogPlusPlus sketch;
-                        if (hasValueSketch) {
-                            sketch = HyperLogLogPlusPlus.readFrom(in, BigArrays.NON_RECYCLING_INSTANCE);
+                        // Read whether this value has a fingerprint set (null when includeValueStats=false)
+                        boolean hasValueSet = in.readBoolean();
+                        Set<Long> fingerprintSet;
+                        if (hasValueSet) {
+                            int setSize = in.readVInt();
+                            fingerprintSet = new HashSet<>(setSize);
+                            for (int k = 0; k < setSize; k++) {
+                                fingerprintSet.add(in.readVLong());
+                            }
                         } else {
-                            sketch = null;
+                            fingerprintSet = null;
                         }
-                        valueCardinalitySketches.put(key, sketch);
+                        valueFingerprintSets.put(key, fingerprintSet);
                     }
                 } else {
-                    valueCardinalitySketches = null;
+                    valueFingerprintSets = null;
                 }
 
-                labelStats.put(labelName, valueCardinalitySketches);
+                labelStats.put(labelName, valueFingerprintSets);
             }
             return labelStats;
         }
@@ -138,29 +142,35 @@ public class InternalTSDBStats extends InternalAggregation {
          * @throws IOException if an I/O error occurs during writing
          */
         public void writeTo(StreamOutput out) throws IOException {
-            if (seriesCardinalitySketch != null) {
+            if (seriesFingerprintSet != null) {
                 out.writeBoolean(true);
-                seriesCardinalitySketch.writeTo(0, out);
+                out.writeVInt(seriesFingerprintSet.size());
+                for (Long fingerprint : seriesFingerprintSet) {
+                    out.writeVLong(fingerprint);
+                }
             } else {
                 out.writeBoolean(false);
             }
 
             out.writeVInt(labelStats.size());
-            for (Map.Entry<String, Map<String, AbstractHyperLogLogPlusPlus>> entry : labelStats.entrySet()) {
+            for (Map.Entry<String, Map<String, Set<Long>>> entry : labelStats.entrySet()) {
                 out.writeString(entry.getKey());
 
-                // Write value sketches for this label
-                Map<String, AbstractHyperLogLogPlusPlus> valueCardinalitySketches = entry.getValue();
-                if (valueCardinalitySketches != null) {
+                // Write value fingerprint sets for this label
+                Map<String, Set<Long>> valueFingerprintSets = entry.getValue();
+                if (valueFingerprintSets != null) {
                     out.writeBoolean(true);
-                    out.writeVInt(valueCardinalitySketches.size());
-                    for (Map.Entry<String, AbstractHyperLogLogPlusPlus> ve : valueCardinalitySketches.entrySet()) {
+                    out.writeVInt(valueFingerprintSets.size());
+                    for (Map.Entry<String, Set<Long>> ve : valueFingerprintSets.entrySet()) {
                         out.writeString(ve.getKey());
-                        // Write whether this value has a sketch (null when includeValueStats=false)
-                        AbstractHyperLogLogPlusPlus sketch = ve.getValue();
-                        if (sketch != null) {
+                        // Write whether this value has a fingerprint set (null when includeValueStats=false)
+                        Set<Long> fingerprintSet = ve.getValue();
+                        if (fingerprintSet != null) {
                             out.writeBoolean(true);
-                            sketch.writeTo(0, out);
+                            out.writeVInt(fingerprintSet.size());
+                            for (Long fingerprint : fingerprintSet) {
+                                out.writeVLong(fingerprint);
+                            }
                         } else {
                             out.writeBoolean(false);
                         }
@@ -412,17 +422,14 @@ public class InternalTSDBStats extends InternalAggregation {
     }
 
     /**
-     * Shard-level reduce: Merges HLL sketches and converts to coordinator-level counts.
+     * Shard-level reduce: Merges fingerprint sets and converts to coordinator-level counts.
      *
-     * <p>This method merges HLL sketches from Head and ClosedChunkIndex to deduplicate
-     * time series within a shard, then converts the sketches to cardinality counts and
+     * <p>This method merges fingerprint sets from Head and ClosedChunkIndex to deduplicate
+     * time series within a shard, then converts the sets to exact counts and
      * returns {@link CoordinatorLevelStats} to minimize network bandwidth.</p>
      */
     private InternalTSDBStats reduceShardLevel(List<InternalAggregation> aggregations) {
-        // Default precision for HyperLogLog++ (log2m = 14) - matches TSDBStatsAggregator
-        final int PRECISION = 14;
-
-        HyperLogLogPlusPlus mergedSeriesSketch = null;
+        Set<Long> mergedFingerprints = new HashSet<>();
         Map<String, ShardLevelLabelStatsBuilder> builders = new HashMap<>();
 
         for (InternalAggregation agg : aggregations) {
@@ -433,105 +440,84 @@ public class InternalTSDBStats extends InternalAggregation {
                 throw new IllegalStateException("Expected shard-level stats but got coordinator-level stats in shard reduce");
             }
 
-            // Merge series cardinality sketches
-            AbstractHyperLogLogPlusPlus sketch = stats.shardStats.seriesCardinalitySketch();
-            if (sketch != null) {
-                if (mergedSeriesSketch == null) {
-                    // Create new DENSE sketch instead of cloning
-                    // This avoids ClassCastException when the input sketch is Sparse
-                    mergedSeriesSketch = new HyperLogLogPlusPlus(PRECISION, BigArrays.NON_RECYCLING_INSTANCE, 1);
-                }
-                // merge() accepts AbstractHyperLogLogPlusPlus, so works with both Sparse and Dense
-                mergedSeriesSketch.merge(0, sketch, 0);
+            // Merge series fingerprints (automatic deduplication via Set)
+            Set<Long> fingerprintSet = stats.shardStats.seriesFingerprintSet();
+            if (fingerprintSet != null) {
+                mergedFingerprints.addAll(fingerprintSet);
             }
 
-            // Merge per-label sketches
-            for (Map.Entry<String, Map<String, AbstractHyperLogLogPlusPlus>> entry : stats.shardStats.labelStats().entrySet()) {
+            // Merge per-label fingerprint sets
+            for (Map.Entry<String, Map<String, Set<Long>>> entry : stats.shardStats.labelStats().entrySet()) {
                 String labelName = entry.getKey();
-                Map<String, AbstractHyperLogLogPlusPlus> valueSketches = entry.getValue();
+                Map<String, Set<Long>> valueFingerprintSets = entry.getValue();
 
                 ShardLevelLabelStatsBuilder builder = builders.computeIfAbsent(labelName, k -> new ShardLevelLabelStatsBuilder());
 
-                // Merge value cardinality sketches
-                if (valueSketches != null) {
-                    if (builder.valueSketches == null) {
-                        builder.valueSketches = new LinkedHashMap<>();
+                // Merge value fingerprint sets
+                if (valueFingerprintSets != null) {
+                    if (builder.valueFingerprintSets == null) {
+                        builder.valueFingerprintSets = new LinkedHashMap<>();
                     }
-                    for (Map.Entry<String, AbstractHyperLogLogPlusPlus> ve : valueSketches.entrySet()) {
+                    for (Map.Entry<String, Set<Long>> ve : valueFingerprintSets.entrySet()) {
                         String valueKey = ve.getKey();
-                        AbstractHyperLogLogPlusPlus newSketch = ve.getValue();
-                        HyperLogLogPlusPlus existing = builder.valueSketches.get(valueKey);
+                        Set<Long> newSet = ve.getValue();
 
-                        if (existing == null) {
-                            // First time seeing this value - create new dense sketch and merge
-                            if (newSketch != null) {
-                                HyperLogLogPlusPlus denseSketch = new HyperLogLogPlusPlus(PRECISION, BigArrays.NON_RECYCLING_INSTANCE, 1);
-                                denseSketch.merge(0, newSketch, 0);
-                                builder.valueSketches.put(valueKey, denseSketch);
-                            } else {
-                                builder.valueSketches.put(valueKey, null);
-                            }
-                        } else if (existing != null && newSketch != null) {
-                            // Both are non-null - merge them
-                            existing.merge(0, newSketch, 0);
+                        // Merge sets (automatic deduplication)
+                        builder.valueFingerprintSets.computeIfAbsent(valueKey, k -> new HashSet<>());
+                        if (newSet != null) {
+                            builder.valueFingerprintSets.get(valueKey).addAll(newSet);
                         }
-                        // If both are null, or existing is non-null and new is null, keep existing
                     }
                 }
             }
         }
 
-        // Convert sketches to counts
-        Long totalSeries = mergedSeriesSketch != null ? mergedSeriesSketch.cardinality(0) : null;
+        // Convert fingerprint sets to exact counts
+        Long totalSeries = mergedFingerprints.isEmpty() ? null : (long) mergedFingerprints.size();
 
         Map<String, CoordinatorLevelStats.LabelStats> finalLabelStats = new HashMap<>();
         for (Map.Entry<String, ShardLevelLabelStatsBuilder> entry : builders.entrySet()) {
             String labelName = entry.getKey();
             ShardLevelLabelStatsBuilder builder = entry.getValue();
 
-            // Get cardinality for this label (union of all value sketches)
+            // Calculate label cardinality (union of all value fingerprints)
             Long labelCardinality = null;
             Map<String, Long> valueCounts = null;
 
-            if (builder.valueSketches != null) {
-                // Check if any sketch is non-null (i.e., includeValueStats was true)
-                boolean hasNonNullSketches = builder.valueSketches.values().stream().anyMatch(s -> s != null);
+            if (builder.valueFingerprintSets != null) {
+                // Check if any set is non-null (i.e., includeValueStats was true)
+                boolean hasNonNullSets = builder.valueFingerprintSets.values().stream().anyMatch(s -> s != null && !s.isEmpty());
 
-                if (hasNonNullSketches) {
-                    // includeValueStats was true - compute actual cardinalities
-                    HyperLogLogPlusPlus labelSketch = null;
+                if (hasNonNullSets) {
+                    // includeValueStats was true - compute exact counts
+                    Set<Long> allFingerprintsForLabel = new HashSet<>();
                     valueCounts = new LinkedHashMap<>();
 
-                    for (Map.Entry<String, HyperLogLogPlusPlus> ve : builder.valueSketches.entrySet()) {
-                        HyperLogLogPlusPlus sketch = ve.getValue();
+                    for (Map.Entry<String, Set<Long>> ve : builder.valueFingerprintSets.entrySet()) {
+                        Set<Long> fingerprintSetForValue = ve.getValue();
 
-                        if (sketch != null) {
-                            long valueCard = sketch.cardinality(0);
-                            valueCounts.put(ve.getKey(), valueCard);
+                        if (fingerprintSetForValue != null && !fingerprintSetForValue.isEmpty()) {
+                            long valueCount = fingerprintSetForValue.size();
+                            valueCounts.put(ve.getKey(), valueCount);
 
-                            // Merge into label sketch for total label cardinality
-                            if (labelSketch == null) {
-                                // Create new dense sketch instead of cloning
-                                labelSketch = new HyperLogLogPlusPlus(PRECISION, BigArrays.NON_RECYCLING_INSTANCE, 1);
-                            }
-                            labelSketch.merge(0, sketch, 0);
+                            // Collect for label cardinality
+                            allFingerprintsForLabel.addAll(fingerprintSetForValue);
                         }
                     }
 
-                    labelCardinality = labelSketch != null ? labelSketch.cardinality(0) : null;
-                } else {
-                    // includeValueStats was false - extract value names from keys
-                    // Keep valueCounts as null, but populate values list
+                    labelCardinality = allFingerprintsForLabel.isEmpty() ? null : (long) allFingerprintsForLabel.size();
                 }
             }
 
             // Extract values list from builder (always populated, even when includeValueStats=false)
-            List<String> valuesList = builder.valueSketches != null ? new ArrayList<>(builder.valueSketches.keySet()) : List.of();
+            List<String> valuesList = builder.valueFingerprintSets != null
+                ? new ArrayList<>(builder.valueFingerprintSets.keySet())
+                : List.of();
 
             finalLabelStats.put(labelName, new CoordinatorLevelStats.LabelStats(labelCardinality, valuesList, valueCounts));
         }
 
-        // Return coordinator-level stats (sketches converted to counts to save network bandwidth)
+        // Return coordinator-level stats (fingerprints converted to counts to save network bandwidth)
         CoordinatorLevelStats coordinatorStats = new CoordinatorLevelStats(totalSeries, finalLabelStats);
         return forCoordinatorLevel(name, null, coordinatorStats, metadata);
     }
@@ -609,13 +595,9 @@ public class InternalTSDBStats extends InternalAggregation {
 
     /**
      * Helper class for building shard-level label stats during reduce.
-     *
-     * <p>Uses {@link HyperLogLogPlusPlus} (dense) instead of {@link AbstractHyperLogLogPlusPlus}
-     * to enable calling the merge() method. When assigning from Abstract type, we cast to the
-     * concrete type.</p>
      */
     private static class ShardLevelLabelStatsBuilder {
-        Map<String, HyperLogLogPlusPlus> valueSketches = null;
+        Map<String, Set<Long>> valueFingerprintSets = null;
     }
 
     /**
