@@ -28,7 +28,9 @@ public class ProfileInfoMapper {
     public static final String TOTAL_DOCS = "total_docs";
     public static final String TOTAL_CHUNKS = "total_chunks";
     public static final String TOTAL_SAMPLES_PROCESSED = "total_samples_processed";
-    public static final String TOTAL_SAMPLES_FILTERED = "total_samples_filtered";
+    public static final String TOTAL_SAMPLES_POST_FILTER = "total_samples_post_filter";
+    public static final String LIVE_SAMPLES_POST_FILTER = "live_samples_post_filter";
+    public static final String CLOSED_SAMPLES_POST_FILTER = "closed_samples_post_filter";
     public static final String TOTAL_INPUT_SERIES = "total_input_series";
     public static final String TOTAL_OUTPUT_SERIES = "total_output_series";
     public static final String LIVE_CHUNK_COUNT = "live_chunk_count";
@@ -37,8 +39,6 @@ public class ProfileInfoMapper {
     public static final String CLOSED_DOC_COUNT = "closed_doc_count";
     public static final String LIVE_SAMPLES_PROCESSED = "live_samples_processed";
     public static final String CLOSED_SAMPLES_PROCESSED = "closed_samples_processed";
-    public static final String LIVE_SAMPLES_FILTERED = "live_samples_filtered";
-    public static final String CLOSED_SAMPLES_FILTERED = "closed_samples_filtered";
     public static final String STAGES_FIELD_NAME = "stages";
     public static final String DEBUG_INFO_FIELD_NAME = "debug_info";
     public static final String DEFAULT_STAGES = "fetch_only";
@@ -145,9 +145,9 @@ public class ProfileInfoMapper {
                 aggStats.debugStats.samplesProcessed = getLongValue(debugMap, TOTAL_SAMPLES_PROCESSED);
                 aggStats.debugStats.liveSamplesProcessed = getLongValue(debugMap, LIVE_SAMPLES_PROCESSED);
                 aggStats.debugStats.closedSamplesProcessed = getLongValue(debugMap, CLOSED_SAMPLES_PROCESSED);
-                aggStats.debugStats.samplesFiltered = getLongValue(debugMap, TOTAL_SAMPLES_FILTERED);
-                aggStats.debugStats.liveSamplesFiltered = getLongValue(debugMap, LIVE_SAMPLES_FILTERED);
-                aggStats.debugStats.closedSamplesFiltered = getLongValue(debugMap, CLOSED_SAMPLES_FILTERED);
+                aggStats.debugStats.samplesFiltered = getLongValue(debugMap, TOTAL_SAMPLES_POST_FILTER);
+                aggStats.debugStats.liveSamplesFiltered = getLongValue(debugMap, LIVE_SAMPLES_POST_FILTER);
+                aggStats.debugStats.closedSamplesFiltered = getLongValue(debugMap, CLOSED_SAMPLES_POST_FILTER);
                 aggStats.debugStats.inputSeriesCount = getLongValue(debugMap, TOTAL_INPUT_SERIES);
                 aggStats.debugStats.outputSeriesCount = getLongValue(debugMap, TOTAL_OUTPUT_SERIES);
 
@@ -171,9 +171,9 @@ public class ProfileInfoMapper {
                 stats.totals.debugStats.samplesProcessed += getLongValue(debugMap, TOTAL_SAMPLES_PROCESSED);
                 stats.totals.debugStats.liveSamplesProcessed += getLongValue(debugMap, LIVE_SAMPLES_PROCESSED);
                 stats.totals.debugStats.closedSamplesProcessed += getLongValue(debugMap, CLOSED_SAMPLES_PROCESSED);
-                stats.totals.debugStats.samplesFiltered += getLongValue(debugMap, TOTAL_SAMPLES_FILTERED);
-                stats.totals.debugStats.liveSamplesFiltered += getLongValue(debugMap, LIVE_SAMPLES_FILTERED);
-                stats.totals.debugStats.closedSamplesFiltered += getLongValue(debugMap, CLOSED_SAMPLES_FILTERED);
+                stats.totals.debugStats.samplesFiltered += getLongValue(debugMap, TOTAL_SAMPLES_POST_FILTER);
+                stats.totals.debugStats.liveSamplesFiltered += getLongValue(debugMap, LIVE_SAMPLES_POST_FILTER);
+                stats.totals.debugStats.closedSamplesFiltered += getLongValue(debugMap, CLOSED_SAMPLES_POST_FILTER);
                 stats.totals.debugStats.inputSeriesCount += getLongValue(debugMap, TOTAL_INPUT_SERIES);
                 stats.totals.debugStats.outputSeriesCount += getLongValue(debugMap, TOTAL_OUTPUT_SERIES);
                 stats.totals.timingStats.initializeTime += aggStats.timingStats.initializeTime;
@@ -257,9 +257,9 @@ public class ProfileInfoMapper {
         builder.field(TOTAL_SAMPLES_PROCESSED, stats.debugStats.samplesProcessed);
         builder.field(LIVE_SAMPLES_PROCESSED, stats.debugStats.liveSamplesProcessed);
         builder.field(CLOSED_SAMPLES_PROCESSED, stats.debugStats.closedSamplesProcessed);
-        builder.field(TOTAL_SAMPLES_FILTERED, stats.debugStats.samplesFiltered);
-        builder.field(LIVE_SAMPLES_FILTERED, stats.debugStats.liveSamplesFiltered);
-        builder.field(CLOSED_SAMPLES_FILTERED, stats.debugStats.closedSamplesFiltered);
+        builder.field(TOTAL_SAMPLES_POST_FILTER, stats.debugStats.samplesFiltered);
+        builder.field(LIVE_SAMPLES_POST_FILTER, stats.debugStats.liveSamplesFiltered);
+        builder.field(CLOSED_SAMPLES_POST_FILTER, stats.debugStats.closedSamplesFiltered);
         builder.field(TOTAL_INPUT_SERIES, stats.debugStats.inputSeriesCount);
         builder.field(TOTAL_OUTPUT_SERIES, stats.debugStats.outputSeriesCount);
         builder.endObject();
@@ -296,9 +296,9 @@ public class ProfileInfoMapper {
         builder.field(TOTAL_SAMPLES_PROCESSED, stats.debugStats.samplesProcessed);
         builder.field(LIVE_SAMPLES_PROCESSED, stats.debugStats.liveSamplesProcessed);
         builder.field(CLOSED_SAMPLES_PROCESSED, stats.debugStats.closedSamplesProcessed);
-        builder.field(TOTAL_SAMPLES_FILTERED, stats.debugStats.samplesFiltered);
-        builder.field(LIVE_SAMPLES_FILTERED, stats.debugStats.liveSamplesFiltered);
-        builder.field(CLOSED_SAMPLES_FILTERED, stats.debugStats.closedSamplesFiltered);
+        builder.field(TOTAL_SAMPLES_POST_FILTER, stats.debugStats.samplesFiltered);
+        builder.field(LIVE_SAMPLES_POST_FILTER, stats.debugStats.liveSamplesFiltered);
+        builder.field(CLOSED_SAMPLES_POST_FILTER, stats.debugStats.closedSamplesFiltered);
         builder.field(TOTAL_INPUT_SERIES, stats.debugStats.inputSeriesCount);
         builder.field(TOTAL_OUTPUT_SERIES, stats.debugStats.outputSeriesCount);
         builder.endObject();

@@ -693,9 +693,9 @@ public class TimeSeriesUnfoldAggregator extends BucketsAggregator {
             add.accept(ProfileInfoMapper.TOTAL_SAMPLES_PROCESSED, totalSamplesProcessed);
             add.accept(ProfileInfoMapper.LIVE_SAMPLES_PROCESSED, liveSamplesProcessed);
             add.accept(ProfileInfoMapper.CLOSED_SAMPLES_PROCESSED, closedSamplesProcessed);
-            add.accept(ProfileInfoMapper.TOTAL_SAMPLES_FILTERED, totalSamplesPostFilter);
-            add.accept(ProfileInfoMapper.LIVE_SAMPLES_FILTERED, liveSamplesPostFilter);
-            add.accept(ProfileInfoMapper.CLOSED_SAMPLES_FILTERED, closedSamplesPostFilter);
+            add.accept(ProfileInfoMapper.TOTAL_SAMPLES_POST_FILTER, totalSamplesPostFilter);
+            add.accept(ProfileInfoMapper.LIVE_SAMPLES_POST_FILTER, liveSamplesPostFilter);
+            add.accept(ProfileInfoMapper.CLOSED_SAMPLES_POST_FILTER, closedSamplesPostFilter);
             add.accept(ProfileInfoMapper.TOTAL_INPUT_SERIES, inputSeriesCount);
             add.accept(ProfileInfoMapper.TOTAL_OUTPUT_SERIES, outputSeriesCount);
             add.accept(ProfileInfoMapper.CIRCUIT_BREAKER_BYTES, circuitBreakerBytes);

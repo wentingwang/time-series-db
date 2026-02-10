@@ -408,9 +408,9 @@ public class TimeSeriesUnfoldAggregatorTests extends OpenSearchTestCase {
         assertNotNull(debugInfo.get("total_samples_processed"));
         assertNotNull(debugInfo.get("live_samples_processed"));
         assertNotNull(debugInfo.get("closed_samples_processed"));
-        assertNotNull(debugInfo.get("total_samples_filtered"));
-        assertNotNull(debugInfo.get("live_samples_filtered"));
-        assertNotNull(debugInfo.get("closed_samples_filtered"));
+        assertNotNull(debugInfo.get("total_samples_post_filter"));
+        assertNotNull(debugInfo.get("live_samples_post_filter"));
+        assertNotNull(debugInfo.get("closed_samples_post_filter"));
         assertNotNull(debugInfo.get("total_input_series"));
         assertNotNull(debugInfo.get("total_output_series"));
         assertNotNull(debugInfo.get("circuit_breaker_bytes"));
