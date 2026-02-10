@@ -27,7 +27,7 @@ import java.util.Map;
  *
  * <p>This builder creates {@link TSDBStatsAggregator} instances that collect
  * statistics about time series data including label cardinality and value
- * distribution using HyperLogLog++ for efficient approximate counting.</p>
+ * distribution using exact fingerprint counting.</p>
  *
  * <h2>Key Features:</h2>
  * <ul>
@@ -36,8 +36,8 @@ import java.util.Map;
  *   <li><strong>Time Range Filtering:</strong> Filters data by timestamp range</li>
  *   <li><strong>Optional Statistics:</strong> Configurable inclusion of value
  *       statistics and total series count</li>
- *   <li><strong>Memory Efficient:</strong> Uses HyperLogLog++ for constant
- *       memory usage (~11KB per sketch)</li>
+ *   <li><strong>Exact Counting:</strong> Uses fingerprint sets for precise
+ *       cardinality with no approximation error</li>
  * </ul>
  *
  * <h2>Usage Example:</h2>

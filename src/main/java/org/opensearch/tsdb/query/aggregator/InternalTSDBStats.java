@@ -32,7 +32,7 @@ import java.util.Set;
  * <h2>Two-Phase Reduce Strategy:</h2>
  * <p>This class uses different data structures for different reduce phases:</p>
  * <ul>
- *   <li><strong>Shard-level phase:</strong> Uses {@link ShardLevelStats} with HLL++ sketches
+ *   <li><strong>Shard-level phase:</strong> Uses {@link ShardLevelStats} with exact fingerprint sets
  *       to deduplicate time series between Head and ClosedChunkIndex within a shard</li>
  *   <li><strong>Coordinator-level phase:</strong> Uses {@link CoordinatorLevelStats} with final
  *       counts summed from different shards (no deduplication needed due to routing)</li>
@@ -43,7 +43,8 @@ import java.util.Set;
  *   <li><strong>Total Time Series Count:</strong> Total number of unique time series</li>
  *   <li><strong>Tag Statistics:</strong> Per-tag cardinality and value distribution</li>
  *   <li><strong>Optional Value Stats:</strong> Detailed per-value counts when enabled</li>
- *   <li><strong>Memory Efficient:</strong> HLL sketches discarded after shard-level reduce
+ *   <li><strong>Exact Counting:</strong> Uses fingerprint sets for precise cardinality</li>
+ *   <li><strong>Memory Efficient:</strong> Fingerprint sets discarded after shard-level reduce
  *       to minimize network bandwidth</li>
  * </ul>
  */
@@ -186,8 +187,8 @@ public class InternalTSDBStats extends InternalAggregation {
      * Coordinator-level statistics containing final counts.
      *
      * <p>Used after shard-level reduce when aggregating results from multiple shards.
-     * Contains pre-computed cardinality counts instead of HLL sketches to minimize
-     * network bandwidth (1000x smaller than sketches).</p>
+     * Contains pre-computed cardinality counts instead of fingerprint sets to minimize
+     * network bandwidth.</p>
      */
     public record CoordinatorLevelStats(Long totalNumSeries, Map<String, LabelStats> labelStats) {
 
@@ -279,10 +280,10 @@ public class InternalTSDBStats extends InternalAggregation {
     }
 
     /**
-     * Factory method for creating shard-level stats (with HLL sketches).
+     * Factory method for creating shard-level stats (with fingerprint sets).
      *
      * @param name the name of the aggregation
-     * @param shardStats the shard-level statistics with HLL sketches
+     * @param shardStats the shard-level statistics with fingerprint sets
      * @param metadata the aggregation metadata
      * @return InternalTSDBStats instance for shard-level phase
      */
@@ -394,9 +395,9 @@ public class InternalTSDBStats extends InternalAggregation {
      *
      * <p>This method uses different strategies based on the reduce phase:</p>
      * <ul>
-     * <li><b>Shard-level reduce (!isFinalReduce):</b> Merges HLL sketches to deduplicate
+     * <li><b>Shard-level reduce (!isFinalReduce):</b> Merges fingerprint sets to deduplicate
      *     time series between Head and ClosedChunkIndex within the same shard. Converts
-     *     sketches to counts and returns {@link CoordinatorLevelStats} to save network bandwidth.</li>
+     *     sets to exact counts and returns {@link CoordinatorLevelStats} to save network bandwidth.</li>
      * <li><b>Coordinator reduce (isFinalReduce):</b> Simply sums counts from different shards
      *     since each time series is guaranteed to exist on only one shard (by routing).</li>
      * </ul>
@@ -413,7 +414,7 @@ public class InternalTSDBStats extends InternalAggregation {
         }
 
         if (!reduceContext.isFinalReduce()) {
-            // ===== SHARD-LEVEL REDUCE: Merge HLL sketches, convert to counts =====
+            // ===== SHARD-LEVEL REDUCE: Merge fingerprint sets, convert to counts =====
             return reduceShardLevel(aggregations);
         } else {
             // ===== COORDINATOR REDUCE: Sum counts =====
@@ -719,7 +720,7 @@ public class InternalTSDBStats extends InternalAggregation {
      * a single internal aggregation.
      *
      * <p>Returns true because this aggregation uses a two-phase strategy where
-     * shard-level results (ShardLevelStats with HLL sketches) must be converted
+     * shard-level results (ShardLevelStats with fingerprint sets) must be converted
      * to coordinator-level results (CoordinatorLevelStats with final counts) via
      * the reduce phase, even when there's only one shard.</p>
      *

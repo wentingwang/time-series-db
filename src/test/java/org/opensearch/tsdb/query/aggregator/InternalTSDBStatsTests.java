@@ -635,10 +635,7 @@ public class InternalTSDBStatsTests extends OpenSearchTestCase {
     }
 
     // ========== ShardLevelStats Tests ==========
-    // Note: Serialization tests for ShardLevelStats are skipped due to a pre-existing bug in the production code
-    // where HyperLogLogPlusPlus.readFrom() can return HyperLogLogPlusPlusSparse which cannot be cast to
-    // HyperLogLogPlusPlus (see InternalTSDBStats.java:91). This bug exists in the original code and is outside
-    // the scope of the Record conversion. The tests below verify the Record accessors work correctly.
+    // Tests verify the Record accessors and serialization work correctly with fingerprint sets.
 
     public void testShardLevelStatsConstructor() throws IOException {
         // Arrange

@@ -23,7 +23,7 @@ import java.util.Map;
  * <p>This factory creates {@link TSDBStatsAggregator} instances with the
  * specified configuration including time range filters and statistics options.
  * It handles the creation and configuration of aggregators for collecting
- * TSDB statistics using HyperLogLog++ for efficient cardinality estimation.</p>
+ * TSDB statistics using exact fingerprint counting.</p>
  *
  * <h2>Key Responsibilities:</h2>
  * <ul>
@@ -87,7 +87,7 @@ public class TSDBStatsAggregatorFactory extends AggregatorFactory {
     @Override
     protected boolean supportsConcurrentSegmentSearch() {
         // TSDB stats aggregator supports concurrent segment search
-        // since it uses HLL++ sketches which can be safely merged
+        // since it uses fingerprint sets which can be safely merged
         return true;
     }
 }
