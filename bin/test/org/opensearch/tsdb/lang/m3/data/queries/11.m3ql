@@ -1,0 +1,4 @@
+# semicolon after alias, to validate handle parser mode transition
+# test sort with 2 arguments (current desc)
+a = fetch name:controller_{commit,failed}_response_count region:!{us,eu} | sum | alias total_count | sort current desc;
+a

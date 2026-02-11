@@ -1,0 +1,4 @@
+# test fallbackSeries with constant value (unary)
+fetch name:a
+  | fallbackSeries 1.0
+

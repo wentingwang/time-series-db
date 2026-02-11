@@ -1,0 +1,2 @@
+FALLBACK_SERIES(1.0)
+  FETCH({name=[a]}, !{})

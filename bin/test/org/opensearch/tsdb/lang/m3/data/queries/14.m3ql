@@ -1,0 +1,14 @@
+# test parens after quoted alias for: 'alias "metric)() with parens"'
+fetch name:metric1 | sum
+  | asPercent(
+    (fetch name:metric2
+      | sum
+      | fetch name:metric3     # test dangling functions inside group
+      | avg
+      | (fetch name:metric4
+        | sum | alias "metric)() with parens"
+      )
+      | avg
+    )
+  )
+  | moving 5m min

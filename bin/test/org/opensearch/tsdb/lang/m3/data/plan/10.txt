@@ -1,0 +1,4 @@
+SORT(avg, desc)
+  ALIAS_BY_TAGS(service, region)
+    PER_SECOND
+      FETCH({service=[web-api], name=[requests_total], region=[us-east, us-west]}, !{})

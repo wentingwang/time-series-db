@@ -1,0 +1,16 @@
+ROOT
+  PIPELINE
+    FUNCTION(fetch)
+      TAG_KEY(country)
+        TAG_VALUE(us)
+      TAG_KEY(region, inverted=true)
+        TAG_VALUE(north*)
+    FUNCTION(transformNull)
+      VALUE(0)
+    FUNCTION(fetch)
+      TAG_KEY(state)
+        TAG_VALUE(xyz)
+    FUNCTION(sum)
+    FUNCTION(fetch)
+      TAG_KEY(city)
+        TAG_VALUE(toronto)

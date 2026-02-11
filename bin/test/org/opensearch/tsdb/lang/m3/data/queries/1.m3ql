@@ -1,0 +1,12 @@
+# test comments, quoted tag values, and args
+# test comment at the start
+# test tag filters split over multiple lines, delimited by a new line and a space
+fetch city_name:"San Francisco"
+  host:{"host1","host2"}
+  | sum merchantID  # comment in the middle
+  | transformNull
+  | moving 1m sum
+  | alias "my     # alias" # comment after alias with spaces and #
+  | moving 3h sum  # function after alias, to validate parser mode transition
+  | keepLastValue 2h
+# comment at the end

@@ -1,0 +1,25 @@
+ROOT
+  PIPELINE
+    PIPELINE
+      PIPELINE
+        FUNCTION(fetch)
+          TAG_KEY(name)
+            TAG_VALUE(a)
+      FUNCTION(asPercent)
+        PIPELINE
+          FUNCTION(fetch)
+            TAG_KEY(name)
+              TAG_VALUE(b)
+    FUNCTION(asPercent)
+      PIPELINE
+        PIPELINE
+          FUNCTION(fetch)
+            TAG_KEY(name)
+              TAG_VALUE(c)
+        FUNCTION(asPercent)
+          PIPELINE
+            FUNCTION(fetch)
+              TAG_KEY(name)
+                TAG_VALUE(d)
+    FUNCTION(alias)
+      VALUE(three word alias)

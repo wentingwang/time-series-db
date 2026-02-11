@@ -1,0 +1,177 @@
+# TSDB REST Integration Test - Multi-Index Overlapping Time Windows
+# Tests realistic scenario where data is split across indices with overlapping time windows
+
+test_setup:
+  name: "Multi-Index Overlapping Windows Tests"
+  description: "Validate query correctness when data spans multiple indices with overlapping time periods, simulating real-world data migration scenarios"
+
+  index_configs:
+    - name: "metrics_old_index"
+      shards: 2
+      replicas: 0
+    - name: "metrics_new_index"
+      shards: 2
+      replicas: 0
+
+test_case:
+  name: "Overlapping Time Windows Test"
+
+  input_data_list:
+    # Old Index: Contains data from 00:00 to 00:40 (during 00:20-00:40 overlap, contains alternate timestamps)
+    - index_name: "metrics_old_index"
+      input_data_type: GENERIC
+      metrics:
+        - labels: "name:requests,service:api"
+          data_points:
+            # Exclusive period (00:00 - 00:20): All data in old index
+            - timestamp: "2025-01-01T00:00:00Z"
+              value: 10
+            - timestamp: "2025-01-01T00:05:00Z"
+              value: 20
+            - timestamp: "2025-01-01T00:10:00Z"
+              value: 30
+            - timestamp: "2025-01-01T00:15:00Z"
+              value: 40
+            # Overlapping period (00:20 - 00:40): Alternate timestamps with new index
+            - timestamp: "2025-01-01T00:20:00Z"  # Old index has this
+              value: 50
+            # 00:25 is in new index
+            - timestamp: "2025-01-01T00:30:00Z"  # Old index has this
+              value: 70
+            # 00:35 is in new index
+            - timestamp: "2025-01-01T00:40:00Z"  # Old index has this
+              value: 90
+
+    # New Index: Contains data from 00:20 to 01:00 (during 00:20-00:40 overlap, contains alternate timestamps)
+    - index_name: "metrics_new_index"
+      input_data_type: GENERIC
+      metrics:
+        - labels: "name:requests,service:api"
+          data_points:
+            # Overlapping period (00:20 - 00:40): Alternate timestamps with old index
+            # 00:20 is in old index
+            - timestamp: "2025-01-01T00:25:00Z"  # New index has this
+              value: 60
+            # 00:30 is in old index
+            - timestamp: "2025-01-01T00:35:00Z"  # New index has this
+              value: 80
+            # 00:40 is in old index
+            # Exclusive period (00:45 - 01:00): All data in new index
+            - timestamp: "2025-01-01T00:45:00Z"
+              value: 100
+            - timestamp: "2025-01-01T00:50:00Z"
+              value: 110
+            - timestamp: "2025-01-01T00:55:00Z"
+              value: 120
+            - timestamp: "2025-01-01T01:00:00Z"
+              value: 130
+
+  queries:
+    # Query 1: Fetch with pushdown enabled across overlapping windows
+    - name: "overlapping_windows_fetch_with_pushdown"
+      type: "m3ql"
+      query: "fetch name:requests service:api"
+      indices: "metrics_old_index,metrics_new_index"
+      time_config:
+        min_timestamp: "2025-01-01T00:00:00Z"
+        max_timestamp: "2025-01-01T01:00:00Z"
+        step: "5m"
+      expected:
+        status: "success"
+        data:
+          - metric: {name: "requests", service: "api"}
+            values: [10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120]
+
+    # Query 2: Fetch with pushdown disabled across overlapping windows
+    - name: "overlapping_windows_fetch_without_pushdown"
+      type: "m3ql"
+      query: "fetch name:requests service:api"
+      indices: "metrics_old_index,metrics_new_index"
+      disable_pushdown: true
+      time_config:
+        min_timestamp: "2025-01-01T00:00:00Z"
+        max_timestamp: "2025-01-01T01:00:00Z"
+        step: "5m"
+      expected:
+        status: "success"
+        data:
+          - metric: {name: "requests", service: "api"}
+            values: [10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120]
+
+    # Query 3: Sum aggregation with pushdown enabled
+    - name: "overlapping_windows_sum_with_pushdown"
+      type: "m3ql"
+      query: "fetch name:requests service:api | sum"
+      indices: "metrics_old_index,metrics_new_index"
+      time_config:
+        min_timestamp: "2025-01-01T00:00:00Z"
+        max_timestamp: "2025-01-01T01:00:00Z"
+        step: "5m"
+      expected:
+        status: "success"
+        data:
+          - metric: {}
+            values: [10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120]
+
+    # Query 4: Sum aggregation with pushdown disabled
+    - name: "overlapping_windows_sum_without_pushdown"
+      type: "m3ql"
+      query: "fetch name:requests service:api | sum"
+      indices: "metrics_old_index,metrics_new_index"
+      disable_pushdown: true
+      time_config:
+        min_timestamp: "2025-01-01T00:00:00Z"
+        max_timestamp: "2025-01-01T01:00:00Z"
+        step: "5m"
+      expected:
+        status: "success"
+        data:
+          - metric: {}
+            values: [10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120]
+
+    # Query 5: Query only the overlapping window period
+    - name: "overlapping_period_only_with_pushdown"
+      type: "m3ql"
+      query: "fetch name:requests service:api"
+      indices: "metrics_old_index,metrics_new_index"
+      time_config:
+        min_timestamp: "2025-01-01T00:20:00Z"
+        max_timestamp: "2025-01-01T00:40:00Z"
+        step: "5m"
+      expected:
+        status: "success"
+        data:
+          - metric: {name: "requests", service: "api"}
+            values: [50, 60, 70, 80]
+
+    # Query 6: Query only the overlapping window period without pushdown
+    - name: "overlapping_period_only_without_pushdown"
+      type: "m3ql"
+      query: "fetch name:requests service:api"
+      indices: "metrics_old_index,metrics_new_index"
+      disable_pushdown: true
+      time_config:
+        min_timestamp: "2025-01-01T00:20:00Z"
+        max_timestamp: "2025-01-01T00:40:00Z"
+        step: "5m"
+      expected:
+        status: "success"
+        data:
+          - metric: {name: "requests", service: "api"}
+            values: [50, 60, 70, 80]
+
+    # Query 7: Moving sum with pushdown disabled across overlapping windows
+    - name: "overlapping_windows_moving_sum_with_no_pushdown"
+      type: "m3ql"
+      query: "fetch name:requests service:api | moving 15m sum"
+      indices: "metrics_old_index,metrics_new_index"
+      disable_pushdown: true
+      time_config:
+        min_timestamp: "2025-01-01T00:00:00Z"
+        max_timestamp: "2025-01-01T01:00:00Z"
+        step: "5m"
+      expected:
+        status: "success"
+        data:
+          - metric: {name: "requests", service: "api"}
+            values: [null, 10, 30, 60, 90, 120, 150, 180, 210, 240, 270, 300]

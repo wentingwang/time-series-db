@@ -1,0 +1,5 @@
+SORT(avg, asc)
+  AS_PERCENT(groupBy=[])
+    REMOVE_EMPTY
+      FETCH({name=[a]}, !{})
+    FETCH({name=[b]}, !{})

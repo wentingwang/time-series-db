@@ -1,0 +1,14 @@
+ROOT
+  PIPELINE
+    PIPELINE
+      FUNCTION(fetch)
+        TAG_KEY(name)
+          TAG_ARGS([controller_commit_response_count, controller_failed_response_count])
+        TAG_KEY(region, inverted=true)
+          TAG_ARGS([us, eu])
+      FUNCTION(sum)
+      FUNCTION(alias)
+        VALUE(total_count)
+      FUNCTION(sort)
+        VALUE(current)
+        VALUE(desc)

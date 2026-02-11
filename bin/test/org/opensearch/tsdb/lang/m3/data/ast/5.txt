@@ -1,0 +1,12 @@
+ROOT
+  PIPELINE
+    FUNCTION(fetch)
+      TAG_KEY(service)
+        TAG_VALUE(api-server)
+      TAG_KEY(name)
+        TAG_VALUE(total_leaf_node_latency_histogram)
+    FUNCTION(histogramPercentile)
+      VALUE(bucketid)
+      VALUE(bucket)
+      VALUE(99.0)
+    FUNCTION(sort)

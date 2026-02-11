@@ -1,0 +1,8 @@
+ALIAS(three word alias)
+  AS_PERCENT(groupBy=[])
+    AS_PERCENT(groupBy=[])
+      FETCH({name=[a]}, !{})
+      FETCH({name=[b]}, !{})
+    AS_PERCENT(groupBy=[])
+      FETCH({name=[c]}, !{})
+      FETCH({name=[d]}, !{})

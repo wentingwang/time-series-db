@@ -1,0 +1,15 @@
+ROOT
+  PIPELINE
+    FUNCTION(fetch)
+      TAG_KEY(service)
+        TAG_VALUE(web-api)
+      TAG_KEY(region)
+        TAG_ARGS([us-east, us-west])
+      TAG_KEY(name)
+        TAG_VALUE(requests_total)
+    FUNCTION(perSecond)
+    FUNCTION(aliasByTags)
+      VALUE(service)
+      VALUE(region)
+    FUNCTION(sort)
+      VALUE(avg)

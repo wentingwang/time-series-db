@@ -1,0 +1,3 @@
+SUMMARIZE(7m, SUM, false)
+  MOVING(10m, SUM)
+    FETCH({name=[a]}, !{})

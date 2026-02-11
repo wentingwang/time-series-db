@@ -1,0 +1,377 @@
+2025-10-31 14:50:37.833 [main] INFO    org.jetbrains.bsp.bazel.server.ServerInitializer - Starting server with args: [/Users/wenting.wang/Uber/opensearch-tsdb-internal, /Users/wenting.wang/Uber/opensearch-tsdb-internal/.bsp/projectview.bazelproject, false]
+2025-10-31 14:50:37.834 [main] INFO    org.jetbrains.bsp.bazel.server.ServerInitializer - Initializing server
+2025-10-31 14:50:37.916 [pool-2-thread-1] INFO    org.jetbrains.bsp.bazel.server.bsp.BspRequestsRunner - build/initialize call
+2025-10-31 14:50:37.947 [ForkJoinPool.commonPool-worker-1] INFO    org.jetbrains.bsp.bazel.workspacecontext.WorkspaceContextConstructor - Constructing workspace context for: ProjectView(targets=ProjectViewTargetsSection(values=[@//your/targets/here/...], excludedValues=[]), bazelBinary=ProjectViewBazelBinarySection(value=/Users/wenting.wang/Uber/opensearch-tsdb-internal/tools/bazel), buildFlags=null, allowManualTargetsSync=ProjectViewAllowManualTargetsSyncSection(value=false), directories=null, deriveTargetsFromDirectories=ProjectViewDeriveTargetsFromDirectoriesSection(value=false), importDepth=null, enabledRules=null, ideJavaHomeOverride=null, addTransitiveCompileTimeJars=null, enableNativeAndroidRules=null, androidMinSdkSection=null, shardSync=null, targetShardSize=null, shardingApproach=null).
+2025-10-31 14:50:37.951 [ForkJoinPool.commonPool-worker-1] INFO    org.jetbrains.bsp.bazel.workspacecontext.WorkspaceContextConstructor - Constructing workspace context for: ProjectView(targets=ProjectViewTargetsSection(values=[@//your/targets/here/...], excludedValues=[]), bazelBinary=ProjectViewBazelBinarySection(value=/Users/wenting.wang/Uber/opensearch-tsdb-internal/tools/bazel), buildFlags=null, allowManualTargetsSync=ProjectViewAllowManualTargetsSyncSection(value=false), directories=null, deriveTargetsFromDirectories=ProjectViewDeriveTargetsFromDirectoriesSection(value=false), importDepth=null, enabledRules=null, ideJavaHomeOverride=null, addTransitiveCompileTimeJars=null, enableNativeAndroidRules=null, androidMinSdkSection=null, shardSync=null, targetShardSize=null, shardingApproach=null).
+2025-10-31 14:50:37.951 [ForkJoinPool.commonPool-worker-1] INFO    org.jetbrains.bsp.bazel.workspacecontext.WorkspaceContextConstructor - Constructing workspace context for: ProjectView(targets=ProjectViewTargetsSection(values=[@//your/targets/here/...], excludedValues=[]), bazelBinary=ProjectViewBazelBinarySection(value=/Users/wenting.wang/Uber/opensearch-tsdb-internal/tools/bazel), buildFlags=null, allowManualTargetsSync=ProjectViewAllowManualTargetsSyncSection(value=false), directories=null, deriveTargetsFromDirectories=ProjectViewDeriveTargetsFromDirectoriesSection(value=false), importDepth=null, enabledRules=null, ideJavaHomeOverride=null, addTransitiveCompileTimeJars=null, enableNativeAndroidRules=null, androidMinSdkSection=null, shardSync=null, targetShardSize=null, shardingApproach=null).
+2025-10-31 14:50:37.952 [ForkJoinPool.commonPool-worker-1] INFO    org.jetbrains.bsp.bazel.bazelrunner.BazelRunner - Invoking: '/Users/wenting.wang/Uber/opensearch-tsdb-internal/tools/bazel' 'version' '--tool_tag=bazelbsp:3.2.0-20250106-a42f8bf24-NIGHTLY' '--override_repository=bazelbsp_aspect=/Users/wenting.wang/Uber/opensearch-tsdb-internal/.bazelbsp' '--curses=no' '--color=yes' '--noprogress_in_terminal_title'
+2025-10-31 14:50:38.004 [ForkJoinPool.commonPool-worker-1] ERROR   org.jetbrains.bsp.bazel.server.bsp.BspRequestsRunner - build/initialize call finishing with error
+java.util.concurrent.CompletionException: java.io.IOException: Cannot run program "/Users/wenting.wang/Uber/opensearch-tsdb-internal/tools/bazel" (in directory "/Users/wenting.wang/Uber/opensearch-tsdb-internal"): error=2, No such file or directory
+	at java.base/java.util.concurrent.CompletableFuture.encodeThrowable(CompletableFuture.java:315) [?:?]
+	at java.base/java.util.concurrent.CompletableFuture.completeThrowable(CompletableFuture.java:320) [?:?]
+	at java.base/java.util.concurrent.CompletableFuture$UniApply.tryFire(CompletableFuture.java:649) [?:?]
+	at java.base/java.util.concurrent.CompletableFuture$Completion.exec(CompletableFuture.java:483) [?:?]
+	at java.base/java.util.concurrent.ForkJoinTask.doExec(ForkJoinTask.java:373) [?:?]
+	at java.base/java.util.concurrent.ForkJoinPool$WorkQueue.topLevelExec(ForkJoinPool.java:1182) [?:?]
+	at java.base/java.util.concurrent.ForkJoinPool.scan(ForkJoinPool.java:1655) [?:?]
+	at java.base/java.util.concurrent.ForkJoinPool.runWorker(ForkJoinPool.java:1622) [?:?]
+	at java.base/java.util.concurrent.ForkJoinWorkerThread.run(ForkJoinWorkerThread.java:165) [?:?]
+Caused by: java.io.IOException: Cannot run program "/Users/wenting.wang/Uber/opensearch-tsdb-internal/tools/bazel" (in directory "/Users/wenting.wang/Uber/opensearch-tsdb-internal"): error=2, No such file or directory
+	at java.base/java.lang.ProcessBuilder.start(ProcessBuilder.java:1143) ~[?:?]
+	at java.base/java.lang.ProcessBuilder.start(ProcessBuilder.java:1073) ~[?:?]
+	at org.jetbrains.bsp.bazel.bazelrunner.BazelRunner.runBazelCommand(BazelRunner.kt:144) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at org.jetbrains.bsp.bazel.bazelrunner.BazelRunner.runBazelCommand$default(BazelRunner.kt:124) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at org.jetbrains.bsp.bazel.server.BazelBspServer.verifyBazelVersion(BazelBspServer.kt:286) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at org.jetbrains.bsp.bazel.server.BazelBspServer$buildServer$bspServerApi$1.invoke(BazelBspServer.kt:241) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at org.jetbrains.bsp.bazel.server.BazelBspServer$buildServer$bspServerApi$1.invoke(BazelBspServer.kt:237) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at org.jetbrains.bsp.bazel.server.bsp.BspServerApi.initializeServices(BspServerApi.kt:90) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at org.jetbrains.bsp.bazel.server.bsp.BspServerApi.access$initializeServices(BspServerApi.kt:71) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at org.jetbrains.bsp.bazel.server.bsp.BspServerApi$buildInitialize$1.invoke(BspServerApi.kt:101) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at org.jetbrains.bsp.bazel.server.bsp.BspServerApi$buildInitialize$1.invoke(BspServerApi.kt:98) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at org.jetbrains.bsp.bazel.server.bsp.BspRequestsRunner$runAsync$asyncRequest$1.apply(BspRequestsRunner.kt:82) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at org.jetbrains.bsp.bazel.server.bsp.BspRequestsRunner$runAsync$asyncRequest$1.apply(BspRequestsRunner.kt:81) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at java.base/java.util.concurrent.CompletableFuture$UniApply.tryFire(CompletableFuture.java:646) ~[?:?]
+	... 6 more
+Caused by: java.io.IOException: error=2, No such file or directory
+	at java.base/java.lang.ProcessImpl.forkAndExec(Native Method) ~[?:?]
+	at java.base/java.lang.ProcessImpl.<init>(ProcessImpl.java:314) ~[?:?]
+	at java.base/java.lang.ProcessImpl.start(ProcessImpl.java:244) ~[?:?]
+	at java.base/java.lang.ProcessBuilder.start(ProcessBuilder.java:1110) ~[?:?]
+	at java.base/java.lang.ProcessBuilder.start(ProcessBuilder.java:1073) ~[?:?]
+	at org.jetbrains.bsp.bazel.bazelrunner.BazelRunner.runBazelCommand(BazelRunner.kt:144) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at org.jetbrains.bsp.bazel.bazelrunner.BazelRunner.runBazelCommand$default(BazelRunner.kt:124) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at org.jetbrains.bsp.bazel.server.BazelBspServer.verifyBazelVersion(BazelBspServer.kt:286) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at org.jetbrains.bsp.bazel.server.BazelBspServer$buildServer$bspServerApi$1.invoke(BazelBspServer.kt:241) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at org.jetbrains.bsp.bazel.server.BazelBspServer$buildServer$bspServerApi$1.invoke(BazelBspServer.kt:237) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at org.jetbrains.bsp.bazel.server.bsp.BspServerApi.initializeServices(BspServerApi.kt:90) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at org.jetbrains.bsp.bazel.server.bsp.BspServerApi.access$initializeServices(BspServerApi.kt:71) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at org.jetbrains.bsp.bazel.server.bsp.BspServerApi$buildInitialize$1.invoke(BspServerApi.kt:101) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at org.jetbrains.bsp.bazel.server.bsp.BspServerApi$buildInitialize$1.invoke(BspServerApi.kt:98) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at org.jetbrains.bsp.bazel.server.bsp.BspRequestsRunner$runAsync$asyncRequest$1.apply(BspRequestsRunner.kt:82) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at org.jetbrains.bsp.bazel.server.bsp.BspRequestsRunner$runAsync$asyncRequest$1.apply(BspRequestsRunner.kt:81) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at java.base/java.util.concurrent.CompletableFuture$UniApply.tryFire(CompletableFuture.java:646) ~[?:?]
+	... 6 more
+2025-10-31 15:23:53.370 [main] INFO    org.jetbrains.bsp.bazel.server.ServerInitializer - Server has been initialized
+2025-10-31 15:23:57.321 [main] INFO    org.jetbrains.bsp.bazel.server.ServerInitializer - Starting server with args: [/Users/wenting.wang/Uber/opensearch-tsdb-internal, /Users/wenting.wang/Uber/opensearch-tsdb-internal/.bsp/projectview.bazelproject, false]
+2025-10-31 15:23:57.322 [main] INFO    org.jetbrains.bsp.bazel.server.ServerInitializer - Initializing server
+2025-10-31 15:23:57.455 [pool-2-thread-1] INFO    org.jetbrains.bsp.bazel.server.bsp.BspRequestsRunner - build/initialize call
+2025-10-31 15:23:57.504 [ForkJoinPool.commonPool-worker-1] INFO    org.jetbrains.bsp.bazel.workspacecontext.WorkspaceContextConstructor - Constructing workspace context for: ProjectView(targets=ProjectViewTargetsSection(values=[@//your/targets/here/...], excludedValues=[]), bazelBinary=ProjectViewBazelBinarySection(value=/Users/wenting.wang/Uber/opensearch-tsdb-internal/tools/bazel), buildFlags=null, allowManualTargetsSync=ProjectViewAllowManualTargetsSyncSection(value=false), directories=null, deriveTargetsFromDirectories=ProjectViewDeriveTargetsFromDirectoriesSection(value=false), importDepth=null, enabledRules=null, ideJavaHomeOverride=null, addTransitiveCompileTimeJars=null, enableNativeAndroidRules=null, androidMinSdkSection=null, shardSync=null, targetShardSize=null, shardingApproach=null).
+2025-10-31 15:23:57.509 [ForkJoinPool.commonPool-worker-1] INFO    org.jetbrains.bsp.bazel.workspacecontext.WorkspaceContextConstructor - Constructing workspace context for: ProjectView(targets=ProjectViewTargetsSection(values=[@//your/targets/here/...], excludedValues=[]), bazelBinary=ProjectViewBazelBinarySection(value=/Users/wenting.wang/Uber/opensearch-tsdb-internal/tools/bazel), buildFlags=null, allowManualTargetsSync=ProjectViewAllowManualTargetsSyncSection(value=false), directories=null, deriveTargetsFromDirectories=ProjectViewDeriveTargetsFromDirectoriesSection(value=false), importDepth=null, enabledRules=null, ideJavaHomeOverride=null, addTransitiveCompileTimeJars=null, enableNativeAndroidRules=null, androidMinSdkSection=null, shardSync=null, targetShardSize=null, shardingApproach=null).
+2025-10-31 15:23:57.510 [ForkJoinPool.commonPool-worker-1] INFO    org.jetbrains.bsp.bazel.workspacecontext.WorkspaceContextConstructor - Constructing workspace context for: ProjectView(targets=ProjectViewTargetsSection(values=[@//your/targets/here/...], excludedValues=[]), bazelBinary=ProjectViewBazelBinarySection(value=/Users/wenting.wang/Uber/opensearch-tsdb-internal/tools/bazel), buildFlags=null, allowManualTargetsSync=ProjectViewAllowManualTargetsSyncSection(value=false), directories=null, deriveTargetsFromDirectories=ProjectViewDeriveTargetsFromDirectoriesSection(value=false), importDepth=null, enabledRules=null, ideJavaHomeOverride=null, addTransitiveCompileTimeJars=null, enableNativeAndroidRules=null, androidMinSdkSection=null, shardSync=null, targetShardSize=null, shardingApproach=null).
+2025-10-31 15:23:57.512 [ForkJoinPool.commonPool-worker-1] INFO    org.jetbrains.bsp.bazel.bazelrunner.BazelRunner - Invoking: '/Users/wenting.wang/Uber/opensearch-tsdb-internal/tools/bazel' 'version' '--tool_tag=bazelbsp:3.2.0-20250106-a42f8bf24-NIGHTLY' '--override_repository=bazelbsp_aspect=/Users/wenting.wang/Uber/opensearch-tsdb-internal/.bazelbsp' '--curses=no' '--color=yes' '--noprogress_in_terminal_title'
+2025-10-31 15:23:57.537 [ForkJoinPool.commonPool-worker-1] ERROR   org.jetbrains.bsp.bazel.server.bsp.BspRequestsRunner - build/initialize call finishing with error
+java.util.concurrent.CompletionException: java.io.IOException: Cannot run program "/Users/wenting.wang/Uber/opensearch-tsdb-internal/tools/bazel" (in directory "/Users/wenting.wang/Uber/opensearch-tsdb-internal"): error=2, No such file or directory
+	at java.base/java.util.concurrent.CompletableFuture.encodeThrowable(CompletableFuture.java:315) [?:?]
+	at java.base/java.util.concurrent.CompletableFuture.completeThrowable(CompletableFuture.java:320) [?:?]
+	at java.base/java.util.concurrent.CompletableFuture$UniApply.tryFire(CompletableFuture.java:649) [?:?]
+	at java.base/java.util.concurrent.CompletableFuture$Completion.exec(CompletableFuture.java:483) [?:?]
+	at java.base/java.util.concurrent.ForkJoinTask.doExec(ForkJoinTask.java:373) [?:?]
+	at java.base/java.util.concurrent.ForkJoinPool$WorkQueue.topLevelExec(ForkJoinPool.java:1182) [?:?]
+	at java.base/java.util.concurrent.ForkJoinPool.scan(ForkJoinPool.java:1655) [?:?]
+	at java.base/java.util.concurrent.ForkJoinPool.runWorker(ForkJoinPool.java:1622) [?:?]
+	at java.base/java.util.concurrent.ForkJoinWorkerThread.run(ForkJoinWorkerThread.java:165) [?:?]
+Caused by: java.io.IOException: Cannot run program "/Users/wenting.wang/Uber/opensearch-tsdb-internal/tools/bazel" (in directory "/Users/wenting.wang/Uber/opensearch-tsdb-internal"): error=2, No such file or directory
+	at java.base/java.lang.ProcessBuilder.start(ProcessBuilder.java:1143) ~[?:?]
+	at java.base/java.lang.ProcessBuilder.start(ProcessBuilder.java:1073) ~[?:?]
+	at org.jetbrains.bsp.bazel.bazelrunner.BazelRunner.runBazelCommand(BazelRunner.kt:144) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at org.jetbrains.bsp.bazel.bazelrunner.BazelRunner.runBazelCommand$default(BazelRunner.kt:124) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at org.jetbrains.bsp.bazel.server.BazelBspServer.verifyBazelVersion(BazelBspServer.kt:286) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at org.jetbrains.bsp.bazel.server.BazelBspServer$buildServer$bspServerApi$1.invoke(BazelBspServer.kt:241) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at org.jetbrains.bsp.bazel.server.BazelBspServer$buildServer$bspServerApi$1.invoke(BazelBspServer.kt:237) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at org.jetbrains.bsp.bazel.server.bsp.BspServerApi.initializeServices(BspServerApi.kt:90) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at org.jetbrains.bsp.bazel.server.bsp.BspServerApi.access$initializeServices(BspServerApi.kt:71) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at org.jetbrains.bsp.bazel.server.bsp.BspServerApi$buildInitialize$1.invoke(BspServerApi.kt:101) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at org.jetbrains.bsp.bazel.server.bsp.BspServerApi$buildInitialize$1.invoke(BspServerApi.kt:98) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at org.jetbrains.bsp.bazel.server.bsp.BspRequestsRunner$runAsync$asyncRequest$1.apply(BspRequestsRunner.kt:82) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at org.jetbrains.bsp.bazel.server.bsp.BspRequestsRunner$runAsync$asyncRequest$1.apply(BspRequestsRunner.kt:81) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at java.base/java.util.concurrent.CompletableFuture$UniApply.tryFire(CompletableFuture.java:646) ~[?:?]
+	... 6 more
+Caused by: java.io.IOException: error=2, No such file or directory
+	at java.base/java.lang.ProcessImpl.forkAndExec(Native Method) ~[?:?]
+	at java.base/java.lang.ProcessImpl.<init>(ProcessImpl.java:314) ~[?:?]
+	at java.base/java.lang.ProcessImpl.start(ProcessImpl.java:244) ~[?:?]
+	at java.base/java.lang.ProcessBuilder.start(ProcessBuilder.java:1110) ~[?:?]
+	at java.base/java.lang.ProcessBuilder.start(ProcessBuilder.java:1073) ~[?:?]
+	at org.jetbrains.bsp.bazel.bazelrunner.BazelRunner.runBazelCommand(BazelRunner.kt:144) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at org.jetbrains.bsp.bazel.bazelrunner.BazelRunner.runBazelCommand$default(BazelRunner.kt:124) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at org.jetbrains.bsp.bazel.server.BazelBspServer.verifyBazelVersion(BazelBspServer.kt:286) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at org.jetbrains.bsp.bazel.server.BazelBspServer$buildServer$bspServerApi$1.invoke(BazelBspServer.kt:241) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at org.jetbrains.bsp.bazel.server.BazelBspServer$buildServer$bspServerApi$1.invoke(BazelBspServer.kt:237) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at org.jetbrains.bsp.bazel.server.bsp.BspServerApi.initializeServices(BspServerApi.kt:90) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at org.jetbrains.bsp.bazel.server.bsp.BspServerApi.access$initializeServices(BspServerApi.kt:71) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at org.jetbrains.bsp.bazel.server.bsp.BspServerApi$buildInitialize$1.invoke(BspServerApi.kt:101) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at org.jetbrains.bsp.bazel.server.bsp.BspServerApi$buildInitialize$1.invoke(BspServerApi.kt:98) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at org.jetbrains.bsp.bazel.server.bsp.BspRequestsRunner$runAsync$asyncRequest$1.apply(BspRequestsRunner.kt:82) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at org.jetbrains.bsp.bazel.server.bsp.BspRequestsRunner$runAsync$asyncRequest$1.apply(BspRequestsRunner.kt:81) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at java.base/java.util.concurrent.CompletableFuture$UniApply.tryFire(CompletableFuture.java:646) ~[?:?]
+	... 6 more
+2025-10-31 15:30:28.798 [main] INFO    org.jetbrains.bsp.bazel.server.ServerInitializer - Starting server with args: [/Users/wenting.wang/Uber/opensearch-tsdb-internal, /Users/wenting.wang/Uber/opensearch-tsdb-internal/.bsp/projectview.bazelproject, false]
+2025-10-31 15:30:28.799 [main] INFO    org.jetbrains.bsp.bazel.server.ServerInitializer - Initializing server
+2025-10-31 15:30:28.978 [pool-2-thread-1] INFO    org.jetbrains.bsp.bazel.server.bsp.BspRequestsRunner - build/initialize call
+2025-10-31 15:30:29.065 [ForkJoinPool.commonPool-worker-1] INFO    org.jetbrains.bsp.bazel.workspacecontext.WorkspaceContextConstructor - Constructing workspace context for: ProjectView(targets=ProjectViewTargetsSection(values=[@//your/targets/here/...], excludedValues=[]), bazelBinary=ProjectViewBazelBinarySection(value=/Users/wenting.wang/Uber/opensearch-tsdb-internal/tools/bazel), buildFlags=null, allowManualTargetsSync=ProjectViewAllowManualTargetsSyncSection(value=false), directories=null, deriveTargetsFromDirectories=ProjectViewDeriveTargetsFromDirectoriesSection(value=false), importDepth=null, enabledRules=null, ideJavaHomeOverride=null, addTransitiveCompileTimeJars=null, enableNativeAndroidRules=null, androidMinSdkSection=null, shardSync=null, targetShardSize=null, shardingApproach=null).
+2025-10-31 15:30:29.071 [ForkJoinPool.commonPool-worker-1] INFO    org.jetbrains.bsp.bazel.workspacecontext.WorkspaceContextConstructor - Constructing workspace context for: ProjectView(targets=ProjectViewTargetsSection(values=[@//your/targets/here/...], excludedValues=[]), bazelBinary=ProjectViewBazelBinarySection(value=/Users/wenting.wang/Uber/opensearch-tsdb-internal/tools/bazel), buildFlags=null, allowManualTargetsSync=ProjectViewAllowManualTargetsSyncSection(value=false), directories=null, deriveTargetsFromDirectories=ProjectViewDeriveTargetsFromDirectoriesSection(value=false), importDepth=null, enabledRules=null, ideJavaHomeOverride=null, addTransitiveCompileTimeJars=null, enableNativeAndroidRules=null, androidMinSdkSection=null, shardSync=null, targetShardSize=null, shardingApproach=null).
+2025-10-31 15:30:29.072 [ForkJoinPool.commonPool-worker-1] INFO    org.jetbrains.bsp.bazel.workspacecontext.WorkspaceContextConstructor - Constructing workspace context for: ProjectView(targets=ProjectViewTargetsSection(values=[@//your/targets/here/...], excludedValues=[]), bazelBinary=ProjectViewBazelBinarySection(value=/Users/wenting.wang/Uber/opensearch-tsdb-internal/tools/bazel), buildFlags=null, allowManualTargetsSync=ProjectViewAllowManualTargetsSyncSection(value=false), directories=null, deriveTargetsFromDirectories=ProjectViewDeriveTargetsFromDirectoriesSection(value=false), importDepth=null, enabledRules=null, ideJavaHomeOverride=null, addTransitiveCompileTimeJars=null, enableNativeAndroidRules=null, androidMinSdkSection=null, shardSync=null, targetShardSize=null, shardingApproach=null).
+2025-10-31 15:30:29.075 [ForkJoinPool.commonPool-worker-1] INFO    org.jetbrains.bsp.bazel.bazelrunner.BazelRunner - Invoking: '/Users/wenting.wang/Uber/opensearch-tsdb-internal/tools/bazel' 'version' '--tool_tag=bazelbsp:3.2.0-20250106-a42f8bf24-NIGHTLY' '--override_repository=bazelbsp_aspect=/Users/wenting.wang/Uber/opensearch-tsdb-internal/.bazelbsp' '--curses=no' '--color=yes' '--noprogress_in_terminal_title'
+2025-10-31 15:30:29.088 [ForkJoinPool.commonPool-worker-1] ERROR   org.jetbrains.bsp.bazel.server.bsp.BspRequestsRunner - build/initialize call finishing with error
+java.util.concurrent.CompletionException: java.io.IOException: Cannot run program "/Users/wenting.wang/Uber/opensearch-tsdb-internal/tools/bazel" (in directory "/Users/wenting.wang/Uber/opensearch-tsdb-internal"): error=2, No such file or directory
+	at java.base/java.util.concurrent.CompletableFuture.encodeThrowable(CompletableFuture.java:315) [?:?]
+	at java.base/java.util.concurrent.CompletableFuture.completeThrowable(CompletableFuture.java:320) [?:?]
+	at java.base/java.util.concurrent.CompletableFuture$UniApply.tryFire(CompletableFuture.java:649) [?:?]
+	at java.base/java.util.concurrent.CompletableFuture$Completion.exec(CompletableFuture.java:483) [?:?]
+	at java.base/java.util.concurrent.ForkJoinTask.doExec(ForkJoinTask.java:373) [?:?]
+	at java.base/java.util.concurrent.ForkJoinPool$WorkQueue.topLevelExec(ForkJoinPool.java:1182) [?:?]
+	at java.base/java.util.concurrent.ForkJoinPool.scan(ForkJoinPool.java:1655) [?:?]
+	at java.base/java.util.concurrent.ForkJoinPool.runWorker(ForkJoinPool.java:1622) [?:?]
+	at java.base/java.util.concurrent.ForkJoinWorkerThread.run(ForkJoinWorkerThread.java:165) [?:?]
+Caused by: java.io.IOException: Cannot run program "/Users/wenting.wang/Uber/opensearch-tsdb-internal/tools/bazel" (in directory "/Users/wenting.wang/Uber/opensearch-tsdb-internal"): error=2, No such file or directory
+	at java.base/java.lang.ProcessBuilder.start(ProcessBuilder.java:1143) ~[?:?]
+	at java.base/java.lang.ProcessBuilder.start(ProcessBuilder.java:1073) ~[?:?]
+	at org.jetbrains.bsp.bazel.bazelrunner.BazelRunner.runBazelCommand(BazelRunner.kt:144) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at org.jetbrains.bsp.bazel.bazelrunner.BazelRunner.runBazelCommand$default(BazelRunner.kt:124) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at org.jetbrains.bsp.bazel.server.BazelBspServer.verifyBazelVersion(BazelBspServer.kt:286) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at org.jetbrains.bsp.bazel.server.BazelBspServer$buildServer$bspServerApi$1.invoke(BazelBspServer.kt:241) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at org.jetbrains.bsp.bazel.server.BazelBspServer$buildServer$bspServerApi$1.invoke(BazelBspServer.kt:237) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at org.jetbrains.bsp.bazel.server.bsp.BspServerApi.initializeServices(BspServerApi.kt:90) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at org.jetbrains.bsp.bazel.server.bsp.BspServerApi.access$initializeServices(BspServerApi.kt:71) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at org.jetbrains.bsp.bazel.server.bsp.BspServerApi$buildInitialize$1.invoke(BspServerApi.kt:101) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at org.jetbrains.bsp.bazel.server.bsp.BspServerApi$buildInitialize$1.invoke(BspServerApi.kt:98) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at org.jetbrains.bsp.bazel.server.bsp.BspRequestsRunner$runAsync$asyncRequest$1.apply(BspRequestsRunner.kt:82) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at org.jetbrains.bsp.bazel.server.bsp.BspRequestsRunner$runAsync$asyncRequest$1.apply(BspRequestsRunner.kt:81) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at java.base/java.util.concurrent.CompletableFuture$UniApply.tryFire(CompletableFuture.java:646) ~[?:?]
+	... 6 more
+Caused by: java.io.IOException: error=2, No such file or directory
+	at java.base/java.lang.ProcessImpl.forkAndExec(Native Method) ~[?:?]
+	at java.base/java.lang.ProcessImpl.<init>(ProcessImpl.java:314) ~[?:?]
+	at java.base/java.lang.ProcessImpl.start(ProcessImpl.java:244) ~[?:?]
+	at java.base/java.lang.ProcessBuilder.start(ProcessBuilder.java:1110) ~[?:?]
+	at java.base/java.lang.ProcessBuilder.start(ProcessBuilder.java:1073) ~[?:?]
+	at org.jetbrains.bsp.bazel.bazelrunner.BazelRunner.runBazelCommand(BazelRunner.kt:144) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at org.jetbrains.bsp.bazel.bazelrunner.BazelRunner.runBazelCommand$default(BazelRunner.kt:124) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at org.jetbrains.bsp.bazel.server.BazelBspServer.verifyBazelVersion(BazelBspServer.kt:286) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at org.jetbrains.bsp.bazel.server.BazelBspServer$buildServer$bspServerApi$1.invoke(BazelBspServer.kt:241) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at org.jetbrains.bsp.bazel.server.BazelBspServer$buildServer$bspServerApi$1.invoke(BazelBspServer.kt:237) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at org.jetbrains.bsp.bazel.server.bsp.BspServerApi.initializeServices(BspServerApi.kt:90) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at org.jetbrains.bsp.bazel.server.bsp.BspServerApi.access$initializeServices(BspServerApi.kt:71) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at org.jetbrains.bsp.bazel.server.bsp.BspServerApi$buildInitialize$1.invoke(BspServerApi.kt:101) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at org.jetbrains.bsp.bazel.server.bsp.BspServerApi$buildInitialize$1.invoke(BspServerApi.kt:98) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at org.jetbrains.bsp.bazel.server.bsp.BspRequestsRunner$runAsync$asyncRequest$1.apply(BspRequestsRunner.kt:82) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at org.jetbrains.bsp.bazel.server.bsp.BspRequestsRunner$runAsync$asyncRequest$1.apply(BspRequestsRunner.kt:81) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at java.base/java.util.concurrent.CompletableFuture$UniApply.tryFire(CompletableFuture.java:646) ~[?:?]
+	... 6 more
+2025-10-31 15:30:29.948 [main] INFO    org.jetbrains.bsp.bazel.server.ServerInitializer - Server has been initialized
+2025-10-31 15:32:43.556 [main] INFO    org.jetbrains.bsp.bazel.server.ServerInitializer - Starting server with args: [/Users/wenting.wang/Uber/opensearch-tsdb-internal, /Users/wenting.wang/Uber/opensearch-tsdb-internal/.bsp/projectview.bazelproject, false]
+2025-10-31 15:32:43.573 [main] INFO    org.jetbrains.bsp.bazel.server.ServerInitializer - Initializing server
+2025-10-31 15:32:43.690 [pool-2-thread-1] INFO    org.jetbrains.bsp.bazel.server.bsp.BspRequestsRunner - build/initialize call
+2025-10-31 15:32:43.737 [ForkJoinPool.commonPool-worker-1] INFO    org.jetbrains.bsp.bazel.workspacecontext.WorkspaceContextConstructor - Constructing workspace context for: ProjectView(targets=ProjectViewTargetsSection(values=[@//your/targets/here/...], excludedValues=[]), bazelBinary=ProjectViewBazelBinarySection(value=/Users/wenting.wang/Uber/opensearch-tsdb-internal/tools/bazel), buildFlags=null, allowManualTargetsSync=ProjectViewAllowManualTargetsSyncSection(value=false), directories=null, deriveTargetsFromDirectories=ProjectViewDeriveTargetsFromDirectoriesSection(value=false), importDepth=null, enabledRules=null, ideJavaHomeOverride=null, addTransitiveCompileTimeJars=null, enableNativeAndroidRules=null, androidMinSdkSection=null, shardSync=null, targetShardSize=null, shardingApproach=null).
+2025-10-31 15:32:43.741 [ForkJoinPool.commonPool-worker-1] INFO    org.jetbrains.bsp.bazel.workspacecontext.WorkspaceContextConstructor - Constructing workspace context for: ProjectView(targets=ProjectViewTargetsSection(values=[@//your/targets/here/...], excludedValues=[]), bazelBinary=ProjectViewBazelBinarySection(value=/Users/wenting.wang/Uber/opensearch-tsdb-internal/tools/bazel), buildFlags=null, allowManualTargetsSync=ProjectViewAllowManualTargetsSyncSection(value=false), directories=null, deriveTargetsFromDirectories=ProjectViewDeriveTargetsFromDirectoriesSection(value=false), importDepth=null, enabledRules=null, ideJavaHomeOverride=null, addTransitiveCompileTimeJars=null, enableNativeAndroidRules=null, androidMinSdkSection=null, shardSync=null, targetShardSize=null, shardingApproach=null).
+2025-10-31 15:32:43.742 [ForkJoinPool.commonPool-worker-1] INFO    org.jetbrains.bsp.bazel.workspacecontext.WorkspaceContextConstructor - Constructing workspace context for: ProjectView(targets=ProjectViewTargetsSection(values=[@//your/targets/here/...], excludedValues=[]), bazelBinary=ProjectViewBazelBinarySection(value=/Users/wenting.wang/Uber/opensearch-tsdb-internal/tools/bazel), buildFlags=null, allowManualTargetsSync=ProjectViewAllowManualTargetsSyncSection(value=false), directories=null, deriveTargetsFromDirectories=ProjectViewDeriveTargetsFromDirectoriesSection(value=false), importDepth=null, enabledRules=null, ideJavaHomeOverride=null, addTransitiveCompileTimeJars=null, enableNativeAndroidRules=null, androidMinSdkSection=null, shardSync=null, targetShardSize=null, shardingApproach=null).
+2025-10-31 15:32:43.743 [ForkJoinPool.commonPool-worker-1] INFO    org.jetbrains.bsp.bazel.bazelrunner.BazelRunner - Invoking: '/Users/wenting.wang/Uber/opensearch-tsdb-internal/tools/bazel' 'version' '--tool_tag=bazelbsp:3.2.0-20250106-a42f8bf24-NIGHTLY' '--override_repository=bazelbsp_aspect=/Users/wenting.wang/Uber/opensearch-tsdb-internal/.bazelbsp' '--curses=no' '--color=yes' '--noprogress_in_terminal_title'
+2025-10-31 15:32:43.754 [ForkJoinPool.commonPool-worker-1] ERROR   org.jetbrains.bsp.bazel.server.bsp.BspRequestsRunner - build/initialize call finishing with error
+java.util.concurrent.CompletionException: java.io.IOException: Cannot run program "/Users/wenting.wang/Uber/opensearch-tsdb-internal/tools/bazel" (in directory "/Users/wenting.wang/Uber/opensearch-tsdb-internal"): error=2, No such file or directory
+	at java.base/java.util.concurrent.CompletableFuture.encodeThrowable(CompletableFuture.java:315) [?:?]
+	at java.base/java.util.concurrent.CompletableFuture.completeThrowable(CompletableFuture.java:320) [?:?]
+	at java.base/java.util.concurrent.CompletableFuture$UniApply.tryFire(CompletableFuture.java:649) [?:?]
+	at java.base/java.util.concurrent.CompletableFuture$Completion.exec(CompletableFuture.java:483) [?:?]
+	at java.base/java.util.concurrent.ForkJoinTask.doExec(ForkJoinTask.java:373) [?:?]
+	at java.base/java.util.concurrent.ForkJoinPool$WorkQueue.topLevelExec(ForkJoinPool.java:1182) [?:?]
+	at java.base/java.util.concurrent.ForkJoinPool.scan(ForkJoinPool.java:1655) [?:?]
+	at java.base/java.util.concurrent.ForkJoinPool.runWorker(ForkJoinPool.java:1622) [?:?]
+	at java.base/java.util.concurrent.ForkJoinWorkerThread.run(ForkJoinWorkerThread.java:165) [?:?]
+Caused by: java.io.IOException: Cannot run program "/Users/wenting.wang/Uber/opensearch-tsdb-internal/tools/bazel" (in directory "/Users/wenting.wang/Uber/opensearch-tsdb-internal"): error=2, No such file or directory
+	at java.base/java.lang.ProcessBuilder.start(ProcessBuilder.java:1143) ~[?:?]
+	at java.base/java.lang.ProcessBuilder.start(ProcessBuilder.java:1073) ~[?:?]
+	at org.jetbrains.bsp.bazel.bazelrunner.BazelRunner.runBazelCommand(BazelRunner.kt:144) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at org.jetbrains.bsp.bazel.bazelrunner.BazelRunner.runBazelCommand$default(BazelRunner.kt:124) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at org.jetbrains.bsp.bazel.server.BazelBspServer.verifyBazelVersion(BazelBspServer.kt:286) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at org.jetbrains.bsp.bazel.server.BazelBspServer$buildServer$bspServerApi$1.invoke(BazelBspServer.kt:241) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at org.jetbrains.bsp.bazel.server.BazelBspServer$buildServer$bspServerApi$1.invoke(BazelBspServer.kt:237) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at org.jetbrains.bsp.bazel.server.bsp.BspServerApi.initializeServices(BspServerApi.kt:90) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at org.jetbrains.bsp.bazel.server.bsp.BspServerApi.access$initializeServices(BspServerApi.kt:71) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at org.jetbrains.bsp.bazel.server.bsp.BspServerApi$buildInitialize$1.invoke(BspServerApi.kt:101) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at org.jetbrains.bsp.bazel.server.bsp.BspServerApi$buildInitialize$1.invoke(BspServerApi.kt:98) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at org.jetbrains.bsp.bazel.server.bsp.BspRequestsRunner$runAsync$asyncRequest$1.apply(BspRequestsRunner.kt:82) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at org.jetbrains.bsp.bazel.server.bsp.BspRequestsRunner$runAsync$asyncRequest$1.apply(BspRequestsRunner.kt:81) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at java.base/java.util.concurrent.CompletableFuture$UniApply.tryFire(CompletableFuture.java:646) ~[?:?]
+	... 6 more
+Caused by: java.io.IOException: error=2, No such file or directory
+	at java.base/java.lang.ProcessImpl.forkAndExec(Native Method) ~[?:?]
+	at java.base/java.lang.ProcessImpl.<init>(ProcessImpl.java:314) ~[?:?]
+	at java.base/java.lang.ProcessImpl.start(ProcessImpl.java:244) ~[?:?]
+	at java.base/java.lang.ProcessBuilder.start(ProcessBuilder.java:1110) ~[?:?]
+	at java.base/java.lang.ProcessBuilder.start(ProcessBuilder.java:1073) ~[?:?]
+	at org.jetbrains.bsp.bazel.bazelrunner.BazelRunner.runBazelCommand(BazelRunner.kt:144) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at org.jetbrains.bsp.bazel.bazelrunner.BazelRunner.runBazelCommand$default(BazelRunner.kt:124) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at org.jetbrains.bsp.bazel.server.BazelBspServer.verifyBazelVersion(BazelBspServer.kt:286) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at org.jetbrains.bsp.bazel.server.BazelBspServer$buildServer$bspServerApi$1.invoke(BazelBspServer.kt:241) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at org.jetbrains.bsp.bazel.server.BazelBspServer$buildServer$bspServerApi$1.invoke(BazelBspServer.kt:237) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at org.jetbrains.bsp.bazel.server.bsp.BspServerApi.initializeServices(BspServerApi.kt:90) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at org.jetbrains.bsp.bazel.server.bsp.BspServerApi.access$initializeServices(BspServerApi.kt:71) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at org.jetbrains.bsp.bazel.server.bsp.BspServerApi$buildInitialize$1.invoke(BspServerApi.kt:101) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at org.jetbrains.bsp.bazel.server.bsp.BspServerApi$buildInitialize$1.invoke(BspServerApi.kt:98) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at org.jetbrains.bsp.bazel.server.bsp.BspRequestsRunner$runAsync$asyncRequest$1.apply(BspRequestsRunner.kt:82) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at org.jetbrains.bsp.bazel.server.bsp.BspRequestsRunner$runAsync$asyncRequest$1.apply(BspRequestsRunner.kt:81) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at java.base/java.util.concurrent.CompletableFuture$UniApply.tryFire(CompletableFuture.java:646) ~[?:?]
+	... 6 more
+2025-10-31 15:32:44.331 [main] INFO    org.jetbrains.bsp.bazel.server.ServerInitializer - Server has been initialized
+2025-10-31 15:42:45.780 [main] INFO    org.jetbrains.bsp.bazel.server.ServerInitializer - Server has been initialized
+2025-10-31 15:43:59.530 [main] INFO    org.jetbrains.bsp.bazel.server.ServerInitializer - Starting server with args: [/Users/wenting.wang/Uber/opensearch-tsdb-internal, /Users/wenting.wang/Uber/opensearch-tsdb-internal/.bsp/projectview.bazelproject, false]
+2025-10-31 15:43:59.531 [main] INFO    org.jetbrains.bsp.bazel.server.ServerInitializer - Initializing server
+2025-10-31 15:43:59.685 [pool-2-thread-1] INFO    org.jetbrains.bsp.bazel.server.bsp.BspRequestsRunner - build/initialize call
+2025-10-31 15:43:59.727 [ForkJoinPool.commonPool-worker-1] INFO    org.jetbrains.bsp.bazel.workspacecontext.WorkspaceContextConstructor - Constructing workspace context for: ProjectView(targets=ProjectViewTargetsSection(values=[@//your/targets/here/...], excludedValues=[]), bazelBinary=ProjectViewBazelBinarySection(value=/Users/wenting.wang/Uber/opensearch-tsdb-internal/tools/bazel), buildFlags=null, allowManualTargetsSync=ProjectViewAllowManualTargetsSyncSection(value=false), directories=null, deriveTargetsFromDirectories=ProjectViewDeriveTargetsFromDirectoriesSection(value=false), importDepth=null, enabledRules=null, ideJavaHomeOverride=null, addTransitiveCompileTimeJars=null, enableNativeAndroidRules=null, androidMinSdkSection=null, shardSync=null, targetShardSize=null, shardingApproach=null).
+2025-10-31 15:43:59.731 [ForkJoinPool.commonPool-worker-1] INFO    org.jetbrains.bsp.bazel.workspacecontext.WorkspaceContextConstructor - Constructing workspace context for: ProjectView(targets=ProjectViewTargetsSection(values=[@//your/targets/here/...], excludedValues=[]), bazelBinary=ProjectViewBazelBinarySection(value=/Users/wenting.wang/Uber/opensearch-tsdb-internal/tools/bazel), buildFlags=null, allowManualTargetsSync=ProjectViewAllowManualTargetsSyncSection(value=false), directories=null, deriveTargetsFromDirectories=ProjectViewDeriveTargetsFromDirectoriesSection(value=false), importDepth=null, enabledRules=null, ideJavaHomeOverride=null, addTransitiveCompileTimeJars=null, enableNativeAndroidRules=null, androidMinSdkSection=null, shardSync=null, targetShardSize=null, shardingApproach=null).
+2025-10-31 15:43:59.731 [ForkJoinPool.commonPool-worker-1] INFO    org.jetbrains.bsp.bazel.workspacecontext.WorkspaceContextConstructor - Constructing workspace context for: ProjectView(targets=ProjectViewTargetsSection(values=[@//your/targets/here/...], excludedValues=[]), bazelBinary=ProjectViewBazelBinarySection(value=/Users/wenting.wang/Uber/opensearch-tsdb-internal/tools/bazel), buildFlags=null, allowManualTargetsSync=ProjectViewAllowManualTargetsSyncSection(value=false), directories=null, deriveTargetsFromDirectories=ProjectViewDeriveTargetsFromDirectoriesSection(value=false), importDepth=null, enabledRules=null, ideJavaHomeOverride=null, addTransitiveCompileTimeJars=null, enableNativeAndroidRules=null, androidMinSdkSection=null, shardSync=null, targetShardSize=null, shardingApproach=null).
+2025-10-31 15:43:59.732 [ForkJoinPool.commonPool-worker-1] INFO    org.jetbrains.bsp.bazel.bazelrunner.BazelRunner - Invoking: '/Users/wenting.wang/Uber/opensearch-tsdb-internal/tools/bazel' 'version' '--tool_tag=bazelbsp:3.2.0-20250106-a42f8bf24-NIGHTLY' '--override_repository=bazelbsp_aspect=/Users/wenting.wang/Uber/opensearch-tsdb-internal/.bazelbsp' '--curses=no' '--color=yes' '--noprogress_in_terminal_title'
+2025-10-31 15:43:59.741 [ForkJoinPool.commonPool-worker-1] ERROR   org.jetbrains.bsp.bazel.server.bsp.BspRequestsRunner - build/initialize call finishing with error
+java.util.concurrent.CompletionException: java.io.IOException: Cannot run program "/Users/wenting.wang/Uber/opensearch-tsdb-internal/tools/bazel" (in directory "/Users/wenting.wang/Uber/opensearch-tsdb-internal"): error=2, No such file or directory
+	at java.base/java.util.concurrent.CompletableFuture.encodeThrowable(CompletableFuture.java:315) [?:?]
+	at java.base/java.util.concurrent.CompletableFuture.completeThrowable(CompletableFuture.java:320) [?:?]
+	at java.base/java.util.concurrent.CompletableFuture$UniApply.tryFire(CompletableFuture.java:649) [?:?]
+	at java.base/java.util.concurrent.CompletableFuture$Completion.exec(CompletableFuture.java:483) [?:?]
+	at java.base/java.util.concurrent.ForkJoinTask.doExec(ForkJoinTask.java:373) [?:?]
+	at java.base/java.util.concurrent.ForkJoinPool$WorkQueue.topLevelExec(ForkJoinPool.java:1182) [?:?]
+	at java.base/java.util.concurrent.ForkJoinPool.scan(ForkJoinPool.java:1655) [?:?]
+	at java.base/java.util.concurrent.ForkJoinPool.runWorker(ForkJoinPool.java:1622) [?:?]
+	at java.base/java.util.concurrent.ForkJoinWorkerThread.run(ForkJoinWorkerThread.java:165) [?:?]
+Caused by: java.io.IOException: Cannot run program "/Users/wenting.wang/Uber/opensearch-tsdb-internal/tools/bazel" (in directory "/Users/wenting.wang/Uber/opensearch-tsdb-internal"): error=2, No such file or directory
+	at java.base/java.lang.ProcessBuilder.start(ProcessBuilder.java:1143) ~[?:?]
+	at java.base/java.lang.ProcessBuilder.start(ProcessBuilder.java:1073) ~[?:?]
+	at org.jetbrains.bsp.bazel.bazelrunner.BazelRunner.runBazelCommand(BazelRunner.kt:144) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at org.jetbrains.bsp.bazel.bazelrunner.BazelRunner.runBazelCommand$default(BazelRunner.kt:124) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at org.jetbrains.bsp.bazel.server.BazelBspServer.verifyBazelVersion(BazelBspServer.kt:286) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at org.jetbrains.bsp.bazel.server.BazelBspServer$buildServer$bspServerApi$1.invoke(BazelBspServer.kt:241) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at org.jetbrains.bsp.bazel.server.BazelBspServer$buildServer$bspServerApi$1.invoke(BazelBspServer.kt:237) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at org.jetbrains.bsp.bazel.server.bsp.BspServerApi.initializeServices(BspServerApi.kt:90) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at org.jetbrains.bsp.bazel.server.bsp.BspServerApi.access$initializeServices(BspServerApi.kt:71) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at org.jetbrains.bsp.bazel.server.bsp.BspServerApi$buildInitialize$1.invoke(BspServerApi.kt:101) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at org.jetbrains.bsp.bazel.server.bsp.BspServerApi$buildInitialize$1.invoke(BspServerApi.kt:98) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at org.jetbrains.bsp.bazel.server.bsp.BspRequestsRunner$runAsync$asyncRequest$1.apply(BspRequestsRunner.kt:82) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at org.jetbrains.bsp.bazel.server.bsp.BspRequestsRunner$runAsync$asyncRequest$1.apply(BspRequestsRunner.kt:81) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at java.base/java.util.concurrent.CompletableFuture$UniApply.tryFire(CompletableFuture.java:646) ~[?:?]
+	... 6 more
+Caused by: java.io.IOException: error=2, No such file or directory
+	at java.base/java.lang.ProcessImpl.forkAndExec(Native Method) ~[?:?]
+	at java.base/java.lang.ProcessImpl.<init>(ProcessImpl.java:314) ~[?:?]
+	at java.base/java.lang.ProcessImpl.start(ProcessImpl.java:244) ~[?:?]
+	at java.base/java.lang.ProcessBuilder.start(ProcessBuilder.java:1110) ~[?:?]
+	at java.base/java.lang.ProcessBuilder.start(ProcessBuilder.java:1073) ~[?:?]
+	at org.jetbrains.bsp.bazel.bazelrunner.BazelRunner.runBazelCommand(BazelRunner.kt:144) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at org.jetbrains.bsp.bazel.bazelrunner.BazelRunner.runBazelCommand$default(BazelRunner.kt:124) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at org.jetbrains.bsp.bazel.server.BazelBspServer.verifyBazelVersion(BazelBspServer.kt:286) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at org.jetbrains.bsp.bazel.server.BazelBspServer$buildServer$bspServerApi$1.invoke(BazelBspServer.kt:241) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at org.jetbrains.bsp.bazel.server.BazelBspServer$buildServer$bspServerApi$1.invoke(BazelBspServer.kt:237) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at org.jetbrains.bsp.bazel.server.bsp.BspServerApi.initializeServices(BspServerApi.kt:90) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at org.jetbrains.bsp.bazel.server.bsp.BspServerApi.access$initializeServices(BspServerApi.kt:71) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at org.jetbrains.bsp.bazel.server.bsp.BspServerApi$buildInitialize$1.invoke(BspServerApi.kt:101) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at org.jetbrains.bsp.bazel.server.bsp.BspServerApi$buildInitialize$1.invoke(BspServerApi.kt:98) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at org.jetbrains.bsp.bazel.server.bsp.BspRequestsRunner$runAsync$asyncRequest$1.apply(BspRequestsRunner.kt:82) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at org.jetbrains.bsp.bazel.server.bsp.BspRequestsRunner$runAsync$asyncRequest$1.apply(BspRequestsRunner.kt:81) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at java.base/java.util.concurrent.CompletableFuture$UniApply.tryFire(CompletableFuture.java:646) ~[?:?]
+	... 6 more
+2025-11-03 16:01:25.104 [main] INFO    org.jetbrains.bsp.bazel.server.ServerInitializer - Server has been initialized
+2025-11-06 11:33:04.470 [main] INFO    org.jetbrains.bsp.bazel.server.ServerInitializer - Starting server with args: [/Users/wenting.wang/Uber/opensearch-tsdb-internal, /Users/wenting.wang/Uber/opensearch-tsdb-internal/.bsp/projectview.bazelproject, false]
+2025-11-06 11:33:04.472 [main] INFO    org.jetbrains.bsp.bazel.server.ServerInitializer - Initializing server
+2025-11-06 11:33:05.121 [pool-2-thread-1] INFO    org.jetbrains.bsp.bazel.server.bsp.BspRequestsRunner - build/initialize call
+2025-11-06 11:33:05.260 [ForkJoinPool.commonPool-worker-1] INFO    org.jetbrains.bsp.bazel.workspacecontext.WorkspaceContextConstructor - Constructing workspace context for: ProjectView(targets=ProjectViewTargetsSection(values=[@//your/targets/here/...], excludedValues=[]), bazelBinary=ProjectViewBazelBinarySection(value=/Users/wenting.wang/Uber/opensearch-tsdb-internal/tools/bazel), buildFlags=null, allowManualTargetsSync=ProjectViewAllowManualTargetsSyncSection(value=false), directories=null, deriveTargetsFromDirectories=ProjectViewDeriveTargetsFromDirectoriesSection(value=false), importDepth=null, enabledRules=null, ideJavaHomeOverride=null, addTransitiveCompileTimeJars=null, enableNativeAndroidRules=null, androidMinSdkSection=null, shardSync=null, targetShardSize=null, shardingApproach=null).
+2025-11-06 11:33:05.268 [ForkJoinPool.commonPool-worker-1] INFO    org.jetbrains.bsp.bazel.workspacecontext.WorkspaceContextConstructor - Constructing workspace context for: ProjectView(targets=ProjectViewTargetsSection(values=[@//your/targets/here/...], excludedValues=[]), bazelBinary=ProjectViewBazelBinarySection(value=/Users/wenting.wang/Uber/opensearch-tsdb-internal/tools/bazel), buildFlags=null, allowManualTargetsSync=ProjectViewAllowManualTargetsSyncSection(value=false), directories=null, deriveTargetsFromDirectories=ProjectViewDeriveTargetsFromDirectoriesSection(value=false), importDepth=null, enabledRules=null, ideJavaHomeOverride=null, addTransitiveCompileTimeJars=null, enableNativeAndroidRules=null, androidMinSdkSection=null, shardSync=null, targetShardSize=null, shardingApproach=null).
+2025-11-06 11:33:05.268 [ForkJoinPool.commonPool-worker-1] INFO    org.jetbrains.bsp.bazel.workspacecontext.WorkspaceContextConstructor - Constructing workspace context for: ProjectView(targets=ProjectViewTargetsSection(values=[@//your/targets/here/...], excludedValues=[]), bazelBinary=ProjectViewBazelBinarySection(value=/Users/wenting.wang/Uber/opensearch-tsdb-internal/tools/bazel), buildFlags=null, allowManualTargetsSync=ProjectViewAllowManualTargetsSyncSection(value=false), directories=null, deriveTargetsFromDirectories=ProjectViewDeriveTargetsFromDirectoriesSection(value=false), importDepth=null, enabledRules=null, ideJavaHomeOverride=null, addTransitiveCompileTimeJars=null, enableNativeAndroidRules=null, androidMinSdkSection=null, shardSync=null, targetShardSize=null, shardingApproach=null).
+2025-11-06 11:33:05.270 [ForkJoinPool.commonPool-worker-1] INFO    org.jetbrains.bsp.bazel.bazelrunner.BazelRunner - Invoking: '/Users/wenting.wang/Uber/opensearch-tsdb-internal/tools/bazel' 'version' '--tool_tag=bazelbsp:3.2.0-20250106-a42f8bf24-NIGHTLY' '--override_repository=bazelbsp_aspect=/Users/wenting.wang/Uber/opensearch-tsdb-internal/.bazelbsp' '--curses=no' '--color=yes' '--noprogress_in_terminal_title'
+2025-11-06 11:33:05.467 [ForkJoinPool.commonPool-worker-1] ERROR   org.jetbrains.bsp.bazel.server.bsp.BspRequestsRunner - build/initialize call finishing with error
+java.util.concurrent.CompletionException: java.io.IOException: Cannot run program "/Users/wenting.wang/Uber/opensearch-tsdb-internal/tools/bazel" (in directory "/Users/wenting.wang/Uber/opensearch-tsdb-internal"): error=2, No such file or directory
+	at java.base/java.util.concurrent.CompletableFuture.encodeThrowable(CompletableFuture.java:315) [?:?]
+	at java.base/java.util.concurrent.CompletableFuture.completeThrowable(CompletableFuture.java:320) [?:?]
+	at java.base/java.util.concurrent.CompletableFuture$UniApply.tryFire(CompletableFuture.java:649) [?:?]
+	at java.base/java.util.concurrent.CompletableFuture$Completion.exec(CompletableFuture.java:483) [?:?]
+	at java.base/java.util.concurrent.ForkJoinTask.doExec(ForkJoinTask.java:373) [?:?]
+	at java.base/java.util.concurrent.ForkJoinPool$WorkQueue.topLevelExec(ForkJoinPool.java:1182) [?:?]
+	at java.base/java.util.concurrent.ForkJoinPool.scan(ForkJoinPool.java:1655) [?:?]
+	at java.base/java.util.concurrent.ForkJoinPool.runWorker(ForkJoinPool.java:1622) [?:?]
+	at java.base/java.util.concurrent.ForkJoinWorkerThread.run(ForkJoinWorkerThread.java:165) [?:?]
+Caused by: java.io.IOException: Cannot run program "/Users/wenting.wang/Uber/opensearch-tsdb-internal/tools/bazel" (in directory "/Users/wenting.wang/Uber/opensearch-tsdb-internal"): error=2, No such file or directory
+	at java.base/java.lang.ProcessBuilder.start(ProcessBuilder.java:1143) ~[?:?]
+	at java.base/java.lang.ProcessBuilder.start(ProcessBuilder.java:1073) ~[?:?]
+	at org.jetbrains.bsp.bazel.bazelrunner.BazelRunner.runBazelCommand(BazelRunner.kt:144) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at org.jetbrains.bsp.bazel.bazelrunner.BazelRunner.runBazelCommand$default(BazelRunner.kt:124) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at org.jetbrains.bsp.bazel.server.BazelBspServer.verifyBazelVersion(BazelBspServer.kt:286) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at org.jetbrains.bsp.bazel.server.BazelBspServer$buildServer$bspServerApi$1.invoke(BazelBspServer.kt:241) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at org.jetbrains.bsp.bazel.server.BazelBspServer$buildServer$bspServerApi$1.invoke(BazelBspServer.kt:237) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at org.jetbrains.bsp.bazel.server.bsp.BspServerApi.initializeServices(BspServerApi.kt:90) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at org.jetbrains.bsp.bazel.server.bsp.BspServerApi.access$initializeServices(BspServerApi.kt:71) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at org.jetbrains.bsp.bazel.server.bsp.BspServerApi$buildInitialize$1.invoke(BspServerApi.kt:101) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at org.jetbrains.bsp.bazel.server.bsp.BspServerApi$buildInitialize$1.invoke(BspServerApi.kt:98) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at org.jetbrains.bsp.bazel.server.bsp.BspRequestsRunner$runAsync$asyncRequest$1.apply(BspRequestsRunner.kt:82) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at org.jetbrains.bsp.bazel.server.bsp.BspRequestsRunner$runAsync$asyncRequest$1.apply(BspRequestsRunner.kt:81) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at java.base/java.util.concurrent.CompletableFuture$UniApply.tryFire(CompletableFuture.java:646) ~[?:?]
+	... 6 more
+Caused by: java.io.IOException: error=2, No such file or directory
+	at java.base/java.lang.ProcessImpl.forkAndExec(Native Method) ~[?:?]
+	at java.base/java.lang.ProcessImpl.<init>(ProcessImpl.java:314) ~[?:?]
+	at java.base/java.lang.ProcessImpl.start(ProcessImpl.java:244) ~[?:?]
+	at java.base/java.lang.ProcessBuilder.start(ProcessBuilder.java:1110) ~[?:?]
+	at java.base/java.lang.ProcessBuilder.start(ProcessBuilder.java:1073) ~[?:?]
+	at org.jetbrains.bsp.bazel.bazelrunner.BazelRunner.runBazelCommand(BazelRunner.kt:144) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at org.jetbrains.bsp.bazel.bazelrunner.BazelRunner.runBazelCommand$default(BazelRunner.kt:124) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at org.jetbrains.bsp.bazel.server.BazelBspServer.verifyBazelVersion(BazelBspServer.kt:286) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at org.jetbrains.bsp.bazel.server.BazelBspServer$buildServer$bspServerApi$1.invoke(BazelBspServer.kt:241) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at org.jetbrains.bsp.bazel.server.BazelBspServer$buildServer$bspServerApi$1.invoke(BazelBspServer.kt:237) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at org.jetbrains.bsp.bazel.server.bsp.BspServerApi.initializeServices(BspServerApi.kt:90) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at org.jetbrains.bsp.bazel.server.bsp.BspServerApi.access$initializeServices(BspServerApi.kt:71) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at org.jetbrains.bsp.bazel.server.bsp.BspServerApi$buildInitialize$1.invoke(BspServerApi.kt:101) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at org.jetbrains.bsp.bazel.server.bsp.BspServerApi$buildInitialize$1.invoke(BspServerApi.kt:98) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at org.jetbrains.bsp.bazel.server.bsp.BspRequestsRunner$runAsync$asyncRequest$1.apply(BspRequestsRunner.kt:82) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at org.jetbrains.bsp.bazel.server.bsp.BspRequestsRunner$runAsync$asyncRequest$1.apply(BspRequestsRunner.kt:81) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at java.base/java.util.concurrent.CompletableFuture$UniApply.tryFire(CompletableFuture.java:646) ~[?:?]
+	... 6 more
+2025-11-13 17:21:47.458 [main] INFO    org.jetbrains.bsp.bazel.server.ServerInitializer - Server has been initialized
+2026-02-05 16:20:21.238 [main] INFO    org.jetbrains.bsp.bazel.server.ServerInitializer - Starting server with args: [/Users/wenting.wang/Uber/opensearch-tsdb-internal, /Users/wenting.wang/Uber/opensearch-tsdb-internal/.bsp/projectview.bazelproject, false]
+2026-02-05 16:20:21.239 [main] INFO    org.jetbrains.bsp.bazel.server.ServerInitializer - Initializing server
+2026-02-05 16:20:21.363 [pool-2-thread-1] INFO    org.jetbrains.bsp.bazel.server.bsp.BspRequestsRunner - build/initialize call
+2026-02-05 16:20:21.408 [ForkJoinPool.commonPool-worker-1] INFO    org.jetbrains.bsp.bazel.workspacecontext.WorkspaceContextConstructor - Constructing workspace context for: ProjectView(targets=ProjectViewTargetsSection(values=[@//your/targets/here/...], excludedValues=[]), bazelBinary=ProjectViewBazelBinarySection(value=/Users/wenting.wang/Uber/opensearch-tsdb-internal/tools/bazel), buildFlags=null, allowManualTargetsSync=ProjectViewAllowManualTargetsSyncSection(value=false), directories=null, deriveTargetsFromDirectories=ProjectViewDeriveTargetsFromDirectoriesSection(value=false), importDepth=null, enabledRules=null, ideJavaHomeOverride=null, addTransitiveCompileTimeJars=null, enableNativeAndroidRules=null, androidMinSdkSection=null, shardSync=null, targetShardSize=null, shardingApproach=null).
+2026-02-05 16:20:21.412 [ForkJoinPool.commonPool-worker-1] INFO    org.jetbrains.bsp.bazel.workspacecontext.WorkspaceContextConstructor - Constructing workspace context for: ProjectView(targets=ProjectViewTargetsSection(values=[@//your/targets/here/...], excludedValues=[]), bazelBinary=ProjectViewBazelBinarySection(value=/Users/wenting.wang/Uber/opensearch-tsdb-internal/tools/bazel), buildFlags=null, allowManualTargetsSync=ProjectViewAllowManualTargetsSyncSection(value=false), directories=null, deriveTargetsFromDirectories=ProjectViewDeriveTargetsFromDirectoriesSection(value=false), importDepth=null, enabledRules=null, ideJavaHomeOverride=null, addTransitiveCompileTimeJars=null, enableNativeAndroidRules=null, androidMinSdkSection=null, shardSync=null, targetShardSize=null, shardingApproach=null).
+2026-02-05 16:20:21.413 [ForkJoinPool.commonPool-worker-1] INFO    org.jetbrains.bsp.bazel.workspacecontext.WorkspaceContextConstructor - Constructing workspace context for: ProjectView(targets=ProjectViewTargetsSection(values=[@//your/targets/here/...], excludedValues=[]), bazelBinary=ProjectViewBazelBinarySection(value=/Users/wenting.wang/Uber/opensearch-tsdb-internal/tools/bazel), buildFlags=null, allowManualTargetsSync=ProjectViewAllowManualTargetsSyncSection(value=false), directories=null, deriveTargetsFromDirectories=ProjectViewDeriveTargetsFromDirectoriesSection(value=false), importDepth=null, enabledRules=null, ideJavaHomeOverride=null, addTransitiveCompileTimeJars=null, enableNativeAndroidRules=null, androidMinSdkSection=null, shardSync=null, targetShardSize=null, shardingApproach=null).
+2026-02-05 16:20:21.414 [ForkJoinPool.commonPool-worker-1] INFO    org.jetbrains.bsp.bazel.bazelrunner.BazelRunner - Invoking: '/Users/wenting.wang/Uber/opensearch-tsdb-internal/tools/bazel' 'version' '--tool_tag=bazelbsp:3.2.0-20250106-a42f8bf24-NIGHTLY' '--override_repository=bazelbsp_aspect=/Users/wenting.wang/Uber/opensearch-tsdb-internal/.bazelbsp' '--curses=no' '--color=yes' '--noprogress_in_terminal_title'
+2026-02-05 16:20:21.463 [ForkJoinPool.commonPool-worker-1] ERROR   org.jetbrains.bsp.bazel.server.bsp.BspRequestsRunner - build/initialize call finishing with error
+java.util.concurrent.CompletionException: java.io.IOException: Cannot run program "/Users/wenting.wang/Uber/opensearch-tsdb-internal/tools/bazel" (in directory "/Users/wenting.wang/Uber/opensearch-tsdb-internal"): error=2, No such file or directory
+	at java.base/java.util.concurrent.CompletableFuture.encodeThrowable(CompletableFuture.java:315) [?:?]
+	at java.base/java.util.concurrent.CompletableFuture.completeThrowable(CompletableFuture.java:320) [?:?]
+	at java.base/java.util.concurrent.CompletableFuture$UniApply.tryFire(CompletableFuture.java:649) [?:?]
+	at java.base/java.util.concurrent.CompletableFuture$Completion.exec(CompletableFuture.java:483) [?:?]
+	at java.base/java.util.concurrent.ForkJoinTask.doExec(ForkJoinTask.java:373) [?:?]
+	at java.base/java.util.concurrent.ForkJoinPool$WorkQueue.topLevelExec(ForkJoinPool.java:1182) [?:?]
+	at java.base/java.util.concurrent.ForkJoinPool.scan(ForkJoinPool.java:1655) [?:?]
+	at java.base/java.util.concurrent.ForkJoinPool.runWorker(ForkJoinPool.java:1622) [?:?]
+	at java.base/java.util.concurrent.ForkJoinWorkerThread.run(ForkJoinWorkerThread.java:165) [?:?]
+Caused by: java.io.IOException: Cannot run program "/Users/wenting.wang/Uber/opensearch-tsdb-internal/tools/bazel" (in directory "/Users/wenting.wang/Uber/opensearch-tsdb-internal"): error=2, No such file or directory
+	at java.base/java.lang.ProcessBuilder.start(ProcessBuilder.java:1143) ~[?:?]
+	at java.base/java.lang.ProcessBuilder.start(ProcessBuilder.java:1073) ~[?:?]
+	at org.jetbrains.bsp.bazel.bazelrunner.BazelRunner.runBazelCommand(BazelRunner.kt:144) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at org.jetbrains.bsp.bazel.bazelrunner.BazelRunner.runBazelCommand$default(BazelRunner.kt:124) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at org.jetbrains.bsp.bazel.server.BazelBspServer.verifyBazelVersion(BazelBspServer.kt:286) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at org.jetbrains.bsp.bazel.server.BazelBspServer$buildServer$bspServerApi$1.invoke(BazelBspServer.kt:241) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at org.jetbrains.bsp.bazel.server.BazelBspServer$buildServer$bspServerApi$1.invoke(BazelBspServer.kt:237) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at org.jetbrains.bsp.bazel.server.bsp.BspServerApi.initializeServices(BspServerApi.kt:90) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at org.jetbrains.bsp.bazel.server.bsp.BspServerApi.access$initializeServices(BspServerApi.kt:71) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at org.jetbrains.bsp.bazel.server.bsp.BspServerApi$buildInitialize$1.invoke(BspServerApi.kt:101) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at org.jetbrains.bsp.bazel.server.bsp.BspServerApi$buildInitialize$1.invoke(BspServerApi.kt:98) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at org.jetbrains.bsp.bazel.server.bsp.BspRequestsRunner$runAsync$asyncRequest$1.apply(BspRequestsRunner.kt:82) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at org.jetbrains.bsp.bazel.server.bsp.BspRequestsRunner$runAsync$asyncRequest$1.apply(BspRequestsRunner.kt:81) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at java.base/java.util.concurrent.CompletableFuture$UniApply.tryFire(CompletableFuture.java:646) ~[?:?]
+	... 6 more
+Caused by: java.io.IOException: error=2, No such file or directory
+	at java.base/java.lang.ProcessImpl.forkAndExec(Native Method) ~[?:?]
+	at java.base/java.lang.ProcessImpl.<init>(ProcessImpl.java:314) ~[?:?]
+	at java.base/java.lang.ProcessImpl.start(ProcessImpl.java:244) ~[?:?]
+	at java.base/java.lang.ProcessBuilder.start(ProcessBuilder.java:1110) ~[?:?]
+	at java.base/java.lang.ProcessBuilder.start(ProcessBuilder.java:1073) ~[?:?]
+	at org.jetbrains.bsp.bazel.bazelrunner.BazelRunner.runBazelCommand(BazelRunner.kt:144) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at org.jetbrains.bsp.bazel.bazelrunner.BazelRunner.runBazelCommand$default(BazelRunner.kt:124) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at org.jetbrains.bsp.bazel.server.BazelBspServer.verifyBazelVersion(BazelBspServer.kt:286) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at org.jetbrains.bsp.bazel.server.BazelBspServer$buildServer$bspServerApi$1.invoke(BazelBspServer.kt:241) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at org.jetbrains.bsp.bazel.server.BazelBspServer$buildServer$bspServerApi$1.invoke(BazelBspServer.kt:237) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at org.jetbrains.bsp.bazel.server.bsp.BspServerApi.initializeServices(BspServerApi.kt:90) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at org.jetbrains.bsp.bazel.server.bsp.BspServerApi.access$initializeServices(BspServerApi.kt:71) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at org.jetbrains.bsp.bazel.server.bsp.BspServerApi$buildInitialize$1.invoke(BspServerApi.kt:101) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at org.jetbrains.bsp.bazel.server.bsp.BspServerApi$buildInitialize$1.invoke(BspServerApi.kt:98) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at org.jetbrains.bsp.bazel.server.bsp.BspRequestsRunner$runAsync$asyncRequest$1.apply(BspRequestsRunner.kt:82) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at org.jetbrains.bsp.bazel.server.bsp.BspRequestsRunner$runAsync$asyncRequest$1.apply(BspRequestsRunner.kt:81) ~[bazel-bsp-3.2.0-20250106-a42f8bf24-NIGHTLY.jar:2.0.10-release-540]
+	at java.base/java.util.concurrent.CompletableFuture$UniApply.tryFire(CompletableFuture.java:646) ~[?:?]
+	... 6 more

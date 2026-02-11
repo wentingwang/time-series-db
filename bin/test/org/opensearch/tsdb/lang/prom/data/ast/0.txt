@@ -1,0 +1,4 @@
+RootNode
+  AggregationNode
+    FunctionCallNode
+      RangeVectorSelectorNode

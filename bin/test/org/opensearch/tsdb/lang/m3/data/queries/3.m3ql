@@ -1,0 +1,16 @@
+# TODO repeated filter aggregations should be de-duplicated in the generated dsl
+# test timeshift, with re-used sub-query
+# test 'exec   (' where exec is separated from the left paren by whitespace
+a = exec   (fetch region:west
+  | sum city_name
+  | transformNull
+  | moving 1h sum);
+
+b = (a | timeshift 1d);
+c = (a | timeshift 2d);
+
+mean = (a | b | c | avg);
+
+a | asPercent(mean) city_name region
+  | transformNull
+  | moving 1h avg

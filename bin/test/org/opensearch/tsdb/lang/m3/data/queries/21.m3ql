@@ -1,0 +1,4 @@
+# test moving with summarize using fixed alignment (alignToFrom=false)
+# This tests the adjusted truncate start time when summarize aligns to fixed intervals
+fetch name:a | moving 10m sum | summarize 7m sum false
+

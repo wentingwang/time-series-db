@@ -1,0 +1,3 @@
+FALLBACK_SERIES
+  FETCH({name=[a]}, !{})
+  FETCH({name=[b]}, !{})

@@ -1,0 +1,5 @@
+UNION
+  AGG(SUM, groupBy=[])
+    FETCH({name=[queries]}, !{})
+  AGG(SUM, groupBy=[])
+    FETCH({name=[exceptions]}, !{})

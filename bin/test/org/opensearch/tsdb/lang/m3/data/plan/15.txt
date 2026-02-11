@@ -1,0 +1,13 @@
+MOVING(5m, MIN)
+  AS_PERCENT(groupBy=[])
+    AGG(SUM, groupBy=[])
+      FETCH({name=[metric1]}, !{})
+    AGG(AVG, groupBy=[])
+      UNION
+        AGG(AVG, groupBy=[])
+          AS_PERCENT(groupBy=[name, service])
+            AGG(SUM, groupBy=[])
+              FETCH({name=[metric2]}, !{})
+            FETCH({name=[metric3]}, !{})
+        AGG(SUM, groupBy=[])
+          FETCH({name=[metric4]}, !{})

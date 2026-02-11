@@ -1,0 +1,4 @@
+# test median, then empty alias
+fetch name:a
+  | median city
+  | alias
