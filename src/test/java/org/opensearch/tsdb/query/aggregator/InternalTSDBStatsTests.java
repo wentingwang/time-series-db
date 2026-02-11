@@ -153,7 +153,6 @@ public class InternalTSDBStatsTests extends OpenSearchTestCase {
         // Act
         InternalTSDBStats.CoordinatorLevelStats.LabelStats labelStats = new InternalTSDBStats.CoordinatorLevelStats.LabelStats(
             100L,
-            null,
             valuesStats
         );
 
@@ -167,12 +166,11 @@ public class InternalTSDBStatsTests extends OpenSearchTestCase {
         Map<String, Long> valuesStats = Map.of("prod", 80L, "staging", 20L);
         InternalTSDBStats.CoordinatorLevelStats.LabelStats labelStats = new InternalTSDBStats.CoordinatorLevelStats.LabelStats(
             100L,
-            null,
             valuesStats
         );
 
-        // Act
-        List<String> values = labelStats.values();
+        // Act - values are derived from valuesStats.keySet()
+        Set<String> values = labelStats.valuesStats().keySet();
 
         // Assert
         assertEquals(2, values.size());
@@ -181,19 +179,12 @@ public class InternalTSDBStatsTests extends OpenSearchTestCase {
     }
 
     public void testLabelStatsGetValuesWithNullValuesStats() {
-        // Arrange
-        InternalTSDBStats.CoordinatorLevelStats.LabelStats labelStats = new InternalTSDBStats.CoordinatorLevelStats.LabelStats(
-            100L,
-            null,
-            null
+        // Arrange & Act & Assert - valuesStats cannot be null, should throw exception
+        IllegalArgumentException exception = expectThrows(
+            IllegalArgumentException.class,
+            () -> new InternalTSDBStats.CoordinatorLevelStats.LabelStats(100L, null)
         );
-
-        // Act
-        List<String> values = labelStats.values();
-
-        // Assert
-        assertNotNull(values);
-        assertEquals(0, values.size());
+        assertTrue(exception.getMessage().contains("valuesStats cannot be null"));
     }
 
     public void testLabelStatsEquals() {
@@ -204,17 +195,14 @@ public class InternalTSDBStatsTests extends OpenSearchTestCase {
 
         InternalTSDBStats.CoordinatorLevelStats.LabelStats stats1 = new InternalTSDBStats.CoordinatorLevelStats.LabelStats(
             100L,
-            null,
             valuesStats1
         );
         InternalTSDBStats.CoordinatorLevelStats.LabelStats stats2 = new InternalTSDBStats.CoordinatorLevelStats.LabelStats(
             100L,
-            null,
             valuesStats2
         );
         InternalTSDBStats.CoordinatorLevelStats.LabelStats stats3 = new InternalTSDBStats.CoordinatorLevelStats.LabelStats(
             100L,
-            null,
             valuesStats3
         );
 
@@ -229,7 +217,6 @@ public class InternalTSDBStatsTests extends OpenSearchTestCase {
         Map<String, Long> valuesStats = Map.of("prod", 80L, "staging", 20L);
         InternalTSDBStats.CoordinatorLevelStats.LabelStats original = new InternalTSDBStats.CoordinatorLevelStats.LabelStats(
             100L,
-            null,
             valuesStats
         );
 
@@ -247,11 +234,10 @@ public class InternalTSDBStatsTests extends OpenSearchTestCase {
     }
 
     public void testLabelStatsSerializationWithNullValues() throws IOException {
-        // Arrange
+        // Arrange - Create LabelStats with null numSeries but non-null valuesStats (empty map)
         InternalTSDBStats.CoordinatorLevelStats.LabelStats original = new InternalTSDBStats.CoordinatorLevelStats.LabelStats(
             null,
-            null,
-            null
+            Map.of()
         );
 
         // Act
@@ -264,7 +250,8 @@ public class InternalTSDBStatsTests extends OpenSearchTestCase {
         // Assert
         assertEquals(original, deserialized);
         assertNull(deserialized.numSeries());
-        assertNull(deserialized.valuesStats());
+        assertNotNull(deserialized.valuesStats());
+        assertEquals(0, deserialized.valuesStats().size());
     }
 
     // ========== Interface Implementation Tests ==========
@@ -353,7 +340,7 @@ public class InternalTSDBStatsTests extends OpenSearchTestCase {
         InternalTSDBStats.HeadStats headStats = new InternalTSDBStats.HeadStats(508L, 937L, 1591516800000L, 1598896800143L);
         Map<String, Long> clusterValues = Map.of("prod", 80L, "staging", 15L, "dev", 5L);
         Map<String, InternalTSDBStats.CoordinatorLevelStats.LabelStats> labelStats = new HashMap<>();
-        labelStats.put("cluster", new InternalTSDBStats.CoordinatorLevelStats.LabelStats(100L, null, clusterValues));
+        labelStats.put("cluster", new InternalTSDBStats.CoordinatorLevelStats.LabelStats(100L, clusterValues));
 
         InternalTSDBStats internal = InternalTSDBStats.forCoordinatorLevel(
             TEST_NAME,
@@ -707,8 +694,8 @@ public class InternalTSDBStatsTests extends OpenSearchTestCase {
         Map<String, Long> regionValues = Map.of("us-east", 40L, "us-west", 30L, "eu-west", 30L);
 
         Map<String, InternalTSDBStats.CoordinatorLevelStats.LabelStats> labelStats = new HashMap<>();
-        labelStats.put("cluster", new InternalTSDBStats.CoordinatorLevelStats.LabelStats(100L, null, clusterValues));
-        labelStats.put("region", new InternalTSDBStats.CoordinatorLevelStats.LabelStats(100L, null, regionValues));
+        labelStats.put("cluster", new InternalTSDBStats.CoordinatorLevelStats.LabelStats(100L, clusterValues));
+        labelStats.put("region", new InternalTSDBStats.CoordinatorLevelStats.LabelStats(100L, regionValues));
 
         return labelStats;
     }

@@ -13,11 +13,9 @@ import org.opensearch.core.xcontent.XContentBuilder;
 import org.opensearch.search.aggregations.InternalAggregation;
 
 import java.io.IOException;
-import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -233,19 +231,24 @@ public class InternalTSDBStats extends InternalAggregation {
 
         /**
          * Coordinator-level label statistics with final counts.
+         *
+         * <p>The valuesStats map is always non-null and contains all label values.
+         * When includeValueStats=true, the Long counts are populated with actual cardinality.
+         * When includeValueStats=false, the Long counts are 0 (sentinel for "not counted").</p>
          */
-        public record LabelStats(Long numSeries, r, Map<String, Long> valuesStats) {
+        public record LabelStats(Long numSeries, Map<String, Long> valuesStats) {
 
-            // Compact constructor to normalize values field
+            // Compact constructor to ensure valuesStats is never null
             public LabelStats {
-                values = values != null ? values : (valuesStats != null ? new ArrayList<>(valuesStats.keySet()) : List.of());
+                if (valuesStats == null) {
+                    throw new IllegalArgumentException("valuesStats cannot be null (use empty map instead)");
+                }
             }
 
             public LabelStats(StreamInput in) throws IOException {
                 this(
                     in.readBoolean() ? in.readVLong() : null,
-                    in.readStringList(),
-                    in.readBoolean() ? in.readMap(StreamInput::readString, StreamInput::readVLong) : null
+                    in.readMap(StreamInput::readString, StreamInput::readVLong)  // 0 means "not counted"
                 );
             }
 
@@ -257,15 +260,8 @@ public class InternalTSDBStats extends InternalAggregation {
                     out.writeBoolean(false);
                 }
 
-                // Write values list
-                out.writeStringCollection(values);
-
-                if (valuesStats != null) {
-                    out.writeBoolean(true);
-                    out.writeMap(valuesStats, StreamOutput::writeString, StreamOutput::writeVLong);
-                } else {
-                    out.writeBoolean(false);
-                }
+                // Write valuesStats map (0 means "not counted" when includeValueStats=false)
+                out.writeMap(valuesStats, StreamOutput::writeString, StreamOutput::writeVLong);
             }
         }
 
@@ -492,14 +488,17 @@ public class InternalTSDBStats extends InternalAggregation {
             Map<String, Set<Long>> valueFingerprintSets = entry.getValue();
 
             // Calculate label cardinality and value counts
+            // Note: valueCounts is ALWAYS populated (preserves insertion order via LinkedHashMap)
+            // When includeValueStats=true: counts are actual cardinality
+            // When includeValueStats=false: counts are 0 (sentinel for "not counted")
             Long labelCardinality = null;
-            Map<String, Long> valueCounts = null;
+            Map<String, Long> valueCounts = new LinkedHashMap<>();
 
             // Use global flag instead of checking sets (O(1) vs O(n) optimization)
+            // The includeValueStats flag is the same for all shards (query-level parameter)
             if (includeValueStats) {
                 // includeValueStats=true: compute exact counts
                 Set<Long> allFingerprintsForLabel = new HashSet<>();
-                valueCounts = new LinkedHashMap<>();
 
                 for (Map.Entry<String, Set<Long>> ve : valueFingerprintSets.entrySet()) {
                     String value = ve.getKey();
@@ -511,16 +510,20 @@ public class InternalTSDBStats extends InternalAggregation {
 
                         // Collect for label cardinality
                         allFingerprintsForLabel.addAll(fingerprintSetForValue);
+                    } else {
+                        valueCounts.put(value, 0L);  // Empty fingerprint set
                     }
                 }
 
                 labelCardinality = allFingerprintsForLabel.isEmpty() ? null : (long) allFingerprintsForLabel.size();
+            } else {
+                // includeValueStats=false: populate with 0 counts (sentinel for "not counted")
+                for (String value : valueFingerprintSets.keySet()) {
+                    valueCounts.put(value, 0L);
+                }
             }
 
-            // Extract values list (always populated, even when includeValueStats=false)
-            List<String> valuesList = new ArrayList<>(valueFingerprintSets.keySet());
-
-            finalLabelStats.put(labelName, new CoordinatorLevelStats.LabelStats(labelCardinality, valuesList, valueCounts));
+            finalLabelStats.put(labelName, new CoordinatorLevelStats.LabelStats(labelCardinality, valueCounts));
         }
 
         // Return coordinator-level stats (fingerprints converted to counts to save network bandwidth)
@@ -560,9 +563,6 @@ public class InternalTSDBStats extends InternalAggregation {
 
                 LabelStatsBuilder builder = builders.computeIfAbsent(labelName, k -> new LabelStatsBuilder());
 
-                // Collect values (always present)
-                builder.values.addAll(ls.values());
-
                 // Sum numSeries per label if present
                 if (ls.numSeries() != null) {
                     builder.hasNumSeries = true;
@@ -587,11 +587,7 @@ public class InternalTSDBStats extends InternalAggregation {
             LabelStatsBuilder builder = entry.getValue();
             finalLabelStats.put(
                 entry.getKey(),
-                new CoordinatorLevelStats.LabelStats(
-                    builder.hasNumSeries ? builder.numSeries : null,
-                    new ArrayList<>(builder.values),
-                    builder.valueCounts
-                )
+                new CoordinatorLevelStats.LabelStats(builder.hasNumSeries ? builder.numSeries : null, builder.valueCounts)
             );
         }
 
@@ -605,7 +601,6 @@ public class InternalTSDBStats extends InternalAggregation {
     private static class LabelStatsBuilder {
         boolean hasNumSeries = false;
         Long numSeries = null;
-        Set<String> values = new LinkedHashSet<>(); // Preserve insertion order
         Map<String, Long> valueCounts = null;
     }
 
@@ -701,7 +696,7 @@ public class InternalTSDBStats extends InternalAggregation {
                 if (stats.numSeries() != null) {
                     builder.field("numSeries", stats.numSeries());
                 }
-                builder.field("values", stats.values());
+                builder.field("values", stats.valuesStats().keySet());
                 if (stats.valuesStats() != null) {
                     builder.field("valuesStats", stats.valuesStats());
                 }

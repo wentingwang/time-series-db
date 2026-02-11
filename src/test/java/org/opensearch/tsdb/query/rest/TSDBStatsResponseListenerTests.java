@@ -94,8 +94,8 @@ public class TSDBStatsResponseListenerTests extends OpenSearchTestCase {
         clusterValues.put("dev", 5L);
 
         Map<String, InternalTSDBStats.CoordinatorLevelStats.LabelStats> labelStats = new HashMap<>();
-        labelStats.put("name", new InternalTSDBStats.CoordinatorLevelStats.LabelStats(100L, null, nameValues));
-        labelStats.put("cluster", new InternalTSDBStats.CoordinatorLevelStats.LabelStats(100L, null, clusterValues));
+        labelStats.put("name", new InternalTSDBStats.CoordinatorLevelStats.LabelStats(100L, nameValues));
+        labelStats.put("cluster", new InternalTSDBStats.CoordinatorLevelStats.LabelStats(100L, clusterValues));
 
         InternalTSDBStats tsdbStats = InternalTSDBStats.forCoordinatorLevel(
             "tsdb_stats",
@@ -156,7 +156,7 @@ public class TSDBStatsResponseListenerTests extends OpenSearchTestCase {
 
         Map<String, Long> clusterValues = Map.of("prod", 80L);
         Map<String, InternalTSDBStats.CoordinatorLevelStats.LabelStats> labelStats = new HashMap<>();
-        labelStats.put("cluster", new InternalTSDBStats.CoordinatorLevelStats.LabelStats(100L, null, clusterValues));
+        labelStats.put("cluster", new InternalTSDBStats.CoordinatorLevelStats.LabelStats(100L, clusterValues));
 
         InternalTSDBStats tsdbStats = InternalTSDBStats.forCoordinatorLevel(
             "tsdb_stats",
@@ -196,7 +196,7 @@ public class TSDBStatsResponseListenerTests extends OpenSearchTestCase {
 
         Map<String, Long> clusterValues = Map.of("prod", 80L);
         Map<String, InternalTSDBStats.CoordinatorLevelStats.LabelStats> labelStats = new HashMap<>();
-        labelStats.put("cluster", new InternalTSDBStats.CoordinatorLevelStats.LabelStats(100L, null, clusterValues));
+        labelStats.put("cluster", new InternalTSDBStats.CoordinatorLevelStats.LabelStats(100L, clusterValues));
 
         InternalTSDBStats tsdbStats = InternalTSDBStats.forCoordinatorLevel(
             "tsdb_stats",
@@ -250,8 +250,8 @@ public class TSDBStatsResponseListenerTests extends OpenSearchTestCase {
         clusterValues.put("dev", 5L);
 
         Map<String, InternalTSDBStats.CoordinatorLevelStats.LabelStats> labelStats = new HashMap<>();
-        labelStats.put("name", new InternalTSDBStats.CoordinatorLevelStats.LabelStats(100L, null, nameValues));
-        labelStats.put("cluster", new InternalTSDBStats.CoordinatorLevelStats.LabelStats(100L, null, clusterValues));
+        labelStats.put("name", new InternalTSDBStats.CoordinatorLevelStats.LabelStats(100L, nameValues));
+        labelStats.put("cluster", new InternalTSDBStats.CoordinatorLevelStats.LabelStats(100L, clusterValues));
 
         InternalTSDBStats tsdbStats = InternalTSDBStats.forCoordinatorLevel(
             "tsdb_stats",
@@ -309,7 +309,7 @@ public class TSDBStatsResponseListenerTests extends OpenSearchTestCase {
 
         Map<String, Long> nameValues = Map.of("http_requests_total", 60L);
         Map<String, InternalTSDBStats.CoordinatorLevelStats.LabelStats> labelStats = new HashMap<>();
-        labelStats.put("name", new InternalTSDBStats.CoordinatorLevelStats.LabelStats(100L, null, nameValues));
+        labelStats.put("name", new InternalTSDBStats.CoordinatorLevelStats.LabelStats(100L, nameValues));
 
         InternalTSDBStats tsdbStats = InternalTSDBStats.forCoordinatorLevel(
             "tsdb_stats",
@@ -356,7 +356,7 @@ public class TSDBStatsResponseListenerTests extends OpenSearchTestCase {
         nameValues.put("metric_b", 500L);
         nameValues.put("metric_c", 50L);
         Map<String, InternalTSDBStats.CoordinatorLevelStats.LabelStats> labelStats = new HashMap<>();
-        labelStats.put("name", new InternalTSDBStats.CoordinatorLevelStats.LabelStats(650L, null, nameValues));
+        labelStats.put("name", new InternalTSDBStats.CoordinatorLevelStats.LabelStats(650L, nameValues));
 
         InternalTSDBStats tsdbStats = InternalTSDBStats.forCoordinatorLevel(
             "tsdb_stats",
@@ -541,7 +541,7 @@ public class TSDBStatsResponseListenerTests extends OpenSearchTestCase {
 
         InternalTSDBStats.HeadStats headStats = new InternalTSDBStats.HeadStats(100L, 200L, 1000L, 2000L);
         Map<String, InternalTSDBStats.CoordinatorLevelStats.LabelStats> labelStats = new HashMap<>();
-        labelStats.put("cluster", new InternalTSDBStats.CoordinatorLevelStats.LabelStats(100L, null, Map.of("prod", 80L)));
+        labelStats.put("cluster", new InternalTSDBStats.CoordinatorLevelStats.LabelStats(100L, Map.of("prod", 80L)));
 
         InternalTSDBStats tsdbStats = InternalTSDBStats.forCoordinatorLevel(
             "tsdb_stats",
@@ -580,7 +580,7 @@ public class TSDBStatsResponseListenerTests extends OpenSearchTestCase {
 
         InternalTSDBStats.HeadStats headStats = new InternalTSDBStats.HeadStats(100L, 200L, 1000L, 2000L);
         Map<String, InternalTSDBStats.CoordinatorLevelStats.LabelStats> labelStats = new HashMap<>();
-        labelStats.put("cluster", new InternalTSDBStats.CoordinatorLevelStats.LabelStats(100L, null, Map.of("prod", 80L)));
+        labelStats.put("cluster", new InternalTSDBStats.CoordinatorLevelStats.LabelStats(100L, Map.of("prod", 80L)));
 
         InternalTSDBStats tsdbStats = InternalTSDBStats.forCoordinatorLevel(
             "tsdb_stats",
@@ -620,7 +620,7 @@ public class TSDBStatsResponseListenerTests extends OpenSearchTestCase {
 
         InternalTSDBStats.HeadStats headStats = new InternalTSDBStats.HeadStats(100L, 200L, 1000L, 2000L);
         Map<String, InternalTSDBStats.CoordinatorLevelStats.LabelStats> labelStats = new HashMap<>();
-        labelStats.put("cluster", new InternalTSDBStats.CoordinatorLevelStats.LabelStats(100L, null, Map.of("prod", 80L)));
+        labelStats.put("cluster", new InternalTSDBStats.CoordinatorLevelStats.LabelStats(100L, Map.of("prod", 80L)));
 
         InternalTSDBStats tsdbStats = InternalTSDBStats.forCoordinatorLevel(
             "tsdb_stats",

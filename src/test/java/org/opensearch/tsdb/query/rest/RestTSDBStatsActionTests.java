@@ -79,18 +79,8 @@ public class RestTSDBStatsActionTests extends OpenSearchTestCase {
 
             // Create sample label stats data
             Map<String, InternalTSDBStats.CoordinatorLevelStats.LabelStats> labelStats = new HashMap<>();
-            labelStats.put(
-                "service",
-                new InternalTSDBStats.CoordinatorLevelStats.LabelStats(50L, List.of("api", "web"), Map.of("api", 30L, "web", 20L))
-            );
-            labelStats.put(
-                "region",
-                new InternalTSDBStats.CoordinatorLevelStats.LabelStats(
-                    25L,
-                    List.of("us-east", "us-west"),
-                    Map.of("us-east", 15L, "us-west", 10L)
-                )
-            );
+            labelStats.put("service", new InternalTSDBStats.CoordinatorLevelStats.LabelStats(50L, Map.of("api", 30L, "web", 20L)));
+            labelStats.put("region", new InternalTSDBStats.CoordinatorLevelStats.LabelStats(25L, Map.of("us-east", 15L, "us-west", 10L)));
 
             // Create a mock InternalTSDBStats aggregation with sample data
             InternalTSDBStats mockStats = InternalTSDBStats.forCoordinatorLevel(

@@ -139,7 +139,7 @@ public class TSDBStatsResponseListener implements ActionListener<SearchResponse>
                 if (labelStats.numSeries() != null) {
                     builder.field("numSeries", labelStats.numSeries());
                 }
-                builder.field("values", labelStats.values());
+                builder.field("values", labelStats.valuesStats().keySet());
                 // Only include valuesStats if valueStats is in includeOptions
                 if (includeValueStats && labelStats.valuesStats() != null) {
                     builder.field("valuesStats", labelStats.valuesStats());
@@ -212,7 +212,7 @@ public class TSDBStatsResponseListener implements ActionListener<SearchResponse>
             for (Map.Entry<String, InternalTSDBStats.CoordinatorLevelStats.LabelStats> entry : labelStatsMap.entrySet()) {
                 String labelName = entry.getKey();
                 InternalTSDBStats.CoordinatorLevelStats.LabelStats labelStat = entry.getValue();
-                long valueCount = labelStat.values() != null ? labelStat.values().size() : 0;
+                long valueCount = labelStat.valuesStats() != null ? labelStat.valuesStats().size() : 0;
                 labelValueCounts.add(new NameValuePair(labelName, valueCount));
             }
             // Sort by count descending
@@ -244,10 +244,10 @@ public class TSDBStatsResponseListener implements ActionListener<SearchResponse>
                         // Total memory = (name + value) * number of series with this label value
                         memoryBytes += (nameBytes + valueBytes) * numSeries;
                     }
-                } else if (labelStat.values() != null) {
-                    // Fallback when valuesStats is null but values list exists
+                } else {
+                    // Fallback when valuesStats has 0 counts (includeValueStats=false)
                     // Assume 1 series per value for estimation
-                    for (String value : labelStat.values()) {
+                    for (String value : labelStat.valuesStats().keySet()) {
                         long nameBytes = (labelName.length() * 2L) + STRING_HEADER_BYTES;
                         long valueBytes = (value.length() * 2L) + STRING_HEADER_BYTES;
                         memoryBytes += nameBytes + valueBytes;
