@@ -651,7 +651,7 @@ public class InternalTSDBStatsTests extends OpenSearchTestCase {
         labelStats.put("cluster", clusterFingerprintSets);
 
         // Act
-        InternalTSDBStats.ShardLevelStats shardStats = new InternalTSDBStats.ShardLevelStats(seriesFingerprintSet, labelStats);
+        InternalTSDBStats.ShardLevelStats shardStats = new InternalTSDBStats.ShardLevelStats(seriesFingerprintSet, labelStats, true);
 
         // Assert
         assertNotNull(shardStats.seriesFingerprintSet());
@@ -664,7 +664,7 @@ public class InternalTSDBStatsTests extends OpenSearchTestCase {
         Map<String, Map<String, Set<Long>>> labelStats = new HashMap<>();
 
         // Act
-        InternalTSDBStats.ShardLevelStats shardStats = new InternalTSDBStats.ShardLevelStats(null, labelStats);
+        InternalTSDBStats.ShardLevelStats shardStats = new InternalTSDBStats.ShardLevelStats(null, labelStats, true);
 
         // Assert
         assertNull(shardStats.seriesFingerprintSet());
@@ -678,7 +678,7 @@ public class InternalTSDBStatsTests extends OpenSearchTestCase {
         Map<String, Map<String, Set<Long>>> emptyLabelStats = new HashMap<>();
 
         // Act
-        InternalTSDBStats.ShardLevelStats shardStats = new InternalTSDBStats.ShardLevelStats(seriesFingerprintSet, emptyLabelStats);
+        InternalTSDBStats.ShardLevelStats shardStats = new InternalTSDBStats.ShardLevelStats(seriesFingerprintSet, emptyLabelStats, true);
 
         // Assert
         assertNotNull(shardStats.seriesFingerprintSet());
@@ -692,7 +692,7 @@ public class InternalTSDBStatsTests extends OpenSearchTestCase {
         labelStats.put("cluster", null); // null value map
 
         // Act
-        InternalTSDBStats.ShardLevelStats shardStats = new InternalTSDBStats.ShardLevelStats(seriesFingerprintSet, labelStats);
+        InternalTSDBStats.ShardLevelStats shardStats = new InternalTSDBStats.ShardLevelStats(seriesFingerprintSet, labelStats, true);
 
         // Assert
         assertNotNull(shardStats.seriesFingerprintSet());

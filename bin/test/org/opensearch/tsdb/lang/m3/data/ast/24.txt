@@ -1,0 +1,10 @@
+ROOT
+  PIPELINE
+    FUNCTION(fetch)
+      TAG_KEY(name)
+        TAG_VALUE(xx)
+    FUNCTION(sort)
+      VALUE(max)
+      VALUE(asc)
+    FUNCTION(head)
+      VALUE(5)

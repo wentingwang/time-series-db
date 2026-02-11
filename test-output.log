@@ -1,0 +1,62 @@
+=======================================
+OpenSearch Build Hamster says Hello!
+  Gradle Version        : 8.14
+  OS Info               : Mac OS X 26.2 (aarch64)
+  JDK Version           : 21 (Eclipse Temurin JDK)
+  JAVA_HOME             : /Library/Java/JavaVirtualMachines/temurin-21.jdk/Contents/Home
+  Random Testing Seed   : 4E858160986193FD
+  Crypto Standard       : any-supported
+=======================================
+> Task :cleanJavaCCGenerated
+> Task :spotlessInternalRegisterDependencies UP-TO-DATE
+> Task :spotlessJava
+> Task :spotlessJavaApply
+> Task :spotlessLicense
+> Task :spotlessLicenseApply
+> Task :spotlessMisc UP-TO-DATE
+> Task :spotlessMiscApply UP-TO-DATE
+> Task :spotlessApply
+> Task :spotlessJavaCheck
+> Task :spotlessLicenseCheck
+> Task :spotlessMiscCheck UP-TO-DATE
+> Task :spotlessCheck
+
+> Task :generateJavaCC
+Java Compiler Compiler Version 7.0.13 (Parser Generator)
+(type "javacc" with no arguments for help)
+Reading from file /Users/wenting.wang/Uber/opensearch-tsdb-internal/src/main/java/org/opensearch/tsdb/lang/m3/m3ql/parser/m3ql.jj . . .
+Warning: Choice conflict in (...)* construct at line 323, column 5.
+         Expansion nested within construct and expansion following construct
+         have common prefixes, one of which is: <LITERAL_SPACE>
+         Consider using a lookahead of 2 or more for nested expansion.
+Warning: Choice conflict in (...)* construct at line 329, column 7.
+         Expansion nested within construct and expansion following construct
+         have common prefixes, one of which is: <LITERAL_SPACE>
+         Consider using a lookahead of 2 or more for nested expansion.
+Warning:  "," cannot be matched as a string literal token at line 81, column 5. It will be matched as  <LITERAL_PATTERN_TEXT>.
+Warning:  "{" cannot be matched as a string literal token at line 79, column 5. It will be matched as  <LITERAL_PATTERN_TEXT>.
+Warning:  "}" cannot be matched as a string literal token at line 80, column 5. It will be matched as  <LITERAL_PATTERN_TEXT>.
+File "TokenMgrError.java" does not exist.  Will create one.
+File "ParseException.java" does not exist.  Will create one.
+File "Token.java" does not exist.  Will create one.
+File "SimpleCharStream.java" does not exist.  Will create one.
+Parser generated with 0 errors and 5 warnings.
+
+> Task :compileJava UP-TO-DATE
+> Task :processResources NO-SOURCE
+> Task :classes UP-TO-DATE
+> Task :compileTestJava UP-TO-DATE
+> Task :copyPluginPropertiesTemplate UP-TO-DATE
+> Task :pluginProperties UP-TO-DATE
+> Task :processTestResources UP-TO-DATE
+> Task :testClasses UP-TO-DATE
+> Task :compileInternalClusterTestJava
+> Task :processInternalClusterTestResources UP-TO-DATE
+> Task :internalClusterTestClasses
+> Task :prepareJavaAgent UP-TO-DATE
+> Task :internalClusterTest
+
+[Incubating] Problems report is available at: file:///Users/wenting.wang/Uber/opensearch-tsdb-internal/build/reports/problems/problems-report.html
+
+BUILD SUCCESSFUL in 8s
+21 actionable tasks: 10 executed, 11 up-to-date

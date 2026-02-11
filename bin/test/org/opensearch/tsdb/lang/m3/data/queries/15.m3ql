@@ -1,0 +1,13 @@
+fetch name:metric1 | sum
+  | asPercent(
+    (fetch name:metric2
+      | sum
+      | asPercent(fetch name:metric3) name service  # test binary function inside group
+      | avg
+      | (fetch name:metric4
+        | sum
+      )
+      | avg
+    )
+  )
+  | moving 5m min

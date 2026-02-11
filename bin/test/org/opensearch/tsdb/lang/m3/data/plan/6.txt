@@ -1,0 +1,14 @@
+AGG(AVG, groupBy=[])
+  UNION
+    TRANSFORM_NULL(0.0)
+      AGG(SUM, groupBy=[])
+        MOVING(1h, AVG)
+          UNION
+            TRANSFORM_NULL(0.0)
+              AGG(SUM, groupBy=[])
+                MOVING(1h, AVG)
+                  FETCH({name=[abc]}, !{})
+            FETCH({name=[def]}, !{})
+    AGG(SUM, groupBy=[])
+      MOVING(1h, AVG)
+        FETCH({name=[ghi]}, !{})

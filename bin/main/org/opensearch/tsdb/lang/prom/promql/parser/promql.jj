@@ -1,0 +1,340 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * The OpenSearch Contributors require contributions made to
+ * this file be licensed under the Apache-2.0 license or a
+ * compatible open source license.
+ */
+options {
+    STATIC = false;
+    LOOKAHEAD = 1;
+    FORCE_LA_CHECK = true;
+}
+
+PARSER_BEGIN(PromQLParser)
+package org.opensearch.tsdb.lang.prom.promql.parser.generated;
+
+import org.opensearch.tsdb.lang.prom.promql.parser.nodes.*;
+import org.opensearch.tsdb.lang.prom.common.MatcherType;
+import org.opensearch.tsdb.lang.prom.common.GroupingModifier;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+import javax.annotation.Generated;
+
+@Generated("JavaCC")
+public class PromQLParser {
+
+    public RootNode parse() throws ParseException {
+        return Root();
+    }
+
+    public static RootNode parse(String query) throws ParseException {
+        try (java.io.StringReader reader = new java.io.StringReader(query)) {
+            PromQLParser parser = new PromQLParser(reader);
+            return parser.parse();
+        }
+    }
+    
+    /**
+     * Parse duration string to milliseconds.
+     * Supports: ms, s, m, h, d, w, y
+     */
+    private long parseDuration(String duration) {
+        if (duration == null || duration.isEmpty()) {
+            throw new IllegalArgumentException("Duration cannot be empty");
+        }
+        
+        // Use regex to match duration format: <number><unit>
+        // Pattern: one or more digits followed by letters
+        Pattern pattern = java.util.regex.Pattern.compile("^(\\d+)([a-zA-Z]+)$");
+        Matcher matcher = pattern.matcher(duration);
+        
+        if (!matcher.matches()) {
+            throw new IllegalArgumentException("Invalid duration format: " + duration + ". Expected format: <number><unit> (e.g., 5m, 30s)");
+        }
+        
+        String numPart = matcher.group(1);
+        String unitPart = matcher.group(2);
+        
+        long value = Long.parseLong(numPart);
+        
+        if (unitPart.equals("ms")) {
+            return value;
+        } else if (unitPart.equals("s")) {
+            return value * 1000L;
+        } else if (unitPart.equals("m")) {
+            return value * 60L * 1000L;
+        } else if (unitPart.equals("h")) {
+            return value * 60L * 60L * 1000L;
+        } else if (unitPart.equals("d")) {
+            return value * 24L * 60L * 60L * 1000L;
+        } else if (unitPart.equals("w")) {
+            return value * 7L * 24L * 60L * 60L * 1000L;
+        } else if (unitPart.equals("y")) {
+            return value * 365L * 24L * 60L * 60L * 1000L;
+        } else {
+            throw new IllegalArgumentException("Unknown duration unit: " + unitPart + ". Supported: ms, s, m, h, d, w, y");
+        }
+    }
+}
+PARSER_END(PromQLParser)
+
+SKIP : {
+    " " 
+  | "\t" 
+  | "\n" 
+  | "\r" 
+  | "\r\n"
+  | < "#" (~["\n", "\r"])* >
+}
+
+
+TOKEN : {
+    // Duration and number literals (most specific first)
+    < DURATION: (["0"-"9"])+ ("ms" | "s" | "m" | "h" | "d" | "w" | "y") >
+  | < NUMBER: (["0"-"9"])+ ("." (["0"-"9"])+)? >
+  
+    // Keywords (must come before IDENTIFIER to avoid being matched as identifiers)
+  | < BY: "by" >
+  | < WITHOUT: "without" >
+  
+    // Operators
+  | < EQUAL: "=" >
+  | < NOT_EQUAL: "!=" >
+  | < REGEX_MATCH: "=~" >
+  | < REGEX_NOT_MATCH: "!~" >
+  
+    // Delimiters
+  | < LPAREN: "(" >
+  | < RPAREN: ")" >
+  | < LBRACE: "{" >
+  | < RBRACE: "}" >
+  | < LBRACKET: "[" >
+  | < RBRACKET: "]" >
+  | < COMMA: "," >
+  
+    // Single identifier token for everything (functions, aggregations, metric names)
+    // Allows colons for metric names like "http:requests:total"
+  | < IDENTIFIER: (["a"-"z", "A"-"Z", "_"])+ (["a"-"z", "A"-"Z", "0"-"9", "_", ":"])* >
+  
+    // String literals
+  | < STRING_LITERAL: "\"" (~["\"", "\\"] | "\\" ~[])* "\"" >
+}
+
+RootNode Root() :
+{
+    RootNode root = new RootNode();
+    PromASTNode expr;
+}
+{
+    expr = Expression()
+    <EOF>
+    {
+        root.addChild(expr);
+        return root;
+    }
+}
+
+PromASTNode Expression() :
+{
+    PromASTNode node;
+}
+{
+    (
+        // Try aggregation first with semantic lookahead (check if identifier is an aggregation)
+        LOOKAHEAD({ 
+            "sum".equals(getToken(1).image.toLowerCase()) 
+             || "avg".equals(getToken(1).image.toLowerCase())
+             || "min".equals(getToken(1).image.toLowerCase())
+             || "max".equals(getToken(1).image.toLowerCase())
+             || "count".equals(getToken(1).image.toLowerCase())
+        })
+        node = Aggregation()
+      | // Then try function call (also has IDENTIFIER LPAREN but not an aggregation)
+        LOOKAHEAD( <IDENTIFIER> <LPAREN> )
+        node = FunctionCall()
+      | // Finally, vector/matrix selector (metric name or {...})
+        node = VectorOrMatrixSelector()
+    )
+    {
+        return node;
+    }
+}
+
+AggregationNode Aggregation() :
+{
+    Token aggType;
+    GroupingModifier modifier = null;
+    List<String> labels = new ArrayList<>();
+    PromASTNode expr;
+}
+{
+    aggType = <IDENTIFIER>
+    (
+        // Format 1: aggr by/without (labels) (expr)
+        LOOKAHEAD(2)
+        (
+            <BY> { modifier = GroupingModifier.BY; }
+          | <WITHOUT> { modifier = GroupingModifier.WITHOUT; }
+        )
+        <LPAREN>
+        labels = LabelList()
+        <RPAREN>
+        <LPAREN>
+        expr = Expression()
+        <RPAREN>
+    |
+        // Format 2: aggr(expr) [by/without (labels)]
+        <LPAREN>
+        expr = Expression()
+        <RPAREN>
+        [
+            (
+                <BY> { modifier = GroupingModifier.BY; }
+              | <WITHOUT> { modifier = GroupingModifier.WITHOUT; }
+            )
+            <LPAREN>
+            labels = LabelList()
+            <RPAREN>
+        ]
+    )
+    {
+        AggregationNode aggNode = new AggregationNode(aggType.image, modifier, labels);
+        aggNode.setExpression(expr);
+        return aggNode;
+    }
+}
+
+List<String> LabelList() :
+{
+    List<String> labels = new ArrayList<>();
+    Token label;
+}
+{
+    label = <IDENTIFIER> { labels.add(label.image); }
+    (
+        <COMMA>
+        label = <IDENTIFIER> { labels.add(label.image); }
+    )*
+    {
+        return labels;
+    }
+}
+
+FunctionCallNode FunctionCall() :
+{
+    Token funcName;
+    FunctionCallNode funcNode;
+    PromASTNode arg;
+}
+{
+    funcName = <IDENTIFIER>
+    <LPAREN>
+    {
+        funcNode = new FunctionCallNode(funcName.image);
+    }
+    (
+        arg = Expression()
+        {
+            funcNode.addArgument(arg);
+        }
+    )?
+    <RPAREN>
+    {
+        return funcNode;
+    }
+}
+
+PromASTNode VectorOrMatrixSelector() :
+{
+    Token metricName = null;
+    List<LabelMatcherNode> matchers = new ArrayList<>();
+    Token duration;
+    VectorSelectorNode vectorNode = null;
+}
+{
+    (
+        // Alternative 1: metric{...} - need LOOKAHEAD to distinguish from metric alone
+        LOOKAHEAD(2)
+        metricName = <IDENTIFIER>
+        <LBRACE>
+        matchers = LabelMatchers()
+        <RBRACE>
+    |
+        // Alternative 2: metric (no matchers)
+        metricName = <IDENTIFIER>
+    |
+        // Alternative 3: {...} (matchers only, no metric name)
+        <LBRACE>
+        matchers = LabelMatchers()
+        <RBRACE>
+    )
+    // Optional range for matrix selector
+    (
+        <LBRACKET>
+        duration = <DURATION>
+        <RBRACKET>
+        {
+            long rangeMs = parseDuration(duration.image);
+            vectorNode = new RangeVectorSelectorNode(metricName != null ? metricName.image : null, rangeMs);
+            for (LabelMatcherNode matcher : matchers) {
+                vectorNode.addMatcher(matcher);
+            }
+        }
+    |
+        // No range - instant vector
+        {
+            vectorNode = new InstantVectorSelectorNode(metricName != null ? metricName.image : null);
+            for (LabelMatcherNode matcher : matchers) {
+                vectorNode.addMatcher(matcher);
+            }
+        }
+    )
+    {
+        return vectorNode;
+    }
+}
+
+List<LabelMatcherNode> LabelMatchers() :
+{
+    List<LabelMatcherNode> matchers = new ArrayList<>();
+    LabelMatcherNode matcher;
+}
+{
+    matcher = LabelMatcher() { matchers.add(matcher); }
+    (
+        <COMMA>
+        matcher = LabelMatcher() { matchers.add(matcher); }
+    )*
+    {
+        return matchers;
+    }
+}
+
+LabelMatcherNode LabelMatcher() :
+{
+    Token labelName;
+    Token op;
+    Token value;
+    MatcherType matcherType;
+}
+{
+    labelName = <IDENTIFIER>
+    (
+        <EQUAL> { matcherType = MatcherType.EQUAL; }
+      | <NOT_EQUAL> { matcherType = MatcherType.NOT_EQUAL; }
+      | <REGEX_MATCH> { matcherType = MatcherType.REGEX_MATCH; }
+      | <REGEX_NOT_MATCH> { matcherType = MatcherType.REGEX_NOT_MATCH; }
+    )
+    value = <STRING_LITERAL>
+    {
+        // Strip quotes from string literal
+        String unquotedValue = value.image.substring(1, value.image.length() - 1);
+        return new LabelMatcherNode(labelName.image, matcherType, unquotedValue);
+    }
+}
+
+
+

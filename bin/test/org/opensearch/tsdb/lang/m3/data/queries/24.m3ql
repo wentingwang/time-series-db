@@ -1,0 +1,4 @@
+# test fetch then sort then head
+fetch name:xx
+  | sort max asc
+  | head 5

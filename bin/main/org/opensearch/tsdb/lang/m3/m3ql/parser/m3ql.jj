@@ -1,0 +1,372 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * The OpenSearch Contributors require contributions made to
+ * this file be licensed under the Apache-2.0 license or a
+ * compatible open source license.
+ */
+options {
+    STATIC = false;
+    LOOKAHEAD = 1;
+}
+
+PARSER_BEGIN(M3QLParser)
+package org.opensearch.tsdb.lang.m3.m3ql.parser.generated;
+
+import org.opensearch.tsdb.lang.m3.m3ql.parser.M3ASTProcessor;
+import org.opensearch.tsdb.lang.m3.m3ql.parser.nodes.FunctionNode;
+import org.opensearch.tsdb.lang.m3.m3ql.parser.nodes.GroupNode;
+import org.opensearch.tsdb.lang.m3.m3ql.parser.nodes.RootNode;
+import org.opensearch.tsdb.lang.m3.m3ql.parser.nodes.TagKeyNode;
+import org.opensearch.tsdb.lang.m3.m3ql.parser.nodes.TagValueNode;
+import org.opensearch.tsdb.lang.m3.m3ql.parser.nodes.M3ASTNode;
+import org.opensearch.tsdb.lang.m3.m3ql.parser.nodes.MacroNode;
+import org.opensearch.tsdb.lang.m3.m3ql.parser.nodes.PipelineNode;
+import org.opensearch.tsdb.lang.m3.m3ql.parser.nodes.ValueNode;
+import org.opensearch.tsdb.lang.m3.common.Utils;
+import java.util.Objects;
+import java.util.ArrayList;
+import javax.annotation.Generated;
+
+@Generated("JavaCC")
+public class M3QLParser {
+
+    public RootNode parse(boolean expandMacros) throws ParseException {
+        RootNode node = Root();
+        M3ASTProcessor.process(node, expandMacros);
+        return node;
+    }
+
+    public static RootNode parse(String query, boolean expandMacros) throws ParseException {
+        try (java.io.StringReader reader = new java.io.StringReader(query)) {
+            M3QLParser parser = new M3QLParser(reader);
+            return parser.parse(expandMacros);
+        }
+    }
+}
+PARSER_END(M3QLParser)
+
+SKIP : {
+    " " | "\t" | "\n" | "\r" | "\r\n" | < "#" (~["\n", "\r"])* >
+}
+
+// Default tokens, used for most of the parsing
+TOKEN : {
+    < IDENTIFIER: (["a"-"z", "_", "-", "A"-"Z", "0"-"9", "*", "."])+ (["a"-"z", "0"-"9", "_", "-", "A"-"Z", "*", "."])* >
+  | < OPERATOR: "<=" | "<" | "==" | "!=" | ">=" | ">" >
+  | < SCIENTIFIC_NUMBER: (["0"-"9"])+ ("." (["0"-"9"])+)? (("e" | "E") ("+" | "-")? (["0"-"9"])+)? >
+  | < STRING_LITERAL: ("\"") (~["\""])* ("\"") >
+}
+
+// Special tokens for literal arguments that preserve spaces and need to handle quotes/comments, etc.
+<LITERAL_MODE> TOKEN : {
+    < LITERAL_RETURN: "\n" | "\r" | "\r\n" >
+  | < LITERAL_QUOTED_STRING: "\"" (~["\""])* "\"" >
+  | < LITERAL_UNCLOSED_STRING: "\"" (~["\"", "\n", "\r", "|", ";"])* >
+  | < LITERAL_COMMENT: "#" (~["\n", "\r"])* >
+  | < LITERAL_PATTERN_TEXT: (["a"-"z", "A"-"Z", "0"-"9", "_", "-", ".", "/", "\\", "{", "}", "[", "]", "*", "?", ",", "^", "$"])+  >
+  | < LITERAL_SPACE: (" " | "\t")+ >
+}
+
+// Common tokens, to simplify mode switching
+<*> TOKEN : {
+    < SEMICOLON: ";" >
+  | < EQUALS: "=" >
+  | < PIPE: "|" >
+  | < LPAREN: "(" >
+  | < RPAREN: ")" >
+  | < COLON: ":" >
+  | < OPEN_CURLY: "{" >
+  | < CLOSED_CURLY: "}" >
+  | < COMMA: "," >
+  | < EXCLAMATION_MARK: "!" >
+}
+
+// Helper function to consume optional "exec" or "execute" before "("
+// 'exec(...)', 'execute(...)' and 'exec    (...)' are treated as equivalent to (...) in M3QL
+void LeftParen() :
+{}
+{
+    (
+        LOOKAHEAD({ 
+            getToken(1).kind == IDENTIFIER && 
+            ("exec".equals(getToken(1).image) || "execute".equals(getToken(1).image)) && 
+            getToken(2).kind == LPAREN 
+        })
+        <IDENTIFIER>   // swallow "exec" or "execute"
+        <LPAREN>
+      | <LPAREN>
+    )
+}
+
+RootNode Root() :
+{
+    RootNode rootNode = new RootNode();
+    MacroNode macroNode;
+    M3ASTNode pipelineNode;
+}
+{
+    [
+      LOOKAHEAD(<IDENTIFIER> <EQUALS>)
+      macroNode = Macro()
+      (<SEMICOLON>)
+      { rootNode.addChildNode(macroNode); }
+
+      (
+        LOOKAHEAD(<IDENTIFIER> <EQUALS>)
+        macroNode = Macro()
+        (<SEMICOLON>)
+        { rootNode.addChildNode(macroNode); }
+      )*
+    ]
+    pipelineNode = Pipeline()
+    <EOF>
+    {
+        rootNode.addChildNode(pipelineNode);
+        return rootNode;
+    }
+}
+
+MacroNode Macro() :
+{
+    MacroNode macroNode;
+    M3ASTNode pipelineNode;
+    Token t;
+}
+{
+    t = <IDENTIFIER>
+    <EQUALS>
+    pipelineNode = Pipeline()
+    {
+        macroNode = new MacroNode(t.image);
+        macroNode.addChildNode(pipelineNode);
+        return macroNode;
+    }
+}
+
+M3ASTNode Pipeline() :
+{
+    M3ASTNode result;
+}
+{
+    result = RegularPipeline()
+    { return result; }
+}
+
+M3ASTNode RegularPipeline() :
+{
+    PipelineNode pipelineNode = new PipelineNode();
+    M3ASTNode tempChildNode;
+}
+{
+    tempChildNode = Expression()
+    { pipelineNode.addChildNode(tempChildNode); }
+
+    ((<PIPE>) tempChildNode = Expression() { pipelineNode.addChildNode(tempChildNode); })*
+
+    {
+        return pipelineNode;
+    }
+}
+
+M3ASTNode Expression() :
+{
+    M3ASTNode childNode;
+}
+{
+    (
+        LOOKAHEAD(LeftParen())
+        childNode = ParenthesizedExpression()
+      | childNode = Function()
+    )
+    { return childNode; }
+}
+
+M3ASTNode ParenthesizedExpression() :
+{
+    GroupNode groupNode = new GroupNode();
+    M3ASTNode tempChildNode;
+}
+{
+    LeftParen()
+    tempChildNode = Expression()
+    { groupNode.addChildNode(tempChildNode); }
+
+    (<PIPE> tempChildNode = Expression() { groupNode.addChildNode(tempChildNode); })*
+
+    <RPAREN>
+    {
+        return groupNode;
+    }
+}
+
+FunctionNode Function() :
+{
+    Token t;
+    FunctionNode node = new FunctionNode();
+}
+{
+    (
+        t = <IDENTIFIER> | t = <OPERATOR>
+    )
+    {
+        node.setFunctionName(t.image);
+        if ("alias".equals(t.image)) {
+            token_source.SwitchTo(LITERAL_MODE);
+        }
+    }
+    (
+        LOOKAHEAD({ "alias".equals(token.image) }) AliasArgument(node)
+      | LOOKAHEAD({ "fetch".equals(token.image) }) (LOOKAHEAD(2) Tag(node))*
+      | (LOOKAHEAD(2) Argument(node))*
+    )
+    { return node; }
+}
+
+void AliasArgument(M3ASTNode parentNode) :
+{
+    Token t;
+    ArrayList<String> aliasText = new ArrayList<>();
+}
+{
+    (
+        LOOKAHEAD({
+            getToken(1).kind != LITERAL_RETURN &&
+            getToken(1).kind != LITERAL_COMMENT &&
+            getToken(1).kind != PIPE &&
+            getToken(1).kind != SEMICOLON &&
+            getToken(1).kind != RPAREN &&
+            getToken(1).kind != 0
+        })
+        (
+            t = <LITERAL_QUOTED_STRING> {
+                aliasText.add(Utils.stripDoubleQuotes(t.image));
+            }
+          | t = <LITERAL_UNCLOSED_STRING> {
+                token_source.SwitchTo(DEFAULT);
+                throw new ParseException("Unclosed quoted string in alias: " + t.image);
+            }
+          | t = <LITERAL_PATTERN_TEXT> { aliasText.add(t.image); }
+          | t = <LITERAL_SPACE> { /* Consume but ignore */ }
+          | t = <EXCLAMATION_MARK> { aliasText.add(" " + t.image); } // if an alias contains !, M3 adds a leading space
+        )
+    )*
+    {
+        token_source.SwitchTo(DEFAULT);
+        if (!aliasText.isEmpty()) {
+            String result = String.join(" ", aliasText).trim();
+            if (!result.isEmpty()) {
+                parentNode.addChildNode(new ValueNode(result));
+            }
+        }
+    }
+    // To safely transition out of LITERAL_MODE, consume tokens equivalent to SKIP
+    (t = <LITERAL_RETURN> { /* Consume but ignore trailing new lines after alias */ })*
+    (t = <LITERAL_COMMENT> { /* Consume but ignore trailing comments after alias */ })*
+    (t = <LITERAL_SPACE> { /* Consume but ignore trailing spaces after alias */ })*
+
+}
+
+void Argument(M3ASTNode parentNode) :
+{
+    Token t;
+    TagKeyNode tagKeyNode = null;
+    M3ASTNode nestedNode;
+    ValueNode tempValueNode;
+}
+{
+    (
+        LOOKAHEAD(3)
+        <LPAREN>
+        t = <IDENTIFIER>
+        <RPAREN>
+        {
+            FunctionNode functionNode = new FunctionNode();
+            functionNode.setFunctionName(t.image);
+            parentNode.addChildNode(functionNode);
+        }
+      | LOOKAHEAD(2)
+        (
+            (
+                t = <IDENTIFIER> | t = <STRING_LITERAL>
+            )
+            {
+                tempValueNode = new ValueNode(t.image);
+                parentNode.addChildNode(tempValueNode);
+            }
+            (
+                <COMMA>
+                (t = <IDENTIFIER> | t = <STRING_LITERAL>)
+                {
+                    parentNode.addChildNode(new ValueNode(t.image));
+                }
+            )*
+        )
+      | t = <SCIENTIFIC_NUMBER> { parentNode.addChildNode(new ValueNode(t.image)); }
+      | nestedNode = Expression() { parentNode.addChildNode(nestedNode); }
+    )
+}
+
+void Tag(FunctionNode parentNode) :
+{
+    Token t;
+    TagKeyNode tagKeyNode = new TagKeyNode();
+}
+{
+    t = <IDENTIFIER>
+    <COLON>
+    {
+        tagKeyNode.setKeyName(t.image);
+        parentNode.addChildNode(tagKeyNode);
+        token_source.SwitchTo(LITERAL_MODE);
+    }
+    (t = <LITERAL_SPACE> { /* Consume and ignore leading spaces e.g. 'name:   abcd' */ } )*
+    [
+      <EXCLAMATION_MARK> {
+          Objects.requireNonNull(tagKeyNode, "! only allowed in tag value expression");
+          tagKeyNode.setInverted(true);
+      }
+      (t = <LITERAL_SPACE> { /* Consume and ignore trailing spaces e.g. 'name:!   abcd' */ } )*
+    ]
+    TagValueArgument(tagKeyNode)
+
+}
+
+void TagValueArgument(M3ASTNode parentNode) :
+{
+    Token t;
+    StringBuilder tagValueText = new StringBuilder();
+}
+{
+    (
+        LOOKAHEAD({
+            getToken(1).kind != LITERAL_RETURN &&
+            getToken(1).kind != LITERAL_COMMENT &&
+            getToken(1).kind != LITERAL_SPACE &&
+            getToken(1).kind != PIPE &&
+            getToken(1).kind != SEMICOLON &&
+            getToken(1).kind != LPAREN &&
+            getToken(1).kind != RPAREN &&
+            getToken(1).kind != 0
+        })
+        (
+            t = <LITERAL_QUOTED_STRING> { tagValueText.append(Utils.stripDoubleQuotes(t.image)); }
+          | t = <LITERAL_UNCLOSED_STRING> {
+                token_source.SwitchTo(DEFAULT);
+                throw new ParseException("Unclosed quoted string in tag: " + t.image);
+            }
+          | t = <LITERAL_PATTERN_TEXT> { tagValueText.append(t.image); }
+        )
+    )*
+    {
+        token_source.SwitchTo(DEFAULT);
+        String result = tagValueText.toString().trim();
+        if (!result.isEmpty()) {
+            parentNode.addChildNode(new TagValueNode(result));
+        }
+    }
+    // To safely transition out of LITERAL_MODE, consume tokens equivalent to SKIP
+    (t = <LITERAL_RETURN> { /* Consume but ignore trailing new lines */ })*
+    (t = <LITERAL_COMMENT> { /* Consume but ignore trailing comments */ })*
+    (t = <LITERAL_SPACE> { /* Consume but ignore trailing spaces */ })*
+}

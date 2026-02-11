@@ -1,0 +1,6 @@
+# test binary function after unary function (asPercent after removeEmpty)
+# test sort with alias names (average ascending)
+fetch name:a
+  | removeEmpty
+  | asPercent(fetch name:b)
+  | sort average ascending

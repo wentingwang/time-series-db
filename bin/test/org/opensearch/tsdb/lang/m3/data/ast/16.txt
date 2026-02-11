@@ -1,0 +1,7 @@
+ROOT
+  PIPELINE
+    FUNCTION(fetch)
+      TAG_KEY(name)
+        TAG_VALUE(a)
+    FUNCTION(fallbackSeries)
+      VALUE(1.0)

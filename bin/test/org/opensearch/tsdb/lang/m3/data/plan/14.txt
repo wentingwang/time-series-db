@@ -1,0 +1,14 @@
+MOVING(5m, MIN)
+  AS_PERCENT(groupBy=[])
+    AGG(SUM, groupBy=[])
+      FETCH({name=[metric1]}, !{})
+    AGG(AVG, groupBy=[])
+      UNION
+        AGG(AVG, groupBy=[])
+          UNION
+            AGG(SUM, groupBy=[])
+              FETCH({name=[metric2]}, !{})
+            FETCH({name=[metric3]}, !{})
+        ALIAS(metric)() with parens)
+          AGG(SUM, groupBy=[])
+            FETCH({name=[metric4]}, !{})

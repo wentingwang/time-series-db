@@ -1,0 +1,5 @@
+# test global aggregation by using histogramPercentile without a preceding aggregation (e.g. sum)
+# test sort with no arguments (defaults to current desc)
+fetch service:"api-server" name:"total_leaf_node_latency_histogram"
+  | histogramPercentile bucketid bucket 99.0
+  | sort

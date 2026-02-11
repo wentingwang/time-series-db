@@ -1,0 +1,4 @@
+# test fallbackSeries with pipeline argument (binary)
+fetch name:a
+  | fallbackSeries(fetch name:b)
+

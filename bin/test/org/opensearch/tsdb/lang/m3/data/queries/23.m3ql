@@ -1,0 +1,3 @@
+# test fetch then head
+fetch name:a
+  | head 5

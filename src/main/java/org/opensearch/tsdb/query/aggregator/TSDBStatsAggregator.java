@@ -192,7 +192,11 @@ public class TSDBStatsAggregator extends MetricsAggregator {
         }
 
         // Create shard-level stats with fingerprint sets
-        InternalTSDBStats.ShardLevelStats shardStats = new InternalTSDBStats.ShardLevelStats(uniqueSeriesFingerprints, shardLabelStats);
+        InternalTSDBStats.ShardLevelStats shardStats = new InternalTSDBStats.ShardLevelStats(
+            uniqueSeriesFingerprints,
+            shardLabelStats,
+            includeValueStats  // Pass global flag so coordinator knows if value stats were collected
+        );
 
         // Return using factory method
         return InternalTSDBStats.forShardLevel(name, shardStats, metadata());

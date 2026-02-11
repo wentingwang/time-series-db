@@ -1,0 +1,2 @@
+ALIAS(ci  ty [{{.name}}, value])
+  FETCH({name=[a]}, !{})

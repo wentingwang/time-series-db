@@ -1,0 +1,4 @@
+# test simple union
+# test space after tag name and before tag value ('state: xyz')
+# test space after tag name and before inverse tag value ('region: !north*')
+fetch country:us region: !north* | transformNull 0 | fetch state: xyz | sum | fetch city:toronto

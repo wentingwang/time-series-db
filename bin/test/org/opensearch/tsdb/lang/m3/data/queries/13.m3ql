@@ -1,0 +1,32 @@
+# test complex nesting with fetch-less macro expansion under a group, and repeated fetch without macros
+# TODO: ensure repeated fetch pipeline (service:logger name:attempts) is only executed once
+log_difference = fetch service:logger name:logs
+  | sum
+  | diff (
+    fetch service:logger name:attempts
+      | sum
+  )
+  | abs;
+
+not_error_backoff_proportion = fetch service:logger error_type:!backoff
+  | sum
+  | divideSeries (
+    fetch service:logger error_type:*
+      | sum
+  ) error_type
+  | abs
+  | transformNull 0
+  | moving 5m avg;
+
+scaled_diff = log_difference
+  | (not_error_backoff_proportion) # test group around macro, group applies to expanded macro
+  # | multiplySeries; TODO uncomment this line and remove the following sumSeries once multiply is implemented
+  | sumSeries;
+
+scaled_diff
+  | asPercent (
+    fetch service:logger name:attempts
+      | sum
+  )
+  | moving 5m min
+  | alias percent

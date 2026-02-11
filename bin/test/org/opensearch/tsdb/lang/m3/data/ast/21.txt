@@ -1,0 +1,12 @@
+ROOT
+  PIPELINE
+    FUNCTION(fetch)
+      TAG_KEY(name)
+        TAG_VALUE(a)
+    FUNCTION(moving)
+      VALUE(10m)
+      VALUE(sum)
+    FUNCTION(summarize)
+      VALUE(7m)
+      VALUE(sum)
+      VALUE(false)

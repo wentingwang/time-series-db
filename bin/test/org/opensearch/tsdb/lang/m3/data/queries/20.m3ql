@@ -1,0 +1,7 @@
+# test with binary functions with different arguments
+w = fetch name:a | diff(fetch name:b) true;
+x = fetch name:c | diff(fetch name:b) false;
+y = fetch name:e | diff(fetch name:f) true name;
+z = fetch name:g | diff(fetch name:h) false name city;
+
+w | asPercent(x) service | divide(y) name region | subtract(z) # test alias

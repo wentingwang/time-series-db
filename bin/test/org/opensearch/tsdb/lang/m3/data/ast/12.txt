@@ -1,0 +1,14 @@
+ROOT
+  PIPELINE
+    FUNCTION(fetch)
+      TAG_KEY(name)
+        TAG_VALUE(a)
+    FUNCTION(removeEmpty)
+    FUNCTION(asPercent)
+      GROUP
+        FUNCTION(fetch)
+          TAG_KEY(name)
+            TAG_VALUE(b)
+    FUNCTION(sort)
+      VALUE(average)
+      VALUE(ascending)

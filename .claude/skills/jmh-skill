@@ -1,0 +1,183 @@
+#!/bin/bash
+# JMH Benchmark Skill for OpenSearch TSDB
+# This skill helps run JMH benchmarks with various configurations
+
+set -e
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
+
+# Function to print colored output
+print_info() {
+    echo -e "${BLUE}[INFO]${NC} $1"
+}
+
+print_success() {
+    echo -e "${GREEN}[SUCCESS]${NC} $1"
+}
+
+print_warning() {
+    echo -e "${YELLOW}[WARNING]${NC} $1"
+}
+
+print_error() {
+    echo -e "${RED}[ERROR]${NC} $1"
+}
+
+# Function to show usage
+show_usage() {
+    cat << EOF
+JMH Benchmark Skill - OpenSearch TSDB
+
+Usage: jmh-skill [COMMAND] [OPTIONS]
+
+Commands:
+    list                List all available benchmarks
+    run [PATTERN]       Run benchmarks matching the pattern (default: all)
+    help                Show this help message
+    profilers           List available JMH profilers
+
+Options:
+    -w, --warmup N      Number of warmup iterations (default: 3)
+    -i, --iterations N  Number of measurement iterations (default: 5)
+    -f, --forks N       Number of forks (default: 1)
+    -p, --params PARAMS Custom parameters (e.g., "cardinality=100")
+    -prof PROFILER      Enable profiler (e.g., gc, stack)
+
+Examples:
+    # List all benchmarks
+    jmh-skill list
+
+    # Run all benchmarks
+    jmh-skill run
+
+    # Run specific benchmark
+    jmh-skill run TermVsTermsBenchmark
+
+    # Run with custom iterations
+    jmh-skill run -i 10 -w 5 HeadAppendBenchmark
+
+    # Run with profiler
+    jmh-skill run -prof gc TimeSeriesUnfoldAggregationBenchmark
+
+    # Run with specific parameters
+    jmh-skill run -p "cardinality=1000" TimeSeriesUnfoldAggregationBenchmark
+
+EOF
+}
+
+# Parse command
+COMMAND="${1:-help}"
+shift || true
+
+# Initialize variables
+WARMUP=""
+ITERATIONS=""
+FORKS=""
+PARAMS=""
+PROFILER=""
+PATTERN=""
+
+# Parse options
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        -w|--warmup)
+            WARMUP="$2"
+            shift 2
+            ;;
+        -i|--iterations)
+            ITERATIONS="$2"
+            shift 2
+            ;;
+        -f|--forks)
+            FORKS="$2"
+            shift 2
+            ;;
+        -p|--params)
+            PARAMS="$2"
+            shift 2
+            ;;
+        -prof)
+            PROFILER="$2"
+            shift 2
+            ;;
+        -h|--help)
+            show_usage
+            exit 0
+            ;;
+        *)
+            PATTERN="$1"
+            shift
+            ;;
+    esac
+done
+
+# Build gradle command
+build_gradle_cmd() {
+    local cmd="./gradlew jmh"
+
+    if [[ -n "$WARMUP" ]]; then
+        cmd="$cmd -Pjmh.warmupIterations=$WARMUP"
+    fi
+
+    if [[ -n "$ITERATIONS" ]]; then
+        cmd="$cmd -Pjmh.measurementIterations=$ITERATIONS"
+    fi
+
+    if [[ -n "$FORKS" ]]; then
+        cmd="$cmd -Pjmh.forks=$FORKS"
+    fi
+
+    if [[ -n "$PARAMS" ]]; then
+        cmd="$cmd -Pjmh.params=\"$PARAMS\""
+    fi
+
+    if [[ -n "$PROFILER" ]]; then
+        cmd="$cmd -Pjmh.profilers=$PROFILER"
+    fi
+
+    if [[ -n "$PATTERN" ]]; then
+        cmd="$cmd -Pjmh.includes='.*$PATTERN.*'"
+    fi
+
+    echo "$cmd"
+}
+
+# Execute commands
+case $COMMAND in
+    list)
+        print_info "Listing all available benchmarks..."
+        ./gradlew jmhList
+        ;;
+
+    run)
+        GRADLE_CMD=$(build_gradle_cmd)
+        print_info "Running benchmarks..."
+        if [[ -n "$PATTERN" ]]; then
+            print_info "Pattern: $PATTERN"
+        fi
+        print_info "Command: $GRADLE_CMD"
+        echo ""
+        eval "$GRADLE_CMD"
+        ;;
+
+    profilers)
+        print_info "Listing available profilers..."
+        ./gradlew jmhProfilers
+        ;;
+
+    help|--help|-h)
+        show_usage
+        ;;
+
+    *)
+        print_error "Unknown command: $COMMAND"
+        echo ""
+        show_usage
+        exit 1
+        ;;
+esac

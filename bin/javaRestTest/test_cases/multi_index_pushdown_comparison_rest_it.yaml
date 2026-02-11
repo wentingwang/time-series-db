@@ -1,0 +1,119 @@
+# Multi-Index Pushdown Comparison
+# Tests that queries with and without pushdown produce identical results across multiple indices
+
+test_setup:
+  name: "Multi-Index Pushdown Comparison Tests"
+  description: "Verify that pushdown enabled and disabled queries produce the same results when querying data split across multiple indices"
+
+  index_configs:
+    - name: "metrics_index1"
+      shards: 2
+      replicas: 0
+    - name: "metrics_index2"
+      shards: 2
+      replicas: 0
+
+test_case:
+  name: "Pushdown Comparison Test"
+
+  input_data_list:
+    # Index 1: Contains data from t1 to t2 (00:00:00Z to 00:30:00Z)
+    - index_name: "metrics_index1"
+      input_data_type: FIXED_INTERVAL
+      time_config:
+        min_timestamp: "2025-01-01T00:00:00Z"
+        max_timestamp: "2025-01-01T00:30:00Z"
+        step: "5m"
+      regular_metrics:
+        - labels: "name:requests,service:api"
+          values: [10, 20, 30, 40, 50, 60, 70]
+
+    # Index 2: Contains data from t2 to t3 (00:35:00Z to 01:00:00Z)
+    - index_name: "metrics_index2"
+      input_data_type: FIXED_INTERVAL
+      time_config:
+        min_timestamp: "2025-01-01T00:35:00Z"
+        max_timestamp: "2025-01-01T01:00:00Z"
+        step: "5m"
+      regular_metrics:
+        - labels: "name:requests,service:api"
+          values: [80, 90, 100, 110, 120, 130]
+
+  queries:
+    # Query 1: Simple sum with pushdown enabled (default)
+    - name: "multi_index_sum_with_pushdown"
+      type: "m3ql"
+      query: "fetch name:requests service:api | sum"
+      indices: "metrics_index1,metrics_index2"
+      time_config:
+        min_timestamp: "2025-01-01T00:00:00Z"
+        max_timestamp: "2025-01-01T01:00:00Z"
+        step: "5m"
+      expected:
+        status: "success"
+        data:
+          - metric: {}
+            values: [10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120]
+
+    # Query 2: Simple sum with pushdown disabled
+    - name: "multi_index_sum_without_pushdown"
+      type: "m3ql"
+      query: "fetch name:requests service:api | sum"
+      indices: "metrics_index1,metrics_index2"
+      disable_pushdown: true
+      time_config:
+        min_timestamp: "2025-01-01T00:00:00Z"
+        max_timestamp: "2025-01-01T01:00:00Z"
+        step: "5m"
+      expected:
+        status: "success"
+        data:
+          - metric: {}
+            values: [10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120]
+
+    # Query 3: Verify single series data (without aggregation) with pushdown
+    - name: "multi_index_fetch_with_pushdown"
+      type: "m3ql"
+      query: "fetch name:requests service:api"
+      indices: "metrics_index1,metrics_index2"
+      time_config:
+        min_timestamp: "2025-01-01T00:00:00Z"
+        max_timestamp: "2025-01-01T01:00:00Z"
+        step: "5m"
+      expected:
+        status: "success"
+        data:
+          - metric: {name: "requests", service: "api"}
+            values: [10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120]
+
+    # Query 4: Verify single series data (without aggregation) without pushdown
+    - name: "multi_index_fetch_without_pushdown"
+      type: "m3ql"
+      query: "fetch name:requests service:api"
+      indices: "metrics_index1,metrics_index2"
+      disable_pushdown: true
+      time_config:
+        min_timestamp: "2025-01-01T00:00:00Z"
+        max_timestamp: "2025-01-01T01:00:00Z"
+        step: "5m"
+      expected:
+        status: "success"
+        data:
+          - metric: {name: "requests", service: "api"}
+            values: [10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120]
+
+    # Query 5: Moving sum with pushdown disabled across multiple indices (non-overlapping)
+    - name: "multi_index_moving_sum_with_no_pushdown"
+      type: "m3ql"
+      query: "fetch name:requests service:api | moving 15m sum"
+      indices: "metrics_index1,metrics_index2"
+      disable_pushdown: true
+      time_config:
+        min_timestamp: "2025-01-01T00:00:00Z"
+        max_timestamp: "2025-01-01T01:00:00Z"
+        step: "5m"
+      expected:
+        status: "success"
+        data:
+          - metric: {name: "requests", service: "api"}
+            values: [null, 10, 30, 60, 90, 120, 150, 180, 210, 240, 270, 300]

@@ -80,10 +80,11 @@ public class InternalTSDBStats extends InternalAggregation {
      * between Head and ClosedChunkIndex using exact fingerprints. Converted to {@link CoordinatorLevelStats}
      * after shard-level reduce to save network bandwidth.</p>
      */
-    public record ShardLevelStats(Set<Long> seriesFingerprintSet, Map<String, Map<String, Set<Long>>> labelStats) {
+    public record ShardLevelStats(Set<Long> seriesFingerprintSet, Map<String, Map<String, Set<Long>>> labelStats,
+        boolean includeValueStats) {
 
         public ShardLevelStats(StreamInput in) throws IOException {
-            this(readSeriesFingerprintSet(in), readLabelStatsMap(in));
+            this(readSeriesFingerprintSet(in), readLabelStatsMap(in), in.readBoolean());
         }
 
         private static Set<Long> readSeriesFingerprintSet(StreamInput in) throws IOException {
@@ -180,6 +181,9 @@ public class InternalTSDBStats extends InternalAggregation {
                     out.writeBoolean(false);
                 }
             }
+
+            // Write global includeValueStats flag
+            out.writeBoolean(includeValueStats);
         }
     }
 
@@ -431,7 +435,16 @@ public class InternalTSDBStats extends InternalAggregation {
      */
     private InternalTSDBStats reduceShardLevel(List<InternalAggregation> aggregations) {
         Set<Long> mergedFingerprints = new HashSet<>();
-        Map<String, ShardLevelLabelStatsBuilder> builders = new HashMap<>();
+        Map<String, Map<String, Set<Long>>> mergedLabelStats = new HashMap<>();
+
+        // Capture global includeValueStats flag from first shard (all shards have same value)
+        boolean includeValueStats = false;
+        if (!aggregations.isEmpty()) {
+            InternalTSDBStats firstStats = (InternalTSDBStats) aggregations.get(0);
+            if (firstStats.shardStats != null) {
+                includeValueStats = firstStats.shardStats.includeValueStats();
+            }
+        }
 
         for (InternalAggregation agg : aggregations) {
             InternalTSDBStats stats = (InternalTSDBStats) agg;
@@ -452,21 +465,18 @@ public class InternalTSDBStats extends InternalAggregation {
                 String labelName = entry.getKey();
                 Map<String, Set<Long>> valueFingerprintSets = entry.getValue();
 
-                ShardLevelLabelStatsBuilder builder = builders.computeIfAbsent(labelName, k -> new ShardLevelLabelStatsBuilder());
+                Map<String, Set<Long>> mergedValueSets = mergedLabelStats.computeIfAbsent(labelName, k -> new LinkedHashMap<>());
 
                 // Merge value fingerprint sets
                 if (valueFingerprintSets != null) {
-                    if (builder.valueFingerprintSets == null) {
-                        builder.valueFingerprintSets = new LinkedHashMap<>();
-                    }
                     for (Map.Entry<String, Set<Long>> ve : valueFingerprintSets.entrySet()) {
                         String valueKey = ve.getKey();
                         Set<Long> newSet = ve.getValue();
 
                         // Merge sets (automatic deduplication)
-                        builder.valueFingerprintSets.computeIfAbsent(valueKey, k -> new HashSet<>());
+                        Set<Long> mergedSet = mergedValueSets.computeIfAbsent(valueKey, k -> new HashSet<>());
                         if (newSet != null) {
-                            builder.valueFingerprintSets.get(valueKey).addAll(newSet);
+                            mergedSet.addAll(newSet);
                         }
                     }
                 }
@@ -477,43 +487,38 @@ public class InternalTSDBStats extends InternalAggregation {
         Long totalSeries = mergedFingerprints.isEmpty() ? null : (long) mergedFingerprints.size();
 
         Map<String, CoordinatorLevelStats.LabelStats> finalLabelStats = new HashMap<>();
-        for (Map.Entry<String, ShardLevelLabelStatsBuilder> entry : builders.entrySet()) {
+        for (Map.Entry<String, Map<String, Set<Long>>> entry : mergedLabelStats.entrySet()) {
             String labelName = entry.getKey();
-            ShardLevelLabelStatsBuilder builder = entry.getValue();
+            Map<String, Set<Long>> valueFingerprintSets = entry.getValue();
 
-            // Calculate label cardinality (union of all value fingerprints)
+            // Calculate label cardinality and value counts
             Long labelCardinality = null;
             Map<String, Long> valueCounts = null;
 
-            if (builder.valueFingerprintSets != null) {
-                // Check if any set is non-null (i.e., includeValueStats was true)
-                boolean hasNonNullSets = builder.valueFingerprintSets.values().stream().anyMatch(s -> s != null && !s.isEmpty());
+            // Use global flag instead of checking sets (O(1) vs O(n) optimization)
+            if (includeValueStats) {
+                // includeValueStats=true: compute exact counts
+                Set<Long> allFingerprintsForLabel = new HashSet<>();
+                valueCounts = new LinkedHashMap<>();
 
-                if (hasNonNullSets) {
-                    // includeValueStats was true - compute exact counts
-                    Set<Long> allFingerprintsForLabel = new HashSet<>();
-                    valueCounts = new LinkedHashMap<>();
+                for (Map.Entry<String, Set<Long>> ve : valueFingerprintSets.entrySet()) {
+                    String value = ve.getKey();
+                    Set<Long> fingerprintSetForValue = ve.getValue();
 
-                    for (Map.Entry<String, Set<Long>> ve : builder.valueFingerprintSets.entrySet()) {
-                        Set<Long> fingerprintSetForValue = ve.getValue();
+                    if (fingerprintSetForValue != null && !fingerprintSetForValue.isEmpty()) {
+                        long valueCount = fingerprintSetForValue.size();
+                        valueCounts.put(value, valueCount);
 
-                        if (fingerprintSetForValue != null && !fingerprintSetForValue.isEmpty()) {
-                            long valueCount = fingerprintSetForValue.size();
-                            valueCounts.put(ve.getKey(), valueCount);
-
-                            // Collect for label cardinality
-                            allFingerprintsForLabel.addAll(fingerprintSetForValue);
-                        }
+                        // Collect for label cardinality
+                        allFingerprintsForLabel.addAll(fingerprintSetForValue);
                     }
-
-                    labelCardinality = allFingerprintsForLabel.isEmpty() ? null : (long) allFingerprintsForLabel.size();
                 }
+
+                labelCardinality = allFingerprintsForLabel.isEmpty() ? null : (long) allFingerprintsForLabel.size();
             }
 
-            // Extract values list from builder (always populated, even when includeValueStats=false)
-            List<String> valuesList = builder.valueFingerprintSets != null
-                ? new ArrayList<>(builder.valueFingerprintSets.keySet())
-                : List.of();
+            // Extract values list (always populated, even when includeValueStats=false)
+            List<String> valuesList = new ArrayList<>(valueFingerprintSets.keySet());
 
             finalLabelStats.put(labelName, new CoordinatorLevelStats.LabelStats(labelCardinality, valuesList, valueCounts));
         }
@@ -592,13 +597,6 @@ public class InternalTSDBStats extends InternalAggregation {
 
         CoordinatorLevelStats coordinatorStats = new CoordinatorLevelStats(totalSeries, finalLabelStats);
         return forCoordinatorLevel(name, mergedHeadStats, coordinatorStats, metadata);
-    }
-
-    /**
-     * Helper class for building shard-level label stats during reduce.
-     */
-    private static class ShardLevelLabelStatsBuilder {
-        Map<String, Set<Long>> valueFingerprintSets = null;
     }
 
     /**

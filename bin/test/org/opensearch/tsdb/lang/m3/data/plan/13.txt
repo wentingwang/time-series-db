@@ -1,0 +1,21 @@
+ALIAS(percent)
+  MOVING(5m, MIN)
+    AS_PERCENT(groupBy=[])
+      AGG(SUM, groupBy=[])
+        UNION
+          ABS
+            DIFF(keepNans=false,groupBy=[])
+              AGG(SUM, groupBy=[])
+                FETCH({service=[logger], name=[logs]}, !{})
+              AGG(SUM, groupBy=[])
+                FETCH({service=[logger], name=[attempts]}, !{})
+          MOVING(5m, AVG)
+            TRANSFORM_NULL(0.0)
+              ABS
+                DIVIDE_SERIES(groupBy=[error_type])
+                  AGG(SUM, groupBy=[])
+                    FETCH({service=[logger]}, !{error_type=[backoff]})
+                  AGG(SUM, groupBy=[])
+                    FETCH({service=[logger], error_type=[*]}, !{})
+      AGG(SUM, groupBy=[])
+        FETCH({service=[logger], name=[attempts]}, !{})

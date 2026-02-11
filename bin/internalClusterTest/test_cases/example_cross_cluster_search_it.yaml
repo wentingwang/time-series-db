@@ -1,0 +1,155 @@
+# Cross-Cluster Search (CCS) Integration Test Example
+# Demonstrates multi-cluster TSDB test setup with remote cluster data ingestion and CCS queries
+
+test_setup:
+  name: "Cross-Cluster Search Integration Test"
+  description: "Example CCS test with data distributed across local and remote clusters"
+
+  # Local cluster configuration
+  cluster_config:
+    nodes: 1
+
+  # Remote cluster configurations
+  remote_clusters:
+    - alias: "cluster_a"
+      nodes: 1
+    - alias: "cluster_b"
+      nodes: 1
+
+  # Index configurations - specifying which cluster each index belongs to
+  index_configs:
+    - name: "local_metrics"
+      shards: 1
+      replicas: 0
+      # cluster not specified = local cluster
+
+    - cluster: "cluster_a"
+      name: "remote_metrics_a"
+      shards: 1
+      replicas: 0
+
+    - cluster: "cluster_b"
+      name: "remote_metrics_b"
+      shards: 1
+      replicas: 0
+
+test_case:
+  name: "Cross-Cluster Search Query Test"
+
+  # Input data distributed across clusters
+  input_data_list:
+    # Data for local cluster
+    - index_name: "local_metrics"
+      input_data_type: FIXED_INTERVAL
+      time_config:
+        min_timestamp: "now-50m"
+        max_timestamp: "now-10m"
+        step: "10m"
+      regular_metrics:
+        - labels: "__name__:http_requests,region:local"
+          values: [100, 110, 120, 130, 140]
+
+    # Data for cluster_a
+    - cluster: "cluster_a"
+      index_name: "remote_metrics_a"
+      input_data_type: FIXED_INTERVAL
+      time_config:
+        min_timestamp: "now-50m"
+        max_timestamp: "now-10m"
+        step: "10m"
+      regular_metrics:
+        - labels: "__name__:http_requests,region:us-west"
+          values: [10, 20, 30, 40, 50]
+
+    # Data for cluster_b
+    - cluster: "cluster_b"
+      index_name: "remote_metrics_b"
+      input_data_type: FIXED_INTERVAL
+      time_config:
+        min_timestamp: "now-50m"
+        max_timestamp: "now-10m"
+        step: "10m"
+      regular_metrics:
+        - labels: "__name__:http_requests,region:us-east"
+          values: [15, 25, 35, 45, 55]
+
+  # CCS queries targeting multiple clusters
+  queries:
+    # Query targeting remote cluster only
+    - name: "remote_cluster_a_query"
+      type: "m3ql"
+      query: "fetch __name__:http_requests | sumSeries region"
+      indices: "cluster_a:remote_metrics_a"
+      time_config:
+        min_timestamp: "now-60m"
+        max_timestamp: "now"
+        step: "10m"
+      expected:
+        status: "success"
+        data:
+          - metric: {region: "us-west"}
+            values: [null, 10, 20, 30, 40, 50]
+
+    # Cross-cluster query targeting both remote clusters - minimize_roundtrip: true
+    - name: "cross_cluster_query-minimize_roundtrips-true"
+      type: "m3ql"
+      query: "fetch __name__:http_requests | sumSeries __name__"
+      indices: "cluster_a:remote_metrics_a,cluster_b:remote_metrics_b"
+      ccs_minimize_roundtrips: true
+      time_config:
+        min_timestamp: "now-60m"
+        max_timestamp: "now"
+        step: "10m"
+      expected:
+        status: "success"
+        data:
+          - metric: {__name__: "http_requests"}
+            values: [null, 25, 45, 65, 85, 105]
+
+    # Cross-cluster query targeting both remote clusters
+    - name: "cross_cluster_query-minimize_roundtrips-false"
+      type: "m3ql"
+      query: "fetch __name__:http_requests | sumSeries __name__"
+      indices: "cluster_a:remote_metrics_a,cluster_b:remote_metrics_b"
+      ccs_minimize_roundtrips: false
+      time_config:
+        min_timestamp: "now-60m"
+        max_timestamp: "now"
+        step: "10m"
+      expected:
+        status: "success"
+        data:
+          - metric: {__name__: "http_requests"}
+            values: [null, 25, 45, 65, 85, 105]
+
+    # Query targeting local and remote clusters together
+    - name: "local_and_remote_query-minimize_roundtrips-true"
+      type: "m3ql"
+      query: "fetch __name__:http_requests | sumSeries"
+      indices: "local_metrics,cluster_a:remote_metrics_a"
+      ccs_minimize_roundtrips: true
+      time_config:
+        min_timestamp: "now-60m"
+        max_timestamp: "now"
+        step: "10m"
+      expected:
+        status: "success"
+        data:
+          - metric: {}
+            values: [null, 110, 130, 150, 170, 190]
+
+    # Query targeting local and remote clusters together
+    - name: "local_and_remote_query-minimize_roundtrips-false"
+      type: "m3ql"
+      query: "fetch __name__:http_requests | sumSeries"
+      indices: "local_metrics,cluster_a:remote_metrics_a"
+      ccs_minimize_roundtrips: false
+      time_config:
+        min_timestamp: "now-60m"
+        max_timestamp: "now"
+        step: "10m"
+      expected:
+        status: "success"
+        data:
+          - metric: {}
+            values: [null, 110, 130, 150, 170, 190]
