@@ -179,14 +179,7 @@ public class InternalTSDBStats extends InternalAggregation {
         }
 
         private static Map<String, LabelStats> readLabelStatsMap(StreamInput in) throws IOException {
-            int labelCount = in.readVInt();
-            Map<String, LabelStats> labelStats = new HashMap<>(labelCount);
-            for (int i = 0; i < labelCount; i++) {
-                String labelName = in.readString();
-                LabelStats stats = new LabelStats(in);
-                labelStats.put(labelName, stats);
-            }
-            return labelStats;
+            return in.readMap(StreamInput::readString, LabelStats::new);
         }
 
         public void writeTo(StreamOutput out) throws IOException {
@@ -197,11 +190,7 @@ public class InternalTSDBStats extends InternalAggregation {
                 out.writeBoolean(false);
             }
 
-            out.writeVInt(labelStats.size());
-            for (Map.Entry<String, LabelStats> entry : labelStats.entrySet()) {
-                out.writeString(entry.getKey());
-                entry.getValue().writeTo(out);
-            }
+            out.writeMap(labelStats, StreamOutput::writeString, (output, stats) -> stats.writeTo(output));
         }
 
         /**

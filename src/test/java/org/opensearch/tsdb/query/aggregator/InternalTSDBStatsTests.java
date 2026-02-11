@@ -255,6 +255,190 @@ public class InternalTSDBStatsTests extends OpenSearchTestCase {
         assertEquals(0, deserialized.valuesStats().size());
     }
 
+    // ========== CoordinatorLevelStats Serialization Tests ==========
+
+    public void testCoordinatorLevelStatsSerialization() throws IOException {
+        // Arrange - Create CoordinatorLevelStats with full data
+        Map<String, InternalTSDBStats.CoordinatorLevelStats.LabelStats> labelStats = new LinkedHashMap<>();
+        labelStats.put(
+            "cluster",
+            new InternalTSDBStats.CoordinatorLevelStats.LabelStats(100L, Map.of("prod", 80L, "staging", 15L, "dev", 5L))
+        );
+        labelStats.put(
+            "region",
+            new InternalTSDBStats.CoordinatorLevelStats.LabelStats(100L, Map.of("us-east", 40L, "us-west", 30L, "eu-west", 30L))
+        );
+
+        InternalTSDBStats.CoordinatorLevelStats original = new InternalTSDBStats.CoordinatorLevelStats(500L, labelStats);
+
+        // Act - Serialize and deserialize
+        BytesStreamOutput out = new BytesStreamOutput();
+        original.writeTo(out);
+
+        StreamInput in = out.bytes().streamInput();
+        InternalTSDBStats.CoordinatorLevelStats deserialized = new InternalTSDBStats.CoordinatorLevelStats(in);
+
+        // Assert - Verify all fields match
+        assertEquals(original.totalNumSeries(), deserialized.totalNumSeries());
+        assertEquals(original.labelStats().size(), deserialized.labelStats().size());
+
+        // Verify cluster label
+        InternalTSDBStats.CoordinatorLevelStats.LabelStats clusterStats = deserialized.labelStats().get("cluster");
+        assertNotNull(clusterStats);
+        assertEquals(100L, clusterStats.numSeries().longValue());
+        assertEquals(3, clusterStats.valuesStats().size());
+        assertEquals(80L, clusterStats.valuesStats().get("prod").longValue());
+        assertEquals(15L, clusterStats.valuesStats().get("staging").longValue());
+        assertEquals(5L, clusterStats.valuesStats().get("dev").longValue());
+
+        // Verify region label
+        InternalTSDBStats.CoordinatorLevelStats.LabelStats regionStats = deserialized.labelStats().get("region");
+        assertNotNull(regionStats);
+        assertEquals(100L, regionStats.numSeries().longValue());
+        assertEquals(3, regionStats.valuesStats().size());
+        assertEquals(40L, regionStats.valuesStats().get("us-east").longValue());
+        assertEquals(30L, regionStats.valuesStats().get("us-west").longValue());
+        assertEquals(30L, regionStats.valuesStats().get("eu-west").longValue());
+    }
+
+    public void testCoordinatorLevelStatsSerializationWithNullTotalNumSeries() throws IOException {
+        // Arrange - Create CoordinatorLevelStats with null totalNumSeries
+        Map<String, InternalTSDBStats.CoordinatorLevelStats.LabelStats> labelStats = new LinkedHashMap<>();
+        labelStats.put("cluster", new InternalTSDBStats.CoordinatorLevelStats.LabelStats(100L, Map.of("prod", 80L)));
+
+        InternalTSDBStats.CoordinatorLevelStats original = new InternalTSDBStats.CoordinatorLevelStats(
+            null,  // null totalNumSeries
+            labelStats
+        );
+
+        // Act
+        BytesStreamOutput out = new BytesStreamOutput();
+        original.writeTo(out);
+
+        StreamInput in = out.bytes().streamInput();
+        InternalTSDBStats.CoordinatorLevelStats deserialized = new InternalTSDBStats.CoordinatorLevelStats(in);
+
+        // Assert
+        assertNull(deserialized.totalNumSeries());
+        assertEquals(1, deserialized.labelStats().size());
+        assertEquals(100L, deserialized.labelStats().get("cluster").numSeries().longValue());
+    }
+
+    public void testCoordinatorLevelStatsSerializationWithEmptyLabelStats() throws IOException {
+        // Arrange - Create CoordinatorLevelStats with empty labelStats
+        Map<String, InternalTSDBStats.CoordinatorLevelStats.LabelStats> emptyLabelStats = new HashMap<>();
+
+        InternalTSDBStats.CoordinatorLevelStats original = new InternalTSDBStats.CoordinatorLevelStats(500L, emptyLabelStats);
+
+        // Act
+        BytesStreamOutput out = new BytesStreamOutput();
+        original.writeTo(out);
+
+        StreamInput in = out.bytes().streamInput();
+        InternalTSDBStats.CoordinatorLevelStats deserialized = new InternalTSDBStats.CoordinatorLevelStats(in);
+
+        // Assert
+        assertEquals(500L, deserialized.totalNumSeries().longValue());
+        assertEquals(0, deserialized.labelStats().size());
+    }
+
+    public void testCoordinatorLevelStatsSerializationWithNullNumSeriesInLabel() throws IOException {
+        // Arrange - Create CoordinatorLevelStats with null numSeries in LabelStats
+        Map<String, InternalTSDBStats.CoordinatorLevelStats.LabelStats> labelStats = new LinkedHashMap<>();
+        labelStats.put(
+            "cluster",
+            new InternalTSDBStats.CoordinatorLevelStats.LabelStats(
+                null,  // null numSeries for this label
+                Map.of("prod", 80L, "staging", 20L)
+            )
+        );
+
+        InternalTSDBStats.CoordinatorLevelStats original = new InternalTSDBStats.CoordinatorLevelStats(500L, labelStats);
+
+        // Act
+        BytesStreamOutput out = new BytesStreamOutput();
+        original.writeTo(out);
+
+        StreamInput in = out.bytes().streamInput();
+        InternalTSDBStats.CoordinatorLevelStats deserialized = new InternalTSDBStats.CoordinatorLevelStats(in);
+
+        // Assert
+        assertEquals(500L, deserialized.totalNumSeries().longValue());
+        assertEquals(1, deserialized.labelStats().size());
+        assertNull(deserialized.labelStats().get("cluster").numSeries());
+        assertEquals(2, deserialized.labelStats().get("cluster").valuesStats().size());
+    }
+
+    public void testCoordinatorLevelStatsSerializationWithZeroSentinelValues() throws IOException {
+        // Arrange - Create CoordinatorLevelStats with 0 sentinel values (includeValueStats=false)
+        Map<String, InternalTSDBStats.CoordinatorLevelStats.LabelStats> labelStats = new LinkedHashMap<>();
+        labelStats.put(
+            "cluster",
+            new InternalTSDBStats.CoordinatorLevelStats.LabelStats(
+                null,
+                Map.of("prod", 0L, "staging", 0L)  // 0 means "not counted"
+            )
+        );
+
+        InternalTSDBStats.CoordinatorLevelStats original = new InternalTSDBStats.CoordinatorLevelStats(null, labelStats);
+
+        // Act
+        BytesStreamOutput out = new BytesStreamOutput();
+        original.writeTo(out);
+
+        StreamInput in = out.bytes().streamInput();
+        InternalTSDBStats.CoordinatorLevelStats deserialized = new InternalTSDBStats.CoordinatorLevelStats(in);
+
+        // Assert
+        assertNull(deserialized.totalNumSeries());
+        assertEquals(1, deserialized.labelStats().size());
+        assertEquals(0L, deserialized.labelStats().get("cluster").valuesStats().get("prod").longValue());
+        assertEquals(0L, deserialized.labelStats().get("cluster").valuesStats().get("staging").longValue());
+    }
+
+    public void testCoordinatorLevelStatsSerializationWithMultipleLabels() throws IOException {
+        // Arrange - Create CoordinatorLevelStats with multiple labels (comprehensive test)
+        Map<String, InternalTSDBStats.CoordinatorLevelStats.LabelStats> labelStats = new LinkedHashMap<>();
+
+        // Label 1: cluster with 3 values
+        labelStats.put(
+            "cluster",
+            new InternalTSDBStats.CoordinatorLevelStats.LabelStats(100L, Map.of("prod", 80L, "staging", 15L, "dev", 5L))
+        );
+
+        // Label 2: region with 2 values
+        labelStats.put("region", new InternalTSDBStats.CoordinatorLevelStats.LabelStats(100L, Map.of("us-east", 60L, "us-west", 40L)));
+
+        // Label 3: service with null numSeries
+        labelStats.put(
+            "service",
+            new InternalTSDBStats.CoordinatorLevelStats.LabelStats(null, Map.of("api", 50L, "web", 30L, "worker", 20L))
+        );
+
+        InternalTSDBStats.CoordinatorLevelStats original = new InternalTSDBStats.CoordinatorLevelStats(500L, labelStats);
+
+        // Act
+        BytesStreamOutput out = new BytesStreamOutput();
+        original.writeTo(out);
+
+        StreamInput in = out.bytes().streamInput();
+        InternalTSDBStats.CoordinatorLevelStats deserialized = new InternalTSDBStats.CoordinatorLevelStats(in);
+
+        // Assert
+        assertEquals(original, deserialized);  // Full equality check
+        assertEquals(500L, deserialized.totalNumSeries().longValue());
+        assertEquals(3, deserialized.labelStats().size());
+
+        // Verify each label
+        assertEquals(100L, deserialized.labelStats().get("cluster").numSeries().longValue());
+        assertEquals(100L, deserialized.labelStats().get("region").numSeries().longValue());
+        assertNull(deserialized.labelStats().get("service").numSeries());
+
+        assertEquals(3, deserialized.labelStats().get("cluster").valuesStats().size());
+        assertEquals(2, deserialized.labelStats().get("region").valuesStats().size());
+        assertEquals(3, deserialized.labelStats().get("service").valuesStats().size());
+    }
+
     // ========== Interface Implementation Tests ==========
 
     public void testGetWriteableName() {
