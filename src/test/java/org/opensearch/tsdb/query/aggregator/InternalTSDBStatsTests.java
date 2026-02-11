@@ -20,6 +20,7 @@ import java.io.IOException;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -685,6 +686,165 @@ public class InternalTSDBStatsTests extends OpenSearchTestCase {
         assertNotNull(shardStats.seriesFingerprintSet());
         assertEquals(1, shardStats.labelStats().size());
         assertNull(shardStats.labelStats().get("cluster"));
+    }
+
+    // ========== ShardLevelStats Serialization Tests ==========
+
+    public void testShardLevelStatsSerialization() throws IOException {
+        // Arrange - Create ShardLevelStats with full data (includeValueStats=true)
+        Set<Long> seriesFingerprintSet = new HashSet<>();
+        seriesFingerprintSet.add(1L);
+        seriesFingerprintSet.add(2L);
+        seriesFingerprintSet.add(3L);
+
+        Map<String, Map<String, Set<Long>>> labelStats = new LinkedHashMap<>();
+
+        // Label 1: cluster with prod/staging values
+        Map<String, Set<Long>> clusterValues = new LinkedHashMap<>();
+        Set<Long> prodFingerprints = new HashSet<>();
+        prodFingerprints.add(100L);
+        prodFingerprints.add(101L);
+        clusterValues.put("prod", prodFingerprints);
+
+        Set<Long> stagingFingerprints = new HashSet<>();
+        stagingFingerprints.add(200L);
+        clusterValues.put("staging", stagingFingerprints);
+
+        labelStats.put("cluster", clusterValues);
+
+        // Label 2: region with us-east value
+        Map<String, Set<Long>> regionValues = new LinkedHashMap<>();
+        Set<Long> usEastFingerprints = new HashSet<>();
+        usEastFingerprints.add(300L);
+        usEastFingerprints.add(301L);
+        regionValues.put("us-east", usEastFingerprints);
+
+        labelStats.put("region", regionValues);
+
+        InternalTSDBStats.ShardLevelStats original = new InternalTSDBStats.ShardLevelStats(seriesFingerprintSet, labelStats, true);
+
+        // Act - Serialize and deserialize
+        BytesStreamOutput out = new BytesStreamOutput();
+        original.writeTo(out);
+
+        StreamInput in = out.bytes().streamInput();
+        InternalTSDBStats.ShardLevelStats deserialized = new InternalTSDBStats.ShardLevelStats(in);
+
+        // Assert - Verify all fields match
+        assertEquals(original.includeValueStats(), deserialized.includeValueStats());
+        assertEquals(original.seriesFingerprintSet(), deserialized.seriesFingerprintSet());
+        assertEquals(original.labelStats().size(), deserialized.labelStats().size());
+
+        // Verify cluster label
+        assertEquals(original.labelStats().get("cluster").size(), deserialized.labelStats().get("cluster").size());
+        assertEquals(original.labelStats().get("cluster").get("prod"), deserialized.labelStats().get("cluster").get("prod"));
+        assertEquals(original.labelStats().get("cluster").get("staging"), deserialized.labelStats().get("cluster").get("staging"));
+
+        // Verify region label
+        assertEquals(original.labelStats().get("region").size(), deserialized.labelStats().get("region").size());
+        assertEquals(original.labelStats().get("region").get("us-east"), deserialized.labelStats().get("region").get("us-east"));
+    }
+
+    public void testShardLevelStatsSerializationWithNullFingerprints() throws IOException {
+        // Arrange - Create ShardLevelStats with null seriesFingerprintSet
+        Map<String, Map<String, Set<Long>>> labelStats = new LinkedHashMap<>();
+        Map<String, Set<Long>> clusterValues = new LinkedHashMap<>();
+        Set<Long> prodFingerprints = new HashSet<>();
+        prodFingerprints.add(100L);
+        clusterValues.put("prod", prodFingerprints);
+        labelStats.put("cluster", clusterValues);
+
+        InternalTSDBStats.ShardLevelStats original = new InternalTSDBStats.ShardLevelStats(null, labelStats, true);
+
+        // Act
+        BytesStreamOutput out = new BytesStreamOutput();
+        original.writeTo(out);
+
+        StreamInput in = out.bytes().streamInput();
+        InternalTSDBStats.ShardLevelStats deserialized = new InternalTSDBStats.ShardLevelStats(in);
+
+        // Assert
+        assertNull(deserialized.seriesFingerprintSet());
+        assertEquals(original.labelStats(), deserialized.labelStats());
+        assertEquals(original.includeValueStats(), deserialized.includeValueStats());
+    }
+
+    public void testShardLevelStatsSerializationWithNullValueMap() throws IOException {
+        // Arrange - Create ShardLevelStats with null value map (includeValueStats=false scenario)
+        Set<Long> seriesFingerprintSet = new HashSet<>();
+        seriesFingerprintSet.add(1L);
+
+        Map<String, Map<String, Set<Long>>> labelStats = new LinkedHashMap<>();
+        labelStats.put("cluster", null);  // null value map when includeValueStats=false
+
+        InternalTSDBStats.ShardLevelStats original = new InternalTSDBStats.ShardLevelStats(
+            seriesFingerprintSet,
+            labelStats,
+            false  // includeValueStats=false
+        );
+
+        // Act
+        BytesStreamOutput out = new BytesStreamOutput();
+        original.writeTo(out);
+
+        StreamInput in = out.bytes().streamInput();
+        InternalTSDBStats.ShardLevelStats deserialized = new InternalTSDBStats.ShardLevelStats(in);
+
+        // Assert
+        assertEquals(original.seriesFingerprintSet(), deserialized.seriesFingerprintSet());
+        assertEquals(1, deserialized.labelStats().size());
+        assertNull(deserialized.labelStats().get("cluster"));
+        assertFalse(deserialized.includeValueStats());
+    }
+
+    public void testShardLevelStatsSerializationWithNullFingerprintSet() throws IOException {
+        // Arrange - Create ShardLevelStats with null fingerprint set for a value (includeValueStats=false)
+        Set<Long> seriesFingerprintSet = new HashSet<>();
+        seriesFingerprintSet.add(1L);
+
+        Map<String, Map<String, Set<Long>>> labelStats = new LinkedHashMap<>();
+        Map<String, Set<Long>> clusterValues = new LinkedHashMap<>();
+        clusterValues.put("prod", null);  // null fingerprint set when includeValueStats=false
+        clusterValues.put("staging", null);
+        labelStats.put("cluster", clusterValues);
+
+        InternalTSDBStats.ShardLevelStats original = new InternalTSDBStats.ShardLevelStats(seriesFingerprintSet, labelStats, false);
+
+        // Act
+        BytesStreamOutput out = new BytesStreamOutput();
+        original.writeTo(out);
+
+        StreamInput in = out.bytes().streamInput();
+        InternalTSDBStats.ShardLevelStats deserialized = new InternalTSDBStats.ShardLevelStats(in);
+
+        // Assert
+        assertEquals(original.seriesFingerprintSet(), deserialized.seriesFingerprintSet());
+        assertEquals(1, deserialized.labelStats().size());
+        assertNull(deserialized.labelStats().get("cluster").get("prod"));
+        assertNull(deserialized.labelStats().get("cluster").get("staging"));
+        assertFalse(deserialized.includeValueStats());
+    }
+
+    public void testShardLevelStatsSerializationWithEmptyLabelStats() throws IOException {
+        // Arrange - Create ShardLevelStats with empty labelStats
+        Set<Long> seriesFingerprintSet = new HashSet<>();
+        seriesFingerprintSet.add(1L);
+
+        Map<String, Map<String, Set<Long>>> emptyLabelStats = new HashMap<>();
+
+        InternalTSDBStats.ShardLevelStats original = new InternalTSDBStats.ShardLevelStats(seriesFingerprintSet, emptyLabelStats, true);
+
+        // Act
+        BytesStreamOutput out = new BytesStreamOutput();
+        original.writeTo(out);
+
+        StreamInput in = out.bytes().streamInput();
+        InternalTSDBStats.ShardLevelStats deserialized = new InternalTSDBStats.ShardLevelStats(in);
+
+        // Assert
+        assertEquals(original.seriesFingerprintSet(), deserialized.seriesFingerprintSet());
+        assertEquals(0, deserialized.labelStats().size());
+        assertTrue(deserialized.includeValueStats());
     }
 
     // ========== Helper Methods ==========

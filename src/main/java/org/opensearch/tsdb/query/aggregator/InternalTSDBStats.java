@@ -90,49 +90,29 @@ public class InternalTSDBStats extends InternalAggregation {
             if (!hasSet) {
                 return null;
             }
-            int setSize = in.readVInt();
-            Set<Long> fingerprintSet = new HashSet<>(setSize);
-            for (int i = 0; i < setSize; i++) {
-                fingerprintSet.add(in.readVLong());
-            }
-            return fingerprintSet;
+            return in.readSet(StreamInput::readVLong);
         }
 
         private static Map<String, Map<String, Set<Long>>> readLabelStatsMap(StreamInput in) throws IOException {
-            int labelCount = in.readVInt();
-            Map<String, Map<String, Set<Long>>> labelStats = new HashMap<>(labelCount);
-            for (int i = 0; i < labelCount; i++) {
-                String labelName = in.readString();
-
-                // Read value fingerprint sets for this label
-                boolean hasSets = in.readBoolean();
-                Map<String, Set<Long>> valueFingerprintSets;
-                if (hasSets) {
-                    int mapSize = in.readVInt();
-                    valueFingerprintSets = new LinkedHashMap<>(mapSize);
-                    for (int j = 0; j < mapSize; j++) {
-                        String key = in.readString();
-                        // Read whether this value has a fingerprint set (null when includeValueStats=false)
-                        boolean hasValueSet = in.readBoolean();
-                        Set<Long> fingerprintSet;
-                        if (hasValueSet) {
-                            int setSize = in.readVInt();
-                            fingerprintSet = new HashSet<>(setSize);
-                            for (int k = 0; k < setSize; k++) {
-                                fingerprintSet.add(in.readVLong());
-                            }
-                        } else {
-                            fingerprintSet = null;
-                        }
-                        valueFingerprintSets.put(key, fingerprintSet);
+            return in.readMap(
+                StreamInput::readString,  // Key reader: label name
+                input -> {  // Value reader: Map<String, Set<Long>>
+                    boolean hasSets = input.readBoolean();
+                    if (!hasSets) {
+                        return null;
                     }
-                } else {
-                    valueFingerprintSets = null;
+                    return input.readOrderedMap(
+                        StreamInput::readString,  // Key reader: value name
+                        valueInput -> {  // Value reader: Set<Long> or null
+                            boolean hasValueSet = valueInput.readBoolean();
+                            if (!hasValueSet) {
+                                return null;
+                            }
+                            return valueInput.readSet(StreamInput::readVLong);
+                        }
+                    );
                 }
-
-                labelStats.put(labelName, valueFingerprintSets);
-            }
-            return labelStats;
+            );
         }
 
         /**
@@ -142,43 +122,38 @@ public class InternalTSDBStats extends InternalAggregation {
          * @throws IOException if an I/O error occurs during writing
          */
         public void writeTo(StreamOutput out) throws IOException {
+            // Write seriesFingerprintSet
             if (seriesFingerprintSet != null) {
                 out.writeBoolean(true);
-                out.writeVInt(seriesFingerprintSet.size());
-                for (Long fingerprint : seriesFingerprintSet) {
-                    out.writeVLong(fingerprint);
-                }
+                out.writeCollection(seriesFingerprintSet, StreamOutput::writeVLong);
             } else {
                 out.writeBoolean(false);
             }
 
-            out.writeVInt(labelStats.size());
-            for (Map.Entry<String, Map<String, Set<Long>>> entry : labelStats.entrySet()) {
-                out.writeString(entry.getKey());
-
-                // Write value fingerprint sets for this label
-                Map<String, Set<Long>> valueFingerprintSets = entry.getValue();
-                if (valueFingerprintSets != null) {
-                    out.writeBoolean(true);
-                    out.writeVInt(valueFingerprintSets.size());
-                    for (Map.Entry<String, Set<Long>> ve : valueFingerprintSets.entrySet()) {
-                        out.writeString(ve.getKey());
-                        // Write whether this value has a fingerprint set (null when includeValueStats=false)
-                        Set<Long> fingerprintSet = ve.getValue();
-                        if (fingerprintSet != null) {
-                            out.writeBoolean(true);
-                            out.writeVInt(fingerprintSet.size());
-                            for (Long fingerprint : fingerprintSet) {
-                                out.writeVLong(fingerprint);
+            // Write labelStats using writeMap
+            out.writeMap(
+                labelStats,
+                StreamOutput::writeString,  // Key writer: label name
+                (output, valueFingerprintSets) -> {  // Value writer: Map<String, Set<Long>>
+                    if (valueFingerprintSets != null) {
+                        output.writeBoolean(true);
+                        output.writeMap(
+                            valueFingerprintSets,
+                            StreamOutput::writeString,  // Key writer: value name
+                            (valueOutput, fingerprintSet) -> {  // Value writer: Set<Long> or null
+                                if (fingerprintSet != null) {
+                                    valueOutput.writeBoolean(true);
+                                    valueOutput.writeCollection(fingerprintSet, StreamOutput::writeVLong);
+                                } else {
+                                    valueOutput.writeBoolean(false);
+                                }
                             }
-                        } else {
-                            out.writeBoolean(false);
-                        }
+                        );
+                    } else {
+                        output.writeBoolean(false);
                     }
-                } else {
-                    out.writeBoolean(false);
                 }
-            }
+            );
 
             // Write global includeValueStats flag
             out.writeBoolean(includeValueStats);
