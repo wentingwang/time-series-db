@@ -234,7 +234,7 @@ public class InternalTSDBStats extends InternalAggregation {
         /**
          * Coordinator-level label statistics with final counts.
          */
-        public record LabelStats(Long numSeries, List<String> values, Map<String, Long> valuesStats) {
+        public record LabelStats(Long numSeries, r, Map<String, Long> valuesStats) {
 
             // Compact constructor to normalize values field
             public LabelStats {
