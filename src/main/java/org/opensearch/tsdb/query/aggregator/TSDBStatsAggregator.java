@@ -20,12 +20,14 @@ import org.opensearch.search.aggregations.metrics.MetricsAggregator;
 import org.opensearch.search.internal.SearchContext;
 import org.opensearch.tsdb.core.index.live.LiveSeriesIndexLeafReader;
 import org.opensearch.tsdb.core.mapping.Constants;
+import org.opensearch.tsdb.core.model.ByteLabels;
 import org.opensearch.tsdb.core.model.Labels;
 import org.opensearch.tsdb.core.reader.TSDBDocValues;
 import org.opensearch.tsdb.core.reader.TSDBLeafReader;
 
 import java.io.IOException;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
@@ -151,16 +153,14 @@ public class TSDBStatsAggregator extends MetricsAggregator {
 
             Labels labels = tsdbLeafReader.labelsForDoc(doc, tsdbDocValues);
 
-            // TODO improve by BytesRef Iterator
-            // Process each label using BytesRef directly (avoid String conversion)
-            BytesRef[] keyValuePairs = labels.toKeyValueBytesRefs();
-            for (BytesRef keyValue : keyValuePairs) {
-                // Add "key:value" to hash and get ordinal.
-                // Synchronized because BytesRefHash is not thread-safe and segments
-                // may be collected concurrently (Concurrent Segment Search).
+            // Process each label using raw BytesRef (zero-copy, avoids "key:value" string format)
+            Iterator<BytesRef> pairIterator = labels.keyValuePairIterator();
+            while (pairIterator.hasNext()) {
+                BytesRef pair = pairIterator.next();
+
                 long ord;
                 synchronized (ordinalMapLock) {
-                    ord = labelValuePairOrdinalMap.add(keyValue);
+                    ord = labelValuePairOrdinalMap.add(pair);
                 }
                 if (ord < 0) {
                     // Already exists, get existing ordinal
@@ -191,17 +191,13 @@ public class TSDBStatsAggregator extends MetricsAggregator {
 
         // Iterate all ordinals in labelValuePairOrdinalMap and group by key
         for (int ordinal = 0; ordinal < labelValuePairOrdinalMap.size(); ordinal++) {
-            // Lookup "key:value" from ordinal
+            // Lookup raw key-value pair from ordinal
             labelValuePairOrdinalMap.get(ordinal, scratch);
-            String keyValue = scratch.utf8ToString(); // "service:api"
 
-            // Parse to extract key and value
-            int colonIndex = keyValue.indexOf(':');
-            if (colonIndex < 0) {
-                throw new IllegalStateException("Invalid label format - missing colon: " + keyValue);
-            }
-            String key = keyValue.substring(0, colonIndex); // "service"
-            String value = keyValue.substring(colonIndex + 1); // "api"
+            // Parse raw BytesRef back to key/value
+            ByteLabels.KeyValuePair pair = ByteLabels.parseKeyValuePair(scratch);
+            String key = pair.key();
+            String value = pair.value();
 
             // Get or create value fingerprint sets map for this key (always create to track which values exist)
             Map<String, Set<Long>> valueFingerprintSets = shardLabelStats.computeIfAbsent(key, k -> new LinkedHashMap<>());
