@@ -14,6 +14,7 @@ import org.opensearch.search.profile.ProfileShardResult;
 import java.io.IOException;
 import java.util.Map;
 
+import static org.opensearch.core.xcontent.ToXContent.EMPTY_PARAMS;
 import static org.opensearch.tsdb.metrics.TSDBMetricsConstants.NANOS_PER_MILLI;
 
 public class ProfileInfoMapper {
@@ -22,6 +23,11 @@ public class ProfileInfoMapper {
     private static final String PROFILE_FIELD_NAME = "profile";
     private static final String SHARDS_FIELD_NAME = "shards";
     private static final String SHARD_ID_FIELD_NAME = "id";
+    private static final String AGGREGATION_FIELD_NAME = "aggregations";
+    private static final String SEARCH_FIELD_NAME = "searches";
+    private static final String FETCH_FIELD_NAME = "fetch";
+    private static final String INBOUND_NETWORK_TIME_FIELD_NAME = "inbound_network_time_in_millis";
+    private static final String OUTBOUND_NETWORK_TIME_FIELD_NAME = "outbound_network_time_in_millis";
 
     // Field names for debug info (used by TimeSeriesUnfoldAggregator)
     // TODO Execution Stats will be exposed with another param
@@ -69,36 +75,32 @@ public class ProfileInfoMapper {
                 builder.field(SHARD_ID_FIELD_NAME, entry.getKey());
 
                 // Serialize query profiling (searches)
-                if (shardResult.getQueryProfileResults() != null && !shardResult.getQueryProfileResults().isEmpty()) {
-                    builder.startArray("searches");
-                    for (var queryResult : shardResult.getQueryProfileResults()) {
-                        queryResult.toXContent(builder, org.opensearch.core.xcontent.ToXContent.EMPTY_PARAMS);
-                    }
-                    builder.endArray();
-                } else {
-                    builder.startArray("searches").endArray();
+                builder.startArray(SEARCH_FIELD_NAME);
+                for (var queryResult : shardResult.getQueryProfileResults()) {
+                    queryResult.toXContent(builder, EMPTY_PARAMS);
                 }
+                builder.endArray();
 
                 // Serialize aggregation profiling
                 if (shardResult.getAggregationProfileResults() != null) {
-                    shardResult.getAggregationProfileResults().toXContent(builder, org.opensearch.core.xcontent.ToXContent.EMPTY_PARAMS);
+                    shardResult.getAggregationProfileResults().toXContent(builder, EMPTY_PARAMS);
                 } else {
-                    builder.startArray("aggregations").endArray();
+                    builder.startArray(AGGREGATION_FIELD_NAME).endArray();
                 }
 
                 // Serialize fetch profiling
                 if (shardResult.getFetchProfileResult() != null) {
-                    shardResult.getFetchProfileResult().toXContent(builder, org.opensearch.core.xcontent.ToXContent.EMPTY_PARAMS);
+                    shardResult.getFetchProfileResult().toXContent(builder, EMPTY_PARAMS);
                 } else {
-                    builder.startArray("fetch").endArray();
+                    builder.startArray(FETCH_FIELD_NAME).endArray();
                 }
 
                 // Serialize network timing
                 if (shardResult.getNetworkTime() != null) {
                     var networkTime = shardResult.getNetworkTime();
                     // NetworkTime reports in nanoseconds, but OpenSearch API outputs in milliseconds
-                    builder.field("inbound_network_time_in_millis", (long) (networkTime.getInboundNetworkTime() / NANOS_PER_MILLI));
-                    builder.field("outbound_network_time_in_millis", (long) (networkTime.getOutboundNetworkTime() / NANOS_PER_MILLI));
+                    builder.field(INBOUND_NETWORK_TIME_FIELD_NAME, (long) (networkTime.getInboundNetworkTime() / NANOS_PER_MILLI));
+                    builder.field(OUTBOUND_NETWORK_TIME_FIELD_NAME, (long) (networkTime.getOutboundNetworkTime() / NANOS_PER_MILLI));
                 }
 
                 builder.endObject();
