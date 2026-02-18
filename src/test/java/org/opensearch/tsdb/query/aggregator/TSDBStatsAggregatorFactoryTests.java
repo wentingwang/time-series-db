@@ -7,10 +7,17 @@
  */
 package org.opensearch.tsdb.query.aggregator;
 
+import org.opensearch.common.util.BigArrays;
+import org.opensearch.core.indices.breaker.NoneCircuitBreakerService;
 import org.opensearch.search.aggregations.AggregatorFactories;
+import org.opensearch.search.aggregations.CardinalityUpperBound;
+import org.opensearch.search.internal.SearchContext;
 import org.opensearch.test.OpenSearchTestCase;
 
 import java.util.Map;
+
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 /**
  * Unit tests for TSDBStatsAggregatorFactory.
@@ -159,6 +166,87 @@ public class TSDBStatsAggregatorFactoryTests extends OpenSearchTestCase {
         assertEquals("with-dashes", factory2.name());
         assertEquals("with_underscores", factory3.name());
         assertEquals("with.dots", factory4.name());
+    }
+
+    /**
+     * Tests that createInternal() properly creates a TSDBStatsAggregator instance.
+     */
+    public void testCreateInternal() throws Exception {
+        // Arrange
+        long minTimestamp = 1000L;
+        long maxTimestamp = 5000L;
+        boolean includeValueStats = true;
+        TSDBStatsAggregatorFactory factory = createFactory("test_create", minTimestamp, maxTimestamp, includeValueStats);
+
+        // Create mock SearchContext
+        SearchContext searchContext = mock(SearchContext.class);
+        when(searchContext.bigArrays()).thenReturn(new BigArrays(null, new NoneCircuitBreakerService(), "test"));
+
+        // Act
+        TSDBStatsAggregator aggregator = (TSDBStatsAggregator) factory.createInternal(
+            searchContext,
+            null,  // parent aggregator
+            CardinalityUpperBound.NONE,
+            Map.of()  // metadata
+        );
+
+        // Assert
+        assertNotNull("createInternal() should return a TSDBStatsAggregator instance", aggregator);
+        assertEquals("Aggregator name should match factory name", "test_create", aggregator.name());
+
+        // Cleanup
+        aggregator.close();
+    }
+
+    /**
+     * Tests that createInternal() works with different parameter combinations.
+     */
+    public void testCreateInternalWithDifferentParameters() throws Exception {
+        // Arrange - Test with includeValueStats=false
+        TSDBStatsAggregatorFactory factory = createFactory("test_no_values", 2000L, 6000L, false);
+
+        SearchContext searchContext = mock(SearchContext.class);
+        when(searchContext.bigArrays()).thenReturn(new BigArrays(null, new NoneCircuitBreakerService(), "test"));
+
+        // Act
+        TSDBStatsAggregator aggregator = (TSDBStatsAggregator) factory.createInternal(
+            searchContext,
+            null,
+            CardinalityUpperBound.NONE,
+            Map.of("custom_meta", "value")
+        );
+
+        // Assert
+        assertNotNull("Should create aggregator with value stats disabled", aggregator);
+        assertEquals("test_no_values", aggregator.name());
+
+        // Cleanup
+        aggregator.close();
+    }
+
+    /**
+     * Tests that createInternal() works with extreme timestamp ranges.
+     */
+    public void testCreateInternalWithExtremeTimestamps() throws Exception {
+        // Arrange
+        TSDBStatsAggregatorFactory factory = createFactory("test_extreme", Long.MIN_VALUE, Long.MAX_VALUE, true);
+
+        SearchContext searchContext = mock(SearchContext.class);
+        when(searchContext.bigArrays()).thenReturn(new BigArrays(null, new NoneCircuitBreakerService(), "test"));
+
+        // Act
+        TSDBStatsAggregator aggregator = (TSDBStatsAggregator) factory.createInternal(
+            searchContext,
+            null,
+            CardinalityUpperBound.NONE,
+            Map.of()
+        );
+
+        // Assert
+        assertNotNull("Should create aggregator with extreme timestamps", aggregator);
+
+        // Cleanup
+        aggregator.close();
     }
 
     /**

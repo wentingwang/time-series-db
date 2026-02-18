@@ -689,6 +689,56 @@ public class InternalTSDBStatsTests extends OpenSearchTestCase {
         assertTrue(exception.getMessage().contains("invalidProperty"));
     }
 
+    // ========== forShardLevel Factory Method Tests ==========
+
+    public void testForShardLevelConstructor() {
+        // Arrange
+        Set<Long> seriesFingerprintSet = new HashSet<>();
+        seriesFingerprintSet.add(1L);
+        seriesFingerprintSet.add(2L);
+
+        Map<String, Map<String, Set<Long>>> labelStats = new HashMap<>();
+        InternalTSDBStats.ShardLevelStats shardStats = new InternalTSDBStats.ShardLevelStats(seriesFingerprintSet, labelStats, true);
+
+        // Act
+        InternalTSDBStats internal = InternalTSDBStats.forShardLevel(TEST_NAME, shardStats, TEST_METADATA);
+
+        // Assert
+        assertEquals(TEST_NAME, internal.getName());
+        assertNull(internal.getHeadStats());
+        assertNull(internal.getNumSeries()); // Shard level doesn't expose numSeries
+        assertEquals(Map.of(), internal.getLabelStats()); // Shard level doesn't expose labelStats
+        assertEquals(TEST_METADATA, internal.getMetadata());
+    }
+
+    public void testForShardLevelSerialization() throws IOException {
+        // Arrange
+        Set<Long> seriesFingerprintSet = new HashSet<>();
+        seriesFingerprintSet.add(1L);
+        seriesFingerprintSet.add(2L);
+
+        Map<String, Map<String, Set<Long>>> labelStats = new LinkedHashMap<>();
+        Map<String, Set<Long>> clusterValues = new LinkedHashMap<>();
+        Set<Long> prodFingerprints = new HashSet<>();
+        prodFingerprints.add(100L);
+        clusterValues.put("prod", prodFingerprints);
+        labelStats.put("cluster", clusterValues);
+
+        InternalTSDBStats.ShardLevelStats shardStats = new InternalTSDBStats.ShardLevelStats(seriesFingerprintSet, labelStats, true);
+        InternalTSDBStats original = InternalTSDBStats.forShardLevel(TEST_NAME, shardStats, TEST_METADATA);
+
+        // Act
+        BytesStreamOutput out = new BytesStreamOutput();
+        original.writeTo(out);
+
+        StreamInput in = out.bytes().streamInput();
+        InternalTSDBStats deserialized = new InternalTSDBStats(in);
+
+        // Assert
+        assertEquals(original, deserialized);
+        assertEquals(TEST_NAME, deserialized.getName());
+    }
+
     // ========== Reduce Tests ==========
 
     public void testReduceWithEmptyAggregationsList() {
@@ -751,6 +801,316 @@ public class InternalTSDBStatsTests extends OpenSearchTestCase {
         assertTrue(result instanceof InternalTSDBStats);
         InternalTSDBStats reducedStats = (InternalTSDBStats) result;
         assertEquals(internal, reducedStats);
+    }
+
+    public void testReduceShardLevelWithMultipleShards() {
+        // Arrange - Create two shard-level stats with overlapping fingerprints
+        Set<Long> shard1Fingerprints = new HashSet<>();
+        shard1Fingerprints.add(1L);
+        shard1Fingerprints.add(2L);
+        shard1Fingerprints.add(3L);
+
+        Map<String, Map<String, Set<Long>>> shard1LabelStats = new LinkedHashMap<>();
+        Map<String, Set<Long>> shard1ClusterValues = new LinkedHashMap<>();
+        Set<Long> shard1ProdFingerprints = new HashSet<>();
+        shard1ProdFingerprints.add(100L);
+        shard1ProdFingerprints.add(101L);
+        shard1ClusterValues.put("prod", shard1ProdFingerprints);
+        shard1LabelStats.put("cluster", shard1ClusterValues);
+
+        InternalTSDBStats.ShardLevelStats shardStats1 = new InternalTSDBStats.ShardLevelStats(shard1Fingerprints, shard1LabelStats, true);
+
+        Set<Long> shard2Fingerprints = new HashSet<>();
+        shard2Fingerprints.add(2L); // Overlapping with shard1
+        shard2Fingerprints.add(4L);
+
+        Map<String, Map<String, Set<Long>>> shard2LabelStats = new LinkedHashMap<>();
+        Map<String, Set<Long>> shard2ClusterValues = new LinkedHashMap<>();
+        Set<Long> shard2ProdFingerprints = new HashSet<>();
+        shard2ProdFingerprints.add(101L); // Overlapping with shard1
+        shard2ProdFingerprints.add(102L);
+        shard2ClusterValues.put("prod", shard2ProdFingerprints);
+        shard2LabelStats.put("cluster", shard2ClusterValues);
+
+        InternalTSDBStats.ShardLevelStats shardStats2 = new InternalTSDBStats.ShardLevelStats(shard2Fingerprints, shard2LabelStats, true);
+
+        InternalTSDBStats agg1 = InternalTSDBStats.forShardLevel(TEST_NAME, shardStats1, TEST_METADATA);
+        InternalTSDBStats agg2 = InternalTSDBStats.forShardLevel(TEST_NAME, shardStats2, TEST_METADATA);
+
+        List<InternalAggregation> aggregations = List.of(agg1, agg2);
+
+        PipelineAggregator.PipelineTree emptyPipelineTree = new PipelineAggregator.PipelineTree(
+            Collections.emptyMap(),
+            Collections.emptyList()
+        );
+        InternalAggregation.ReduceContext shardReduceContext = InternalAggregation.ReduceContext.forPartialReduction(
+            null,
+            null,
+            () -> emptyPipelineTree
+        );
+
+        // Act
+        InternalAggregation result = agg1.reduce(aggregations, shardReduceContext);
+
+        // Assert
+        assertTrue(result instanceof InternalTSDBStats);
+        InternalTSDBStats reducedStats = (InternalTSDBStats) result;
+
+        // Should have merged fingerprints: 1, 2, 3, 4 = 4 unique series
+        assertEquals(4L, reducedStats.getNumSeries().longValue());
+
+        // Should have merged prod values: 100, 101, 102 = 3 unique fingerprints
+        Map<String, InternalTSDBStats.CoordinatorLevelStats.LabelStats> labelStats = reducedStats.getLabelStats();
+        assertEquals(1, labelStats.size());
+        assertTrue(labelStats.containsKey("cluster"));
+        assertEquals(3L, labelStats.get("cluster").numSeries().longValue());
+        assertEquals(1, labelStats.get("cluster").valuesStats().size());
+        assertEquals(3L, labelStats.get("cluster").valuesStats().get("prod").longValue());
+    }
+
+    public void testReduceShardLevelWithoutValueStats() {
+        // Arrange - Create shard-level stats with includeValueStats=false
+        Set<Long> fingerprints = new HashSet<>();
+        fingerprints.add(1L);
+        fingerprints.add(2L);
+
+        Map<String, Map<String, Set<Long>>> labelStats = new LinkedHashMap<>();
+        Map<String, Set<Long>> clusterValues = new LinkedHashMap<>();
+        clusterValues.put("prod", new HashSet<>()); // Empty fingerprint set when includeValueStats=false
+        labelStats.put("cluster", clusterValues);
+
+        InternalTSDBStats.ShardLevelStats shardStats = new InternalTSDBStats.ShardLevelStats(fingerprints, labelStats, false);
+        InternalTSDBStats agg = InternalTSDBStats.forShardLevel(TEST_NAME, shardStats, TEST_METADATA);
+
+        List<InternalAggregation> aggregations = List.of(agg);
+
+        PipelineAggregator.PipelineTree emptyPipelineTree = new PipelineAggregator.PipelineTree(
+            Collections.emptyMap(),
+            Collections.emptyList()
+        );
+        InternalAggregation.ReduceContext shardReduceContext = InternalAggregation.ReduceContext.forPartialReduction(
+            null,
+            null,
+            () -> emptyPipelineTree
+        );
+
+        // Act
+        InternalAggregation result = agg.reduce(aggregations, shardReduceContext);
+
+        // Assert
+        assertTrue(result instanceof InternalTSDBStats);
+        InternalTSDBStats reducedStats = (InternalTSDBStats) result;
+
+        assertEquals(2L, reducedStats.getNumSeries().longValue());
+
+        // Value counts should be 0 (sentinel for "not counted")
+        Map<String, InternalTSDBStats.CoordinatorLevelStats.LabelStats> resultLabelStats = reducedStats.getLabelStats();
+        assertEquals(1, resultLabelStats.size());
+        assertEquals(0L, resultLabelStats.get("cluster").valuesStats().get("prod").longValue());
+    }
+
+    public void testReduceCoordinatorLevelWithMultipleShards() {
+        // Arrange - Create two coordinator-level stats to sum
+        Map<String, InternalTSDBStats.CoordinatorLevelStats.LabelStats> labelStats1 = new LinkedHashMap<>();
+        labelStats1.put("cluster", new InternalTSDBStats.CoordinatorLevelStats.LabelStats(100L, Map.of("prod", 80L, "staging", 20L)));
+
+        Map<String, InternalTSDBStats.CoordinatorLevelStats.LabelStats> labelStats2 = new LinkedHashMap<>();
+        labelStats2.put("cluster", new InternalTSDBStats.CoordinatorLevelStats.LabelStats(150L, Map.of("prod", 120L, "dev", 30L)));
+
+        InternalTSDBStats agg1 = InternalTSDBStats.forCoordinatorLevel(
+            TEST_NAME,
+            null,
+            new InternalTSDBStats.CoordinatorLevelStats(500L, labelStats1),
+            TEST_METADATA
+        );
+        InternalTSDBStats agg2 = InternalTSDBStats.forCoordinatorLevel(
+            TEST_NAME,
+            null,
+            new InternalTSDBStats.CoordinatorLevelStats(300L, labelStats2),
+            TEST_METADATA
+        );
+
+        List<InternalAggregation> aggregations = List.of(agg1, agg2);
+
+        PipelineAggregator.PipelineTree emptyPipelineTree = new PipelineAggregator.PipelineTree(
+            Collections.emptyMap(),
+            Collections.emptyList()
+        );
+        InternalAggregation.ReduceContext finalReduceContext = InternalAggregation.ReduceContext.forFinalReduction(
+            null,
+            null,
+            (s) -> {},
+            emptyPipelineTree
+        );
+
+        // Act
+        InternalAggregation result = agg1.reduce(aggregations, finalReduceContext);
+
+        // Assert
+        assertTrue(result instanceof InternalTSDBStats);
+        InternalTSDBStats reducedStats = (InternalTSDBStats) result;
+
+        // Total series: 500 + 300 = 800
+        assertEquals(800L, reducedStats.getNumSeries().longValue());
+
+        // Label stats: 100 + 150 = 250
+        Map<String, InternalTSDBStats.CoordinatorLevelStats.LabelStats> resultLabelStats = reducedStats.getLabelStats();
+        assertEquals(1, resultLabelStats.size());
+        assertEquals(250L, resultLabelStats.get("cluster").numSeries().longValue());
+
+        // Value stats: prod=80+120=200, staging=20, dev=30
+        Map<String, Long> valueStats = resultLabelStats.get("cluster").valuesStats();
+        assertEquals(3, valueStats.size());
+        assertEquals(200L, valueStats.get("prod").longValue());
+        assertEquals(20L, valueStats.get("staging").longValue());
+        assertEquals(30L, valueStats.get("dev").longValue());
+    }
+
+    public void testReduceShardLevelWithNullFingerprints() {
+        // Arrange - Create shard-level stats with null fingerprints
+        Map<String, Map<String, Set<Long>>> labelStats = new LinkedHashMap<>();
+        Map<String, Set<Long>> clusterValues = new LinkedHashMap<>();
+        Set<Long> prodFingerprints = new HashSet<>();
+        prodFingerprints.add(100L);
+        clusterValues.put("prod", prodFingerprints);
+        labelStats.put("cluster", clusterValues);
+
+        InternalTSDBStats.ShardLevelStats shardStats = new InternalTSDBStats.ShardLevelStats(null, labelStats, true);
+        InternalTSDBStats agg = InternalTSDBStats.forShardLevel(TEST_NAME, shardStats, TEST_METADATA);
+
+        List<InternalAggregation> aggregations = List.of(agg);
+
+        PipelineAggregator.PipelineTree emptyPipelineTree = new PipelineAggregator.PipelineTree(
+            Collections.emptyMap(),
+            Collections.emptyList()
+        );
+        InternalAggregation.ReduceContext shardReduceContext = InternalAggregation.ReduceContext.forPartialReduction(
+            null,
+            null,
+            () -> emptyPipelineTree
+        );
+
+        // Act
+        InternalAggregation result = agg.reduce(aggregations, shardReduceContext);
+
+        // Assert
+        assertTrue(result instanceof InternalTSDBStats);
+        InternalTSDBStats reducedStats = (InternalTSDBStats) result;
+
+        // null fingerprints should result in null numSeries
+        assertNull(reducedStats.getNumSeries());
+
+        // But label stats should still be computed
+        Map<String, InternalTSDBStats.CoordinatorLevelStats.LabelStats> resultLabelStats = reducedStats.getLabelStats();
+        assertEquals(1, resultLabelStats.size());
+        assertEquals(1L, resultLabelStats.get("cluster").numSeries().longValue());
+    }
+
+    public void testReduceCoordinatorLevelWithNullNumSeries() {
+        // Arrange
+        Map<String, InternalTSDBStats.CoordinatorLevelStats.LabelStats> labelStats = new LinkedHashMap<>();
+        labelStats.put("cluster", new InternalTSDBStats.CoordinatorLevelStats.LabelStats(null, Map.of("prod", 80L)));
+
+        InternalTSDBStats agg1 = InternalTSDBStats.forCoordinatorLevel(
+            TEST_NAME,
+            null,
+            new InternalTSDBStats.CoordinatorLevelStats(null, labelStats),
+            TEST_METADATA
+        );
+        InternalTSDBStats agg2 = InternalTSDBStats.forCoordinatorLevel(
+            TEST_NAME,
+            null,
+            new InternalTSDBStats.CoordinatorLevelStats(null, labelStats),
+            TEST_METADATA
+        );
+
+        List<InternalAggregation> aggregations = List.of(agg1, agg2);
+
+        PipelineAggregator.PipelineTree emptyPipelineTree = new PipelineAggregator.PipelineTree(
+            Collections.emptyMap(),
+            Collections.emptyList()
+        );
+        InternalAggregation.ReduceContext finalReduceContext = InternalAggregation.ReduceContext.forFinalReduction(
+            null,
+            null,
+            (s) -> {},
+            emptyPipelineTree
+        );
+
+        // Act
+        InternalAggregation result = agg1.reduce(aggregations, finalReduceContext);
+
+        // Assert
+        assertTrue(result instanceof InternalTSDBStats);
+        InternalTSDBStats reducedStats = (InternalTSDBStats) result;
+
+        // null + null = null
+        assertNull(reducedStats.getNumSeries());
+
+        // But label stats should be summed
+        Map<String, InternalTSDBStats.CoordinatorLevelStats.LabelStats> resultLabelStats = reducedStats.getLabelStats();
+        assertEquals(1, resultLabelStats.size());
+        assertNull(resultLabelStats.get("cluster").numSeries());
+        assertEquals(160L, resultLabelStats.get("cluster").valuesStats().get("prod").longValue());
+    }
+
+    public void testReduceShardLevelWithMultipleLabels() {
+        // Arrange - Create shard-level stats with multiple labels
+        Set<Long> fingerprints = new HashSet<>();
+        fingerprints.add(1L);
+        fingerprints.add(2L);
+
+        Map<String, Map<String, Set<Long>>> labelStats = new LinkedHashMap<>();
+
+        // Label 1: cluster
+        Map<String, Set<Long>> clusterValues = new LinkedHashMap<>();
+        Set<Long> prodFingerprints = new HashSet<>();
+        prodFingerprints.add(100L);
+        prodFingerprints.add(101L);
+        clusterValues.put("prod", prodFingerprints);
+        labelStats.put("cluster", clusterValues);
+
+        // Label 2: region
+        Map<String, Set<Long>> regionValues = new LinkedHashMap<>();
+        Set<Long> usEastFingerprints = new HashSet<>();
+        usEastFingerprints.add(200L);
+        regionValues.put("us-east", usEastFingerprints);
+        labelStats.put("region", regionValues);
+
+        InternalTSDBStats.ShardLevelStats shardStats = new InternalTSDBStats.ShardLevelStats(fingerprints, labelStats, true);
+        InternalTSDBStats agg = InternalTSDBStats.forShardLevel(TEST_NAME, shardStats, TEST_METADATA);
+
+        List<InternalAggregation> aggregations = List.of(agg);
+
+        PipelineAggregator.PipelineTree emptyPipelineTree = new PipelineAggregator.PipelineTree(
+            Collections.emptyMap(),
+            Collections.emptyList()
+        );
+        InternalAggregation.ReduceContext shardReduceContext = InternalAggregation.ReduceContext.forPartialReduction(
+            null,
+            null,
+            () -> emptyPipelineTree
+        );
+
+        // Act
+        InternalAggregation result = agg.reduce(aggregations, shardReduceContext);
+
+        // Assert
+        assertTrue(result instanceof InternalTSDBStats);
+        InternalTSDBStats reducedStats = (InternalTSDBStats) result;
+
+        assertEquals(2L, reducedStats.getNumSeries().longValue());
+
+        Map<String, InternalTSDBStats.CoordinatorLevelStats.LabelStats> resultLabelStats = reducedStats.getLabelStats();
+        assertEquals(2, resultLabelStats.size());
+
+        // Cluster: 2 unique fingerprints (100, 101)
+        assertEquals(2L, resultLabelStats.get("cluster").numSeries().longValue());
+        assertEquals(2L, resultLabelStats.get("cluster").valuesStats().get("prod").longValue());
+
+        // Region: 1 unique fingerprint (200)
+        assertEquals(1L, resultLabelStats.get("region").numSeries().longValue());
+        assertEquals(1L, resultLabelStats.get("region").valuesStats().get("us-east").longValue());
     }
 
     // ========== Equals and HashCode Tests ==========
