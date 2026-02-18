@@ -31,13 +31,9 @@ import java.util.Map;
  *
  * <h2>Key Features:</h2>
  * <ul>
- *   <li><strong>Label Statistics:</strong> Collects cardinality information
- *       for each label key and value</li>
- *   <li><strong>Time Range Filtering:</strong> Filters data by timestamp range</li>
- *   <li><strong>Optional Statistics:</strong> Configurable inclusion of value
- *       statistics and total series count</li>
- *   <li><strong>Exact Counting:</strong> Uses fingerprint sets for precise
- *       cardinality with no approximation error</li>
+ *   <li><strong>Time Series Counting:</strong> Counts unique time series exactly using fingerprints</li>
+ *   <li><strong>Label Cardinality:</strong> Per label key cardinality countss</li>
+ *   <li><strong>Value Statistics:</strong> Per label value cardinality counts</li>
  * </ul>
  *
  * <h2>Usage Example:</h2>

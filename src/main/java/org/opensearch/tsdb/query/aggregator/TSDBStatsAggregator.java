@@ -39,17 +39,10 @@ import java.util.concurrent.ConcurrentHashMap;
  *
  * <h2>Features:</h2>
  * <ul>
- *   <li><strong>Label Cardinality:</strong> Tracks unique label values per key using exact fingerprints</li>
  *   <li><strong>Time Series Counting:</strong> Counts unique time series exactly using fingerprints</li>
- *   <li><strong>Value Statistics:</strong> Per-value exact cardinality counts</li>
- *   <li><strong>Exact Counting:</strong> No approximation errors</li>
- *   <li><strong>Performance Optimization:</strong> Skips already-processed series to avoid redundant deserialization</li>
+ *   <li><strong>Label Cardinality:</strong> Per label key cardinality countss</li>
+ *   <li><strong>Value Statistics:</strong> Per label value cardinality counts</li>
  * </ul>
- *
- * <h2>Optimization Strategy:</h2>
- * <p>For each document, reads the series identifier (reference or labels_hash) first (8 bytes).
- * If already seen, skips the expensive label deserialization (~200 bytes). This provides ~11× speedup
- * for queries over large time ranges where the same series appears in many chunks.</p>
  *
  * @since 0.0.1
  */
@@ -60,16 +53,13 @@ public class TSDBStatsAggregator extends MetricsAggregator {
     private final boolean includeValueStats;
 
     // Series identifiers (reference or labels_hash) we've already processed
-    // Uses ConcurrentHashMap.newKeySet() for thread-safety since supportsConcurrentSegmentSearch() = true
     private final Set<Long> seenSeriesIdentifiers;
 
     // BytesRefHash to store "key:value" strings and assign ordinals (shard-level, shared across segments)
-    // Already thread-safe internally via synchronized methods
     private final BytesRefHash labelValuePairOrdinalMap;
 
     // Track fingerprint set per ordinal: ordinal -> Set<Long>
     // Key grouping is deferred to buildAggregation() to avoid parsing in hot path
-    // Uses ConcurrentHashMap for thread-safety
     private final Map<Integer, Set<Long>> ordinalFingerprintSets;
 
     /**
@@ -98,15 +88,11 @@ public class TSDBStatsAggregator extends MetricsAggregator {
         this.maxTimestamp = maxTimestamp;
         this.includeValueStats = includeValueStats;
 
-        // Initialize thread-safe set for tracking seen series identifiers
-        // Uses ConcurrentHashMap.newKeySet() since supportsConcurrentSegmentSearch() = true
         this.seenSeriesIdentifiers = ConcurrentHashMap.newKeySet();
 
-        // Initialize BytesRefHash for ordinals (already thread-safe internally)
         ByteBlockPool pool = new ByteBlockPool(new ByteBlockPool.DirectAllocator());
         this.labelValuePairOrdinalMap = new BytesRefHash(pool);
 
-        // Use ConcurrentHashMap for thread-safety
         this.ordinalFingerprintSets = includeValueStats ? new ConcurrentHashMap<>() : null;
     }
 
@@ -154,17 +140,16 @@ public class TSDBStatsAggregator extends MetricsAggregator {
             if (seriesIdDocValues == null || !seriesIdDocValues.advanceExact(doc)) {
                 return;  // No identifier for this document
             }
-            long seriesId = seriesIdDocValues.longValue();  // This is stableHash() - 64-bit
+            long seriesId = seriesIdDocValues.longValue();
 
-            // Check if already seen - atomic operation with ConcurrentHashMap.newKeySet()
-            // add() returns false if element already exists
+            // Already processed this series - skip entire document
             if (!seenSeriesIdentifiers.add(seriesId)) {
-                return;  // Already processed this series - skip entire document to save ~3.25 µs
+                return;
             }
 
-            // FIRST TIME seeing this series - do full processing
             Labels labels = tsdbLeafReader.labelsForDoc(doc, tsdbDocValues);
 
+            // TODO improve by BytesRef Iterator
             // Process each label using BytesRef directly (avoid String conversion)
             BytesRef[] keyValuePairs = labels.toKeyValueBytesRefs();
             for (BytesRef keyValue : keyValuePairs) {
