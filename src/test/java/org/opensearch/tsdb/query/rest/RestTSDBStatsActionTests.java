@@ -530,6 +530,43 @@ public class RestTSDBStatsActionTests extends OpenSearchTestCase {
         assertTrue(content.contains("\"error\""));
     }
 
+    // ========== Exception Branch Tests ==========
+
+    public void testBuildQueryFromFetchWithInvalidFetchNode() throws Exception {
+        // Test buildQueryFromFetch exception handling when query doesn't have a fetch node
+        // This triggers the generic exception catch block in buildQueryFromFetch
+        FakeRestRequest request = new FakeRestRequest.Builder(xContentRegistry()).withMethod(RestRequest.Method.GET)
+            .withPath("/_tsdb/stats")
+            .withParams(Map.of("query", "100"))  // Not a fetch query
+            .build();
+        FakeRestChannel channel = new FakeRestChannel(request, true, 1);
+
+        action.handleRequest(request, channel, mockClient);
+
+        assertThat(channel.capturedResponse().status(), equalTo(RestStatus.BAD_REQUEST));
+        String content = channel.capturedResponse().content().utf8ToString();
+        assertTrue(content.contains("\"error\""));
+    }
+
+    public void testPrepareRequestExceptionHandling() throws Exception {
+        // Test the general exception catch block in prepareRequest (lines 425-433)
+        // We can't easily trigger this from external API, but we can test invalid format parameter
+        // which gets caught by the validation logic
+        FakeRestRequest request = new FakeRestRequest.Builder(xContentRegistry()).withMethod(RestRequest.Method.GET)
+            .withPath("/_tsdb/stats")
+            .withParams(Map.of("query", "fetch service:api", "format", "invalid_format"))
+            .build();
+        FakeRestChannel channel = new FakeRestChannel(request, true, 1);
+
+        action.handleRequest(request, channel, mockClient);
+
+        // Should return BAD_REQUEST with error message
+        assertThat(channel.capturedResponse().status(), equalTo(RestStatus.BAD_REQUEST));
+        String content = channel.capturedResponse().content().utf8ToString();
+        assertTrue(content.contains("\"error\""));
+        assertTrue(content.contains("Invalid format"));
+    }
+
     // ========== Combined Parameter Tests ==========
 
     public void testAllParametersTogether() throws Exception {

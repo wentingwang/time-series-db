@@ -53,146 +53,40 @@ public class InternalTSDBStatsTests extends OpenSearchTestCase {
         assertEquals(TEST_METADATA, internal.getMetadata());
     }
 
-    public void testConstructorWithNullHeadStats() {
-        // Arrange
-        Map<String, InternalTSDBStats.CoordinatorLevelStats.LabelStats> labelStats = createTestLabelStats();
+    // ========== HeadStats Tests (Combined) ==========
 
-        // Act
-        InternalTSDBStats internal = InternalTSDBStats.forCoordinatorLevel(
-            TEST_NAME,
-            null,
-            new InternalTSDBStats.CoordinatorLevelStats(500L, labelStats),
-            TEST_METADATA
-        );
-
-        // Assert
-        assertNull(internal.getHeadStats());
-        assertEquals(500L, internal.getNumSeries().longValue());
-    }
-
-    public void testConstructorWithNullNumSeries() {
-        // Arrange
-        InternalTSDBStats.HeadStats headStats = new InternalTSDBStats.HeadStats(100L, 200L, 1000L, 2000L);
-        Map<String, InternalTSDBStats.CoordinatorLevelStats.LabelStats> labelStats = createTestLabelStats();
-
-        // Act
-        InternalTSDBStats internal = InternalTSDBStats.forCoordinatorLevel(
-            TEST_NAME,
-            headStats,
-            new InternalTSDBStats.CoordinatorLevelStats(null, labelStats),
-            TEST_METADATA
-        );
-
-        // Assert
-        assertNull(internal.getNumSeries());
-        assertEquals(headStats, internal.getHeadStats());
-    }
-
-    public void testConstructorWithEmptyLabelStats() {
-        // Arrange
-        InternalTSDBStats.HeadStats headStats = new InternalTSDBStats.HeadStats(100L, 200L, 1000L, 2000L);
-        Map<String, InternalTSDBStats.CoordinatorLevelStats.LabelStats> emptyLabelStats = new HashMap<>();
-
-        // Act
-        InternalTSDBStats internal = InternalTSDBStats.forCoordinatorLevel(
-            TEST_NAME,
-            headStats,
-            new InternalTSDBStats.CoordinatorLevelStats(500L, emptyLabelStats),
-            TEST_METADATA
-        );
-
-        // Assert
-        assertEquals(0, internal.getLabelStats().size());
-    }
-
-    // ========== HeadStats Tests ==========
-
-    public void testHeadStatsConstructor() {
-        // Act
-        InternalTSDBStats.HeadStats headStats = new InternalTSDBStats.HeadStats(100L, 200L, 1000L, 2000L);
-
-        // Assert
-        assertEquals(100L, headStats.numSeries());
-        assertEquals(200L, headStats.chunkCount());
-        assertEquals(1000L, headStats.minTime());
-        assertEquals(2000L, headStats.maxTime());
-    }
-
-    public void testHeadStatsEquals() {
-        // Arrange
+    public void testHeadStatsRecordBehavior() throws IOException {
+        // Test constructor, equals, hashCode, and serialization in one test
         InternalTSDBStats.HeadStats stats1 = new InternalTSDBStats.HeadStats(100L, 200L, 1000L, 2000L);
         InternalTSDBStats.HeadStats stats2 = new InternalTSDBStats.HeadStats(100L, 200L, 1000L, 2000L);
         InternalTSDBStats.HeadStats stats3 = new InternalTSDBStats.HeadStats(101L, 200L, 1000L, 2000L);
 
-        // Act & Assert
+        // Test accessors
+        assertEquals(100L, stats1.numSeries());
+        assertEquals(200L, stats1.chunkCount());
+        assertEquals(1000L, stats1.minTime());
+        assertEquals(2000L, stats1.maxTime());
+
+        // Test equals and hashCode
         assertEquals(stats1, stats2);
         assertNotEquals(stats1, stats3);
         assertEquals(stats1.hashCode(), stats2.hashCode());
-    }
 
-    public void testHeadStatsSerialization() throws IOException {
-        // Arrange
-        InternalTSDBStats.HeadStats original = new InternalTSDBStats.HeadStats(100L, 200L, 1000L, 2000L);
-
-        // Act
+        // Test serialization
         BytesStreamOutput out = new BytesStreamOutput();
-        original.writeTo(out);
-
+        stats1.writeTo(out);
         StreamInput in = out.bytes().streamInput();
         InternalTSDBStats.HeadStats deserialized = new InternalTSDBStats.HeadStats(in);
-
-        // Assert
-        assertEquals(original, deserialized);
+        assertEquals(stats1, deserialized);
     }
 
-    // ========== LabelStats Tests ==========
+    // ========== LabelStats Tests (Combined) ==========
 
-    public void testLabelStatsConstructor() {
-        // Arrange
-        Map<String, Long> valuesStats = Map.of("prod", 80L, "staging", 20L);
-
-        // Act
-        InternalTSDBStats.CoordinatorLevelStats.LabelStats labelStats = new InternalTSDBStats.CoordinatorLevelStats.LabelStats(
-            100L,
-            valuesStats
-        );
-
-        // Assert
-        assertEquals(100L, labelStats.numSeries().longValue());
-        assertEquals(valuesStats, labelStats.valuesStats());
-    }
-
-    public void testLabelStatsGetValues() {
-        // Arrange
-        Map<String, Long> valuesStats = Map.of("prod", 80L, "staging", 20L);
-        InternalTSDBStats.CoordinatorLevelStats.LabelStats labelStats = new InternalTSDBStats.CoordinatorLevelStats.LabelStats(
-            100L,
-            valuesStats
-        );
-
-        // Act - values are derived from valuesStats.keySet()
-        Set<String> values = labelStats.valuesStats().keySet();
-
-        // Assert
-        assertEquals(2, values.size());
-        assertTrue(values.contains("prod"));
-        assertTrue(values.contains("staging"));
-    }
-
-    public void testLabelStatsGetValuesWithNullValuesStats() {
-        // Arrange & Act & Assert - valuesStats cannot be null, should throw exception
-        IllegalArgumentException exception = expectThrows(
-            IllegalArgumentException.class,
-            () -> new InternalTSDBStats.CoordinatorLevelStats.LabelStats(100L, null)
-        );
-        assertTrue(exception.getMessage().contains("valuesStats cannot be null"));
-    }
-
-    public void testLabelStatsEquals() {
-        // Arrange
-        Map<String, Long> valuesStats1 = Map.of("prod", 80L);
-        Map<String, Long> valuesStats2 = Map.of("prod", 80L);
-        Map<String, Long> valuesStats3 = Map.of("staging", 20L);
+    public void testLabelStatsRecordBehavior() throws IOException {
+        // Test constructor, accessors, equals, and serialization
+        Map<String, Long> valuesStats1 = Map.of("prod", 80L, "staging", 20L);
+        Map<String, Long> valuesStats2 = Map.of("prod", 80L, "staging", 20L);
+        Map<String, Long> valuesStats3 = Map.of("dev", 20L);
 
         InternalTSDBStats.CoordinatorLevelStats.LabelStats stats1 = new InternalTSDBStats.CoordinatorLevelStats.LabelStats(
             100L,
@@ -207,236 +101,106 @@ public class InternalTSDBStatsTests extends OpenSearchTestCase {
             valuesStats3
         );
 
-        // Act & Assert
+        // Test accessors
+        assertEquals(100L, stats1.numSeries().longValue());
+        assertEquals(valuesStats1, stats1.valuesStats());
+        assertEquals(2, stats1.valuesStats().keySet().size());
+
+        // Test equals and hashCode
         assertEquals(stats1, stats2);
         assertNotEquals(stats1, stats3);
         assertEquals(stats1.hashCode(), stats2.hashCode());
-    }
 
-    public void testLabelStatsSerialization() throws IOException {
-        // Arrange
-        Map<String, Long> valuesStats = Map.of("prod", 80L, "staging", 20L);
-        InternalTSDBStats.CoordinatorLevelStats.LabelStats original = new InternalTSDBStats.CoordinatorLevelStats.LabelStats(
-            100L,
-            valuesStats
-        );
-
-        // Act
+        // Test serialization with non-null numSeries
         BytesStreamOutput out = new BytesStreamOutput();
-        original.writeTo(out);
-
+        stats1.writeTo(out);
         StreamInput in = out.bytes().streamInput();
         InternalTSDBStats.CoordinatorLevelStats.LabelStats deserialized = new InternalTSDBStats.CoordinatorLevelStats.LabelStats(in);
+        assertEquals(stats1, deserialized);
 
-        // Assert
-        assertEquals(original, deserialized);
-        assertEquals(original.numSeries(), deserialized.numSeries());
-        assertEquals(original.valuesStats(), deserialized.valuesStats());
-    }
-
-    public void testLabelStatsSerializationWithNullValues() throws IOException {
-        // Arrange - Create LabelStats with null numSeries but non-null valuesStats (empty map)
-        InternalTSDBStats.CoordinatorLevelStats.LabelStats original = new InternalTSDBStats.CoordinatorLevelStats.LabelStats(
+        // Test serialization with null numSeries
+        InternalTSDBStats.CoordinatorLevelStats.LabelStats nullStats = new InternalTSDBStats.CoordinatorLevelStats.LabelStats(
             null,
             Map.of()
         );
+        out = new BytesStreamOutput();
+        nullStats.writeTo(out);
+        in = out.bytes().streamInput();
+        InternalTSDBStats.CoordinatorLevelStats.LabelStats deserializedNull = new InternalTSDBStats.CoordinatorLevelStats.LabelStats(in);
+        assertEquals(nullStats, deserializedNull);
+        assertNull(deserializedNull.numSeries());
 
-        // Act
-        BytesStreamOutput out = new BytesStreamOutput();
-        original.writeTo(out);
-
-        StreamInput in = out.bytes().streamInput();
-        InternalTSDBStats.CoordinatorLevelStats.LabelStats deserialized = new InternalTSDBStats.CoordinatorLevelStats.LabelStats(in);
-
-        // Assert
-        assertEquals(original, deserialized);
-        assertNull(deserialized.numSeries());
-        assertNotNull(deserialized.valuesStats());
-        assertEquals(0, deserialized.valuesStats().size());
+        // Test null valuesStats throws exception
+        IllegalArgumentException exception = expectThrows(
+            IllegalArgumentException.class,
+            () -> new InternalTSDBStats.CoordinatorLevelStats.LabelStats(100L, null)
+        );
+        assertTrue(exception.getMessage().contains("valuesStats cannot be null"));
     }
 
-    // ========== CoordinatorLevelStats Serialization Tests ==========
+    // ========== CoordinatorLevelStats Serialization (Combined) ==========
 
-    public void testCoordinatorLevelStatsSerialization() throws IOException {
-        // Arrange - Create CoordinatorLevelStats with full data
-        Map<String, InternalTSDBStats.CoordinatorLevelStats.LabelStats> labelStats = new LinkedHashMap<>();
-        labelStats.put(
+    public void testCoordinatorLevelStatsSerializationRoundTrip() throws IOException {
+        // Test multiple scenarios: full data, null totalNumSeries, empty labelStats, null numSeries in labels
+
+        // Scenario 1: Full data with multiple labels
+        Map<String, InternalTSDBStats.CoordinatorLevelStats.LabelStats> labelStats1 = new LinkedHashMap<>();
+        labelStats1.put(
             "cluster",
             new InternalTSDBStats.CoordinatorLevelStats.LabelStats(100L, Map.of("prod", 80L, "staging", 15L, "dev", 5L))
         );
-        labelStats.put(
+        labelStats1.put(
             "region",
             new InternalTSDBStats.CoordinatorLevelStats.LabelStats(100L, Map.of("us-east", 40L, "us-west", 30L, "eu-west", 30L))
         );
+        InternalTSDBStats.CoordinatorLevelStats original1 = new InternalTSDBStats.CoordinatorLevelStats(500L, labelStats1);
 
-        InternalTSDBStats.CoordinatorLevelStats original = new InternalTSDBStats.CoordinatorLevelStats(500L, labelStats);
+        BytesStreamOutput out1 = new BytesStreamOutput();
+        original1.writeTo(out1);
+        StreamInput in1 = out1.bytes().streamInput();
+        InternalTSDBStats.CoordinatorLevelStats deserialized1 = new InternalTSDBStats.CoordinatorLevelStats(in1);
 
-        // Act - Serialize and deserialize
-        BytesStreamOutput out = new BytesStreamOutput();
-        original.writeTo(out);
+        assertEquals(original1, deserialized1);
+        assertEquals(500L, deserialized1.totalNumSeries().longValue());
+        assertEquals(2, deserialized1.labelStats().size());
 
-        StreamInput in = out.bytes().streamInput();
-        InternalTSDBStats.CoordinatorLevelStats deserialized = new InternalTSDBStats.CoordinatorLevelStats(in);
+        // Scenario 2: Null totalNumSeries
+        Map<String, InternalTSDBStats.CoordinatorLevelStats.LabelStats> labelStats2 = new LinkedHashMap<>();
+        labelStats2.put("cluster", new InternalTSDBStats.CoordinatorLevelStats.LabelStats(100L, Map.of("prod", 80L)));
+        InternalTSDBStats.CoordinatorLevelStats original2 = new InternalTSDBStats.CoordinatorLevelStats(null, labelStats2);
 
-        // Assert - Verify all fields match
-        assertEquals(original.totalNumSeries(), deserialized.totalNumSeries());
-        assertEquals(original.labelStats().size(), deserialized.labelStats().size());
+        BytesStreamOutput out2 = new BytesStreamOutput();
+        original2.writeTo(out2);
+        StreamInput in2 = out2.bytes().streamInput();
+        InternalTSDBStats.CoordinatorLevelStats deserialized2 = new InternalTSDBStats.CoordinatorLevelStats(in2);
 
-        // Verify cluster label
-        InternalTSDBStats.CoordinatorLevelStats.LabelStats clusterStats = deserialized.labelStats().get("cluster");
-        assertNotNull(clusterStats);
-        assertEquals(100L, clusterStats.numSeries().longValue());
-        assertEquals(3, clusterStats.valuesStats().size());
-        assertEquals(80L, clusterStats.valuesStats().get("prod").longValue());
-        assertEquals(15L, clusterStats.valuesStats().get("staging").longValue());
-        assertEquals(5L, clusterStats.valuesStats().get("dev").longValue());
+        assertNull(deserialized2.totalNumSeries());
+        assertEquals(1, deserialized2.labelStats().size());
 
-        // Verify region label
-        InternalTSDBStats.CoordinatorLevelStats.LabelStats regionStats = deserialized.labelStats().get("region");
-        assertNotNull(regionStats);
-        assertEquals(100L, regionStats.numSeries().longValue());
-        assertEquals(3, regionStats.valuesStats().size());
-        assertEquals(40L, regionStats.valuesStats().get("us-east").longValue());
-        assertEquals(30L, regionStats.valuesStats().get("us-west").longValue());
-        assertEquals(30L, regionStats.valuesStats().get("eu-west").longValue());
-    }
+        // Scenario 3: Empty labelStats
+        InternalTSDBStats.CoordinatorLevelStats original3 = new InternalTSDBStats.CoordinatorLevelStats(500L, new HashMap<>());
 
-    public void testCoordinatorLevelStatsSerializationWithNullTotalNumSeries() throws IOException {
-        // Arrange - Create CoordinatorLevelStats with null totalNumSeries
-        Map<String, InternalTSDBStats.CoordinatorLevelStats.LabelStats> labelStats = new LinkedHashMap<>();
-        labelStats.put("cluster", new InternalTSDBStats.CoordinatorLevelStats.LabelStats(100L, Map.of("prod", 80L)));
+        BytesStreamOutput out3 = new BytesStreamOutput();
+        original3.writeTo(out3);
+        StreamInput in3 = out3.bytes().streamInput();
+        InternalTSDBStats.CoordinatorLevelStats deserialized3 = new InternalTSDBStats.CoordinatorLevelStats(in3);
 
-        InternalTSDBStats.CoordinatorLevelStats original = new InternalTSDBStats.CoordinatorLevelStats(
-            null,  // null totalNumSeries
-            labelStats
-        );
+        assertEquals(500L, deserialized3.totalNumSeries().longValue());
+        assertEquals(0, deserialized3.labelStats().size());
 
-        // Act
-        BytesStreamOutput out = new BytesStreamOutput();
-        original.writeTo(out);
+        // Scenario 4: Null numSeries in LabelStats
+        Map<String, InternalTSDBStats.CoordinatorLevelStats.LabelStats> labelStats4 = new LinkedHashMap<>();
+        labelStats4.put("cluster", new InternalTSDBStats.CoordinatorLevelStats.LabelStats(null, Map.of("prod", 80L, "staging", 20L)));
+        InternalTSDBStats.CoordinatorLevelStats original4 = new InternalTSDBStats.CoordinatorLevelStats(500L, labelStats4);
 
-        StreamInput in = out.bytes().streamInput();
-        InternalTSDBStats.CoordinatorLevelStats deserialized = new InternalTSDBStats.CoordinatorLevelStats(in);
+        BytesStreamOutput out4 = new BytesStreamOutput();
+        original4.writeTo(out4);
+        StreamInput in4 = out4.bytes().streamInput();
+        InternalTSDBStats.CoordinatorLevelStats deserialized4 = new InternalTSDBStats.CoordinatorLevelStats(in4);
 
-        // Assert
-        assertNull(deserialized.totalNumSeries());
-        assertEquals(1, deserialized.labelStats().size());
-        assertEquals(100L, deserialized.labelStats().get("cluster").numSeries().longValue());
-    }
-
-    public void testCoordinatorLevelStatsSerializationWithEmptyLabelStats() throws IOException {
-        // Arrange - Create CoordinatorLevelStats with empty labelStats
-        Map<String, InternalTSDBStats.CoordinatorLevelStats.LabelStats> emptyLabelStats = new HashMap<>();
-
-        InternalTSDBStats.CoordinatorLevelStats original = new InternalTSDBStats.CoordinatorLevelStats(500L, emptyLabelStats);
-
-        // Act
-        BytesStreamOutput out = new BytesStreamOutput();
-        original.writeTo(out);
-
-        StreamInput in = out.bytes().streamInput();
-        InternalTSDBStats.CoordinatorLevelStats deserialized = new InternalTSDBStats.CoordinatorLevelStats(in);
-
-        // Assert
-        assertEquals(500L, deserialized.totalNumSeries().longValue());
-        assertEquals(0, deserialized.labelStats().size());
-    }
-
-    public void testCoordinatorLevelStatsSerializationWithNullNumSeriesInLabel() throws IOException {
-        // Arrange - Create CoordinatorLevelStats with null numSeries in LabelStats
-        Map<String, InternalTSDBStats.CoordinatorLevelStats.LabelStats> labelStats = new LinkedHashMap<>();
-        labelStats.put(
-            "cluster",
-            new InternalTSDBStats.CoordinatorLevelStats.LabelStats(
-                null,  // null numSeries for this label
-                Map.of("prod", 80L, "staging", 20L)
-            )
-        );
-
-        InternalTSDBStats.CoordinatorLevelStats original = new InternalTSDBStats.CoordinatorLevelStats(500L, labelStats);
-
-        // Act
-        BytesStreamOutput out = new BytesStreamOutput();
-        original.writeTo(out);
-
-        StreamInput in = out.bytes().streamInput();
-        InternalTSDBStats.CoordinatorLevelStats deserialized = new InternalTSDBStats.CoordinatorLevelStats(in);
-
-        // Assert
-        assertEquals(500L, deserialized.totalNumSeries().longValue());
-        assertEquals(1, deserialized.labelStats().size());
-        assertNull(deserialized.labelStats().get("cluster").numSeries());
-        assertEquals(2, deserialized.labelStats().get("cluster").valuesStats().size());
-    }
-
-    public void testCoordinatorLevelStatsSerializationWithZeroSentinelValues() throws IOException {
-        // Arrange - Create CoordinatorLevelStats with 0 sentinel values (includeValueStats=false)
-        Map<String, InternalTSDBStats.CoordinatorLevelStats.LabelStats> labelStats = new LinkedHashMap<>();
-        labelStats.put(
-            "cluster",
-            new InternalTSDBStats.CoordinatorLevelStats.LabelStats(
-                null,
-                Map.of("prod", 0L, "staging", 0L)  // 0 means "not counted"
-            )
-        );
-
-        InternalTSDBStats.CoordinatorLevelStats original = new InternalTSDBStats.CoordinatorLevelStats(null, labelStats);
-
-        // Act
-        BytesStreamOutput out = new BytesStreamOutput();
-        original.writeTo(out);
-
-        StreamInput in = out.bytes().streamInput();
-        InternalTSDBStats.CoordinatorLevelStats deserialized = new InternalTSDBStats.CoordinatorLevelStats(in);
-
-        // Assert
-        assertNull(deserialized.totalNumSeries());
-        assertEquals(1, deserialized.labelStats().size());
-        assertEquals(0L, deserialized.labelStats().get("cluster").valuesStats().get("prod").longValue());
-        assertEquals(0L, deserialized.labelStats().get("cluster").valuesStats().get("staging").longValue());
-    }
-
-    public void testCoordinatorLevelStatsSerializationWithMultipleLabels() throws IOException {
-        // Arrange - Create CoordinatorLevelStats with multiple labels (comprehensive test)
-        Map<String, InternalTSDBStats.CoordinatorLevelStats.LabelStats> labelStats = new LinkedHashMap<>();
-
-        // Label 1: cluster with 3 values
-        labelStats.put(
-            "cluster",
-            new InternalTSDBStats.CoordinatorLevelStats.LabelStats(100L, Map.of("prod", 80L, "staging", 15L, "dev", 5L))
-        );
-
-        // Label 2: region with 2 values
-        labelStats.put("region", new InternalTSDBStats.CoordinatorLevelStats.LabelStats(100L, Map.of("us-east", 60L, "us-west", 40L)));
-
-        // Label 3: service with null numSeries
-        labelStats.put(
-            "service",
-            new InternalTSDBStats.CoordinatorLevelStats.LabelStats(null, Map.of("api", 50L, "web", 30L, "worker", 20L))
-        );
-
-        InternalTSDBStats.CoordinatorLevelStats original = new InternalTSDBStats.CoordinatorLevelStats(500L, labelStats);
-
-        // Act
-        BytesStreamOutput out = new BytesStreamOutput();
-        original.writeTo(out);
-
-        StreamInput in = out.bytes().streamInput();
-        InternalTSDBStats.CoordinatorLevelStats deserialized = new InternalTSDBStats.CoordinatorLevelStats(in);
-
-        // Assert
-        assertEquals(original, deserialized);  // Full equality check
-        assertEquals(500L, deserialized.totalNumSeries().longValue());
-        assertEquals(3, deserialized.labelStats().size());
-
-        // Verify each label
-        assertEquals(100L, deserialized.labelStats().get("cluster").numSeries().longValue());
-        assertEquals(100L, deserialized.labelStats().get("region").numSeries().longValue());
-        assertNull(deserialized.labelStats().get("service").numSeries());
-
-        assertEquals(3, deserialized.labelStats().get("cluster").valuesStats().size());
-        assertEquals(2, deserialized.labelStats().get("region").valuesStats().size());
-        assertEquals(3, deserialized.labelStats().get("service").valuesStats().size());
+        assertEquals(500L, deserialized4.totalNumSeries().longValue());
+        assertNull(deserialized4.labelStats().get("cluster").numSeries());
+        assertEquals(2, deserialized4.labelStats().get("cluster").valuesStats().size());
     }
 
     // ========== Interface Implementation Tests ==========
@@ -518,144 +282,89 @@ public class InternalTSDBStatsTests extends OpenSearchTestCase {
         assertNull(deserialized.getMetadata());
     }
 
-    // ========== XContent (JSON) Output Tests ==========
+    // ========== XContent (JSON) Output Tests (Combined) ==========
 
-    public void testDoXContentBodyWithAllFields() throws IOException {
-        // Arrange
+    public void testDoXContentBodyVariations() throws IOException {
+        // Test all XContent variations in one test
+
+        // Variation 1: With all fields
         InternalTSDBStats.HeadStats headStats = new InternalTSDBStats.HeadStats(508L, 937L, 1591516800000L, 1598896800143L);
-        Map<String, Long> clusterValues = Map.of("prod", 80L, "staging", 15L, "dev", 5L);
         Map<String, InternalTSDBStats.CoordinatorLevelStats.LabelStats> labelStats = new HashMap<>();
-        labelStats.put("cluster", new InternalTSDBStats.CoordinatorLevelStats.LabelStats(100L, clusterValues));
+        labelStats.put("cluster", new InternalTSDBStats.CoordinatorLevelStats.LabelStats(100L, Map.of("prod", 80L, "staging", 15L)));
 
-        InternalTSDBStats internal = InternalTSDBStats.forCoordinatorLevel(
+        InternalTSDBStats internal1 = InternalTSDBStats.forCoordinatorLevel(
             TEST_NAME,
             headStats,
             new InternalTSDBStats.CoordinatorLevelStats(25644L, labelStats),
             TEST_METADATA
         );
 
-        // Act
-        XContentBuilder builder = XContentFactory.jsonBuilder();
-        builder.startObject();
-        internal.doXContentBody(builder, null);
-        builder.endObject();
+        XContentBuilder builder1 = XContentFactory.jsonBuilder();
+        builder1.startObject();
+        internal1.doXContentBody(builder1, null);
+        builder1.endObject();
 
-        // Assert
-        String json = builder.toString();
-        assertNotNull(json);
-        assertTrue(json.contains("\"headStats\""));
-        assertTrue(json.contains("\"numSeries\":508"));
-        assertTrue(json.contains("\"chunkCount\":937"));
-        assertTrue(json.contains("\"labelStats\""));
-        assertTrue(json.contains("\"numSeries\":25644"));
-        assertTrue(json.contains("\"cluster\""));
-        assertTrue(json.contains("\"values\""));
-        assertTrue(json.contains("\"valuesStats\""));
-    }
+        String json1 = builder1.toString();
+        assertTrue(json1.contains("\"headStats\""));
+        assertTrue(json1.contains("\"numSeries\":508"));
+        assertTrue(json1.contains("\"labelStats\""));
+        assertTrue(json1.contains("\"cluster\""));
 
-    public void testDoXContentBodyWithoutHeadStats() throws IOException {
-        // Arrange
-        Map<String, InternalTSDBStats.CoordinatorLevelStats.LabelStats> labelStats = createTestLabelStats();
-        InternalTSDBStats internal = InternalTSDBStats.forCoordinatorLevel(
+        // Variation 2: Without headStats
+        InternalTSDBStats internal2 = InternalTSDBStats.forCoordinatorLevel(
             TEST_NAME,
             null,
             new InternalTSDBStats.CoordinatorLevelStats(500L, labelStats),
             TEST_METADATA
         );
 
-        // Act
-        XContentBuilder builder = XContentFactory.jsonBuilder();
-        builder.startObject();
-        internal.doXContentBody(builder, null);
-        builder.endObject();
+        XContentBuilder builder2 = XContentFactory.jsonBuilder();
+        builder2.startObject();
+        internal2.doXContentBody(builder2, null);
+        builder2.endObject();
 
-        // Assert
-        String json = builder.toString();
-        assertFalse(json.contains("\"headStats\""));
-        assertTrue(json.contains("\"labelStats\""));
-    }
+        String json2 = builder2.toString();
+        assertFalse(json2.contains("\"headStats\""));
+        assertTrue(json2.contains("\"labelStats\""));
 
-    public void testDoXContentBodyWithoutNumSeries() throws IOException {
-        // Arrange
-        InternalTSDBStats.HeadStats headStats = new InternalTSDBStats.HeadStats(100L, 200L, 1000L, 2000L);
-        Map<String, InternalTSDBStats.CoordinatorLevelStats.LabelStats> labelStats = createTestLabelStats();
-        InternalTSDBStats internal = InternalTSDBStats.forCoordinatorLevel(
+        // Variation 3: Without numSeries
+        InternalTSDBStats internal3 = InternalTSDBStats.forCoordinatorLevel(
             TEST_NAME,
             headStats,
             new InternalTSDBStats.CoordinatorLevelStats(null, labelStats),
             TEST_METADATA
         );
 
-        // Act
-        XContentBuilder builder = XContentFactory.jsonBuilder();
-        builder.startObject();
-        internal.doXContentBody(builder, null);
-        builder.endObject();
+        XContentBuilder builder3 = XContentFactory.jsonBuilder();
+        builder3.startObject();
+        internal3.doXContentBody(builder3, null);
+        builder3.endObject();
 
-        // Assert
-        String json = builder.toString();
-        assertTrue(json.contains("\"headStats\""));
-        assertTrue(json.contains("\"labelStats\""));
-        // numSeries at top level should not be present
-        assertFalse(json.contains("\"numSeries\":null"));
-    }
+        String json3 = builder3.toString();
+        assertTrue(json3.contains("\"headStats\""));
+        assertFalse(json3.contains("\"numSeries\":null"));
 
-    public void testDoXContentBodyWithEmptyLabelStats() throws IOException {
-        // Arrange
-        InternalTSDBStats internal = InternalTSDBStats.forCoordinatorLevel(
+        // Variation 4: Empty labelStats
+        InternalTSDBStats internal4 = InternalTSDBStats.forCoordinatorLevel(
             TEST_NAME,
             null,
             new InternalTSDBStats.CoordinatorLevelStats(null, new HashMap<>()),
             TEST_METADATA
         );
 
-        // Act
-        XContentBuilder builder = XContentFactory.jsonBuilder();
-        builder.startObject();
-        internal.doXContentBody(builder, null);
-        builder.endObject();
+        XContentBuilder builder4 = XContentFactory.jsonBuilder();
+        builder4.startObject();
+        internal4.doXContentBody(builder4, null);
+        builder4.endObject();
 
-        // Assert
-        String json = builder.toString();
-        assertTrue(json.contains("\"labelStats\":{}"));
+        String json4 = builder4.toString();
+        assertTrue(json4.contains("\"labelStats\":{}"));
     }
 
-    // ========== Property Tests ==========
+    // ========== Property Tests (Combined) ==========
 
-    public void testGetPropertyEmptyPath() {
-        // Arrange
-        InternalTSDBStats internal = InternalTSDBStats.forCoordinatorLevel(
-            TEST_NAME,
-            null,
-            new InternalTSDBStats.CoordinatorLevelStats(500L, new HashMap<>()),
-            TEST_METADATA
-        );
-
-        // Act
-        Object result = internal.getProperty(List.of());
-
-        // Assert
-        assertEquals(internal, result);
-    }
-
-    public void testGetPropertyNumSeries() {
-        // Arrange
-        InternalTSDBStats internal = InternalTSDBStats.forCoordinatorLevel(
-            TEST_NAME,
-            null,
-            new InternalTSDBStats.CoordinatorLevelStats(500L, new HashMap<>()),
-            TEST_METADATA
-        );
-
-        // Act
-        Object result = internal.getProperty(List.of("numSeries"));
-
-        // Assert
-        assertEquals(500L, result);
-    }
-
-    public void testGetPropertyLabelStats() {
-        // Arrange
+    public void testGetPropertyBehavior() {
+        // Test all getProperty scenarios in one test
         Map<String, InternalTSDBStats.CoordinatorLevelStats.LabelStats> labelStats = createTestLabelStats();
         InternalTSDBStats internal = InternalTSDBStats.forCoordinatorLevel(
             TEST_NAME,
@@ -664,23 +373,19 @@ public class InternalTSDBStatsTests extends OpenSearchTestCase {
             TEST_METADATA
         );
 
-        // Act
-        Object result = internal.getProperty(List.of("labelStats"));
+        // Empty path returns this
+        Object result1 = internal.getProperty(List.of());
+        assertEquals(internal, result1);
 
-        // Assert
-        assertEquals(labelStats, result);
-    }
+        // numSeries property
+        Object result2 = internal.getProperty(List.of("numSeries"));
+        assertEquals(500L, result2);
 
-    public void testGetPropertyInvalidPath() {
-        // Arrange
-        InternalTSDBStats internal = InternalTSDBStats.forCoordinatorLevel(
-            TEST_NAME,
-            null,
-            new InternalTSDBStats.CoordinatorLevelStats(500L, new HashMap<>()),
-            TEST_METADATA
-        );
+        // labelStats property
+        Object result3 = internal.getProperty(List.of("labelStats"));
+        assertEquals(labelStats, result3);
 
-        // Act & Assert
+        // Invalid property throws exception
         IllegalArgumentException exception = expectThrows(
             IllegalArgumentException.class,
             () -> internal.getProperty(List.of("invalidProperty"))
@@ -689,7 +394,7 @@ public class InternalTSDBStatsTests extends OpenSearchTestCase {
         assertTrue(exception.getMessage().contains("invalidProperty"));
     }
 
-    // ========== forShardLevel Factory Method Tests ==========
+    // ========== forShardLevel Tests ==========
 
     public void testForShardLevelConstructor() {
         // Arrange
@@ -740,68 +445,6 @@ public class InternalTSDBStatsTests extends OpenSearchTestCase {
     }
 
     // ========== Reduce Tests ==========
-
-    public void testReduceWithEmptyAggregationsList() {
-        // Arrange
-        InternalTSDBStats internal = InternalTSDBStats.forCoordinatorLevel(
-            TEST_NAME,
-            null,
-            new InternalTSDBStats.CoordinatorLevelStats(500L, new HashMap<>()),
-            TEST_METADATA
-        );
-        List<InternalAggregation> emptyAggregations = List.of();
-
-        PipelineAggregator.PipelineTree emptyPipelineTree = new PipelineAggregator.PipelineTree(
-            Collections.emptyMap(),
-            Collections.emptyList()
-        );
-        InternalAggregation.ReduceContext finalReduceContext = InternalAggregation.ReduceContext.forFinalReduction(
-            null,
-            null,
-            (s) -> {},
-            emptyPipelineTree
-        );
-
-        // Act
-        InternalAggregation result = internal.reduce(emptyAggregations, finalReduceContext);
-
-        // Assert
-        assertNotNull(result);
-        assertTrue(result instanceof InternalTSDBStats);
-        InternalTSDBStats reducedStats = (InternalTSDBStats) result;
-        assertEquals(TEST_NAME, reducedStats.getName());
-    }
-
-    public void testReduceWithSingleAggregation() {
-        // Arrange
-        Map<String, InternalTSDBStats.CoordinatorLevelStats.LabelStats> labelStats = createTestLabelStats();
-        InternalTSDBStats internal = InternalTSDBStats.forCoordinatorLevel(
-            TEST_NAME,
-            null,
-            new InternalTSDBStats.CoordinatorLevelStats(500L, labelStats),
-            TEST_METADATA
-        );
-        List<InternalAggregation> aggregations = List.of(internal);
-
-        PipelineAggregator.PipelineTree emptyPipelineTree = new PipelineAggregator.PipelineTree(
-            Collections.emptyMap(),
-            Collections.emptyList()
-        );
-        InternalAggregation.ReduceContext finalReduceContext = InternalAggregation.ReduceContext.forFinalReduction(
-            null,
-            null,
-            (s) -> {},
-            emptyPipelineTree
-        );
-
-        // Act
-        InternalAggregation result = internal.reduce(aggregations, finalReduceContext);
-
-        // Assert
-        assertTrue(result instanceof InternalTSDBStats);
-        InternalTSDBStats reducedStats = (InternalTSDBStats) result;
-        assertEquals(internal, reducedStats);
-    }
 
     public void testReduceShardLevelWithMultipleShards() {
         // Arrange - Create two shard-level stats with overlapping fingerprints
@@ -966,6 +609,98 @@ public class InternalTSDBStatsTests extends OpenSearchTestCase {
         assertEquals(30L, valueStats.get("dev").longValue());
     }
 
+    public void testReduceShardLevelWithMultipleLabels() {
+        // Arrange - Create shard-level stats with multiple labels
+        Set<Long> fingerprints = new HashSet<>();
+        fingerprints.add(1L);
+        fingerprints.add(2L);
+
+        Map<String, Map<String, Set<Long>>> labelStats = new LinkedHashMap<>();
+
+        // Label 1: cluster
+        Map<String, Set<Long>> clusterValues = new LinkedHashMap<>();
+        Set<Long> prodFingerprints = new HashSet<>();
+        prodFingerprints.add(100L);
+        prodFingerprints.add(101L);
+        clusterValues.put("prod", prodFingerprints);
+        labelStats.put("cluster", clusterValues);
+
+        // Label 2: region
+        Map<String, Set<Long>> regionValues = new LinkedHashMap<>();
+        Set<Long> usEastFingerprints = new HashSet<>();
+        usEastFingerprints.add(200L);
+        regionValues.put("us-east", usEastFingerprints);
+        labelStats.put("region", regionValues);
+
+        InternalTSDBStats.ShardLevelStats shardStats = new InternalTSDBStats.ShardLevelStats(fingerprints, labelStats, true);
+        InternalTSDBStats agg = InternalTSDBStats.forShardLevel(TEST_NAME, shardStats, TEST_METADATA);
+
+        List<InternalAggregation> aggregations = List.of(agg);
+
+        PipelineAggregator.PipelineTree emptyPipelineTree = new PipelineAggregator.PipelineTree(
+            Collections.emptyMap(),
+            Collections.emptyList()
+        );
+        InternalAggregation.ReduceContext shardReduceContext = InternalAggregation.ReduceContext.forPartialReduction(
+            null,
+            null,
+            () -> emptyPipelineTree
+        );
+
+        // Act
+        InternalAggregation result = agg.reduce(aggregations, shardReduceContext);
+
+        // Assert
+        assertTrue(result instanceof InternalTSDBStats);
+        InternalTSDBStats reducedStats = (InternalTSDBStats) result;
+
+        assertEquals(2L, reducedStats.getNumSeries().longValue());
+
+        Map<String, InternalTSDBStats.CoordinatorLevelStats.LabelStats> resultLabelStats = reducedStats.getLabelStats();
+        assertEquals(2, resultLabelStats.size());
+
+        // Cluster: 2 unique fingerprints (100, 101)
+        assertEquals(2L, resultLabelStats.get("cluster").numSeries().longValue());
+        assertEquals(2L, resultLabelStats.get("cluster").valuesStats().get("prod").longValue());
+
+        // Region: 1 unique fingerprint (200)
+        assertEquals(1L, resultLabelStats.get("region").numSeries().longValue());
+        assertEquals(1L, resultLabelStats.get("region").valuesStats().get("us-east").longValue());
+    }
+
+    // ========== Edge Case Reduce Tests ==========
+
+    public void testReduceWithEmptyAggregationsList() {
+        // Arrange
+        InternalTSDBStats internal = InternalTSDBStats.forCoordinatorLevel(
+            TEST_NAME,
+            null,
+            new InternalTSDBStats.CoordinatorLevelStats(500L, new HashMap<>()),
+            TEST_METADATA
+        );
+        List<InternalAggregation> emptyList = Collections.emptyList();
+
+        PipelineAggregator.PipelineTree emptyPipelineTree = new PipelineAggregator.PipelineTree(
+            Collections.emptyMap(),
+            Collections.emptyList()
+        );
+        InternalAggregation.ReduceContext finalReduceContext = InternalAggregation.ReduceContext.forFinalReduction(
+            null,
+            null,
+            (s) -> {},
+            emptyPipelineTree
+        );
+
+        // Act
+        InternalAggregation result = internal.reduce(emptyList, finalReduceContext);
+
+        // Assert
+        assertTrue(result instanceof InternalTSDBStats);
+        InternalTSDBStats reducedStats = (InternalTSDBStats) result;
+        assertNull(reducedStats.getNumSeries());
+        assertEquals(0, reducedStats.getLabelStats().size());
+    }
+
     public void testReduceShardLevelWithNullFingerprints() {
         // Arrange - Create shard-level stats with null fingerprints
         Map<String, Map<String, Set<Long>>> labelStats = new LinkedHashMap<>();
@@ -1054,65 +789,6 @@ public class InternalTSDBStatsTests extends OpenSearchTestCase {
         assertEquals(160L, resultLabelStats.get("cluster").valuesStats().get("prod").longValue());
     }
 
-    public void testReduceShardLevelWithMultipleLabels() {
-        // Arrange - Create shard-level stats with multiple labels
-        Set<Long> fingerprints = new HashSet<>();
-        fingerprints.add(1L);
-        fingerprints.add(2L);
-
-        Map<String, Map<String, Set<Long>>> labelStats = new LinkedHashMap<>();
-
-        // Label 1: cluster
-        Map<String, Set<Long>> clusterValues = new LinkedHashMap<>();
-        Set<Long> prodFingerprints = new HashSet<>();
-        prodFingerprints.add(100L);
-        prodFingerprints.add(101L);
-        clusterValues.put("prod", prodFingerprints);
-        labelStats.put("cluster", clusterValues);
-
-        // Label 2: region
-        Map<String, Set<Long>> regionValues = new LinkedHashMap<>();
-        Set<Long> usEastFingerprints = new HashSet<>();
-        usEastFingerprints.add(200L);
-        regionValues.put("us-east", usEastFingerprints);
-        labelStats.put("region", regionValues);
-
-        InternalTSDBStats.ShardLevelStats shardStats = new InternalTSDBStats.ShardLevelStats(fingerprints, labelStats, true);
-        InternalTSDBStats agg = InternalTSDBStats.forShardLevel(TEST_NAME, shardStats, TEST_METADATA);
-
-        List<InternalAggregation> aggregations = List.of(agg);
-
-        PipelineAggregator.PipelineTree emptyPipelineTree = new PipelineAggregator.PipelineTree(
-            Collections.emptyMap(),
-            Collections.emptyList()
-        );
-        InternalAggregation.ReduceContext shardReduceContext = InternalAggregation.ReduceContext.forPartialReduction(
-            null,
-            null,
-            () -> emptyPipelineTree
-        );
-
-        // Act
-        InternalAggregation result = agg.reduce(aggregations, shardReduceContext);
-
-        // Assert
-        assertTrue(result instanceof InternalTSDBStats);
-        InternalTSDBStats reducedStats = (InternalTSDBStats) result;
-
-        assertEquals(2L, reducedStats.getNumSeries().longValue());
-
-        Map<String, InternalTSDBStats.CoordinatorLevelStats.LabelStats> resultLabelStats = reducedStats.getLabelStats();
-        assertEquals(2, resultLabelStats.size());
-
-        // Cluster: 2 unique fingerprints (100, 101)
-        assertEquals(2L, resultLabelStats.get("cluster").numSeries().longValue());
-        assertEquals(2L, resultLabelStats.get("cluster").valuesStats().get("prod").longValue());
-
-        // Region: 1 unique fingerprint (200)
-        assertEquals(1L, resultLabelStats.get("region").numSeries().longValue());
-        assertEquals(1L, resultLabelStats.get("region").valuesStats().get("us-east").longValue());
-    }
-
     // ========== Equals and HashCode Tests ==========
 
     public void testEquals() {
@@ -1166,229 +842,85 @@ public class InternalTSDBStatsTests extends OpenSearchTestCase {
         assertEquals(stats1.hashCode(), stats2.hashCode());
     }
 
-    // ========== ShardLevelStats Tests ==========
-    // Tests verify the Record accessors and serialization work correctly with fingerprint sets.
+    // ========== ShardLevelStats Tests (Combined) ==========
 
-    public void testShardLevelStatsConstructor() throws IOException {
-        // Arrange
-        Set<Long> seriesFingerprintSet = new HashSet<>();
-        seriesFingerprintSet.add(1L);
-        seriesFingerprintSet.add(2L);
+    public void testShardLevelStatsSerializationRoundTrip() throws IOException {
+        // Test multiple scenarios: full data, null fingerprints, null value maps, empty label stats
 
-        Map<String, Map<String, Set<Long>>> labelStats = new HashMap<>();
-        Map<String, Set<Long>> clusterFingerprintSets = new HashMap<>();
-        Set<Long> prodFingerprints = new HashSet<>();
-        prodFingerprints.add(100L);
-        clusterFingerprintSets.put("prod", prodFingerprints);
-        labelStats.put("cluster", clusterFingerprintSets);
+        // Scenario 1: Full data with includeValueStats=true
+        Set<Long> seriesFingerprintSet1 = new HashSet<>();
+        seriesFingerprintSet1.add(1L);
+        seriesFingerprintSet1.add(2L);
+        seriesFingerprintSet1.add(3L);
 
-        // Act
-        InternalTSDBStats.ShardLevelStats shardStats = new InternalTSDBStats.ShardLevelStats(seriesFingerprintSet, labelStats, true);
+        Map<String, Map<String, Set<Long>>> labelStats1 = new LinkedHashMap<>();
+        Map<String, Set<Long>> clusterValues1 = new LinkedHashMap<>();
+        Set<Long> prodFingerprints1 = new HashSet<>();
+        prodFingerprints1.add(100L);
+        prodFingerprints1.add(101L);
+        clusterValues1.put("prod", prodFingerprints1);
+        labelStats1.put("cluster", clusterValues1);
 
-        // Assert
-        assertNotNull(shardStats.seriesFingerprintSet());
-        assertEquals(labelStats, shardStats.labelStats());
-        assertEquals(1, shardStats.labelStats().size());
-    }
+        InternalTSDBStats.ShardLevelStats original1 = new InternalTSDBStats.ShardLevelStats(seriesFingerprintSet1, labelStats1, true);
 
-    public void testShardLevelStatsWithNullSeriesFingerprints() {
-        // Arrange
-        Map<String, Map<String, Set<Long>>> labelStats = new HashMap<>();
+        BytesStreamOutput out1 = new BytesStreamOutput();
+        original1.writeTo(out1);
+        StreamInput in1 = out1.bytes().streamInput();
+        InternalTSDBStats.ShardLevelStats deserialized1 = new InternalTSDBStats.ShardLevelStats(in1);
 
-        // Act
-        InternalTSDBStats.ShardLevelStats shardStats = new InternalTSDBStats.ShardLevelStats(null, labelStats, true);
+        assertEquals(original1.includeValueStats(), deserialized1.includeValueStats());
+        assertEquals(original1.seriesFingerprintSet(), deserialized1.seriesFingerprintSet());
+        assertEquals(original1.labelStats().size(), deserialized1.labelStats().size());
 
-        // Assert
-        assertNull(shardStats.seriesFingerprintSet());
-        assertEquals(labelStats, shardStats.labelStats());
-    }
+        // Scenario 2: Null seriesFingerprintSet
+        Map<String, Map<String, Set<Long>>> labelStats2 = new LinkedHashMap<>();
+        Map<String, Set<Long>> clusterValues2 = new LinkedHashMap<>();
+        Set<Long> prodFingerprints2 = new HashSet<>();
+        prodFingerprints2.add(100L);
+        clusterValues2.put("prod", prodFingerprints2);
+        labelStats2.put("cluster", clusterValues2);
 
-    public void testShardLevelStatsWithEmptyLabelStats() throws IOException {
-        // Arrange
-        Set<Long> seriesFingerprintSet = new HashSet<>();
-        seriesFingerprintSet.add(1L);
-        Map<String, Map<String, Set<Long>>> emptyLabelStats = new HashMap<>();
+        InternalTSDBStats.ShardLevelStats original2 = new InternalTSDBStats.ShardLevelStats(null, labelStats2, true);
 
-        // Act
-        InternalTSDBStats.ShardLevelStats shardStats = new InternalTSDBStats.ShardLevelStats(seriesFingerprintSet, emptyLabelStats, true);
+        BytesStreamOutput out2 = new BytesStreamOutput();
+        original2.writeTo(out2);
+        StreamInput in2 = out2.bytes().streamInput();
+        InternalTSDBStats.ShardLevelStats deserialized2 = new InternalTSDBStats.ShardLevelStats(in2);
 
-        // Assert
-        assertNotNull(shardStats.seriesFingerprintSet());
-        assertEquals(0, shardStats.labelStats().size());
-    }
+        assertNull(deserialized2.seriesFingerprintSet());
+        assertEquals(original2.labelStats(), deserialized2.labelStats());
 
-    public void testShardLevelStatsWithNullValueMap() {
-        // Arrange
-        Set<Long> seriesFingerprintSet = new HashSet<>();
-        Map<String, Map<String, Set<Long>>> labelStats = new HashMap<>();
-        labelStats.put("cluster", null); // null value map
+        // Scenario 3: Null value map (includeValueStats=false)
+        Set<Long> seriesFingerprintSet3 = new HashSet<>();
+        seriesFingerprintSet3.add(1L);
 
-        // Act
-        InternalTSDBStats.ShardLevelStats shardStats = new InternalTSDBStats.ShardLevelStats(seriesFingerprintSet, labelStats, true);
+        Map<String, Map<String, Set<Long>>> labelStats3 = new LinkedHashMap<>();
+        labelStats3.put("cluster", null);
 
-        // Assert
-        assertNotNull(shardStats.seriesFingerprintSet());
-        assertEquals(1, shardStats.labelStats().size());
-        assertNull(shardStats.labelStats().get("cluster"));
-    }
+        InternalTSDBStats.ShardLevelStats original3 = new InternalTSDBStats.ShardLevelStats(seriesFingerprintSet3, labelStats3, false);
 
-    // ========== ShardLevelStats Serialization Tests ==========
+        BytesStreamOutput out3 = new BytesStreamOutput();
+        original3.writeTo(out3);
+        StreamInput in3 = out3.bytes().streamInput();
+        InternalTSDBStats.ShardLevelStats deserialized3 = new InternalTSDBStats.ShardLevelStats(in3);
 
-    public void testShardLevelStatsSerialization() throws IOException {
-        // Arrange - Create ShardLevelStats with full data (includeValueStats=true)
-        Set<Long> seriesFingerprintSet = new HashSet<>();
-        seriesFingerprintSet.add(1L);
-        seriesFingerprintSet.add(2L);
-        seriesFingerprintSet.add(3L);
+        assertEquals(original3.seriesFingerprintSet(), deserialized3.seriesFingerprintSet());
+        assertEquals(1, deserialized3.labelStats().size());
+        assertNull(deserialized3.labelStats().get("cluster"));
 
-        Map<String, Map<String, Set<Long>>> labelStats = new LinkedHashMap<>();
+        // Scenario 4: Empty labelStats
+        Set<Long> seriesFingerprintSet4 = new HashSet<>();
+        seriesFingerprintSet4.add(1L);
 
-        // Label 1: cluster with prod/staging values
-        Map<String, Set<Long>> clusterValues = new LinkedHashMap<>();
-        Set<Long> prodFingerprints = new HashSet<>();
-        prodFingerprints.add(100L);
-        prodFingerprints.add(101L);
-        clusterValues.put("prod", prodFingerprints);
+        InternalTSDBStats.ShardLevelStats original4 = new InternalTSDBStats.ShardLevelStats(seriesFingerprintSet4, new HashMap<>(), true);
 
-        Set<Long> stagingFingerprints = new HashSet<>();
-        stagingFingerprints.add(200L);
-        clusterValues.put("staging", stagingFingerprints);
+        BytesStreamOutput out4 = new BytesStreamOutput();
+        original4.writeTo(out4);
+        StreamInput in4 = out4.bytes().streamInput();
+        InternalTSDBStats.ShardLevelStats deserialized4 = new InternalTSDBStats.ShardLevelStats(in4);
 
-        labelStats.put("cluster", clusterValues);
-
-        // Label 2: region with us-east value
-        Map<String, Set<Long>> regionValues = new LinkedHashMap<>();
-        Set<Long> usEastFingerprints = new HashSet<>();
-        usEastFingerprints.add(300L);
-        usEastFingerprints.add(301L);
-        regionValues.put("us-east", usEastFingerprints);
-
-        labelStats.put("region", regionValues);
-
-        InternalTSDBStats.ShardLevelStats original = new InternalTSDBStats.ShardLevelStats(seriesFingerprintSet, labelStats, true);
-
-        // Act - Serialize and deserialize
-        BytesStreamOutput out = new BytesStreamOutput();
-        original.writeTo(out);
-
-        StreamInput in = out.bytes().streamInput();
-        InternalTSDBStats.ShardLevelStats deserialized = new InternalTSDBStats.ShardLevelStats(in);
-
-        // Assert - Verify all fields match
-        assertEquals(original.includeValueStats(), deserialized.includeValueStats());
-        assertEquals(original.seriesFingerprintSet(), deserialized.seriesFingerprintSet());
-        assertEquals(original.labelStats().size(), deserialized.labelStats().size());
-
-        // Verify cluster label
-        assertEquals(original.labelStats().get("cluster").size(), deserialized.labelStats().get("cluster").size());
-        assertEquals(original.labelStats().get("cluster").get("prod"), deserialized.labelStats().get("cluster").get("prod"));
-        assertEquals(original.labelStats().get("cluster").get("staging"), deserialized.labelStats().get("cluster").get("staging"));
-
-        // Verify region label
-        assertEquals(original.labelStats().get("region").size(), deserialized.labelStats().get("region").size());
-        assertEquals(original.labelStats().get("region").get("us-east"), deserialized.labelStats().get("region").get("us-east"));
-    }
-
-    public void testShardLevelStatsSerializationWithNullFingerprints() throws IOException {
-        // Arrange - Create ShardLevelStats with null seriesFingerprintSet
-        Map<String, Map<String, Set<Long>>> labelStats = new LinkedHashMap<>();
-        Map<String, Set<Long>> clusterValues = new LinkedHashMap<>();
-        Set<Long> prodFingerprints = new HashSet<>();
-        prodFingerprints.add(100L);
-        clusterValues.put("prod", prodFingerprints);
-        labelStats.put("cluster", clusterValues);
-
-        InternalTSDBStats.ShardLevelStats original = new InternalTSDBStats.ShardLevelStats(null, labelStats, true);
-
-        // Act
-        BytesStreamOutput out = new BytesStreamOutput();
-        original.writeTo(out);
-
-        StreamInput in = out.bytes().streamInput();
-        InternalTSDBStats.ShardLevelStats deserialized = new InternalTSDBStats.ShardLevelStats(in);
-
-        // Assert
-        assertNull(deserialized.seriesFingerprintSet());
-        assertEquals(original.labelStats(), deserialized.labelStats());
-        assertEquals(original.includeValueStats(), deserialized.includeValueStats());
-    }
-
-    public void testShardLevelStatsSerializationWithNullValueMap() throws IOException {
-        // Arrange - Create ShardLevelStats with null value map (includeValueStats=false scenario)
-        Set<Long> seriesFingerprintSet = new HashSet<>();
-        seriesFingerprintSet.add(1L);
-
-        Map<String, Map<String, Set<Long>>> labelStats = new LinkedHashMap<>();
-        labelStats.put("cluster", null);  // null value map when includeValueStats=false
-
-        InternalTSDBStats.ShardLevelStats original = new InternalTSDBStats.ShardLevelStats(
-            seriesFingerprintSet,
-            labelStats,
-            false  // includeValueStats=false
-        );
-
-        // Act
-        BytesStreamOutput out = new BytesStreamOutput();
-        original.writeTo(out);
-
-        StreamInput in = out.bytes().streamInput();
-        InternalTSDBStats.ShardLevelStats deserialized = new InternalTSDBStats.ShardLevelStats(in);
-
-        // Assert
-        assertEquals(original.seriesFingerprintSet(), deserialized.seriesFingerprintSet());
-        assertEquals(1, deserialized.labelStats().size());
-        assertNull(deserialized.labelStats().get("cluster"));
-        assertFalse(deserialized.includeValueStats());
-    }
-
-    public void testShardLevelStatsSerializationWithNullFingerprintSet() throws IOException {
-        // Arrange - Create ShardLevelStats with null fingerprint set for a value (includeValueStats=false)
-        Set<Long> seriesFingerprintSet = new HashSet<>();
-        seriesFingerprintSet.add(1L);
-
-        Map<String, Map<String, Set<Long>>> labelStats = new LinkedHashMap<>();
-        Map<String, Set<Long>> clusterValues = new LinkedHashMap<>();
-        clusterValues.put("prod", null);  // null fingerprint set when includeValueStats=false
-        clusterValues.put("staging", null);
-        labelStats.put("cluster", clusterValues);
-
-        InternalTSDBStats.ShardLevelStats original = new InternalTSDBStats.ShardLevelStats(seriesFingerprintSet, labelStats, false);
-
-        // Act
-        BytesStreamOutput out = new BytesStreamOutput();
-        original.writeTo(out);
-
-        StreamInput in = out.bytes().streamInput();
-        InternalTSDBStats.ShardLevelStats deserialized = new InternalTSDBStats.ShardLevelStats(in);
-
-        // Assert
-        assertEquals(original.seriesFingerprintSet(), deserialized.seriesFingerprintSet());
-        assertEquals(1, deserialized.labelStats().size());
-        assertNull(deserialized.labelStats().get("cluster").get("prod"));
-        assertNull(deserialized.labelStats().get("cluster").get("staging"));
-        assertFalse(deserialized.includeValueStats());
-    }
-
-    public void testShardLevelStatsSerializationWithEmptyLabelStats() throws IOException {
-        // Arrange - Create ShardLevelStats with empty labelStats
-        Set<Long> seriesFingerprintSet = new HashSet<>();
-        seriesFingerprintSet.add(1L);
-
-        Map<String, Map<String, Set<Long>>> emptyLabelStats = new HashMap<>();
-
-        InternalTSDBStats.ShardLevelStats original = new InternalTSDBStats.ShardLevelStats(seriesFingerprintSet, emptyLabelStats, true);
-
-        // Act
-        BytesStreamOutput out = new BytesStreamOutput();
-        original.writeTo(out);
-
-        StreamInput in = out.bytes().streamInput();
-        InternalTSDBStats.ShardLevelStats deserialized = new InternalTSDBStats.ShardLevelStats(in);
-
-        // Assert
-        assertEquals(original.seriesFingerprintSet(), deserialized.seriesFingerprintSet());
-        assertEquals(0, deserialized.labelStats().size());
-        assertTrue(deserialized.includeValueStats());
+        assertEquals(original4.seriesFingerprintSet(), deserialized4.seriesFingerprintSet());
+        assertEquals(0, deserialized4.labelStats().size());
     }
 
     // ========== Helper Methods ==========

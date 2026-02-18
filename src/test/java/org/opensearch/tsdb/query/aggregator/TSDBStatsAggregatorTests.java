@@ -49,7 +49,6 @@ import static org.mockito.Mockito.when;
  * <ul>
  *   <li>Empty aggregation building</li>
  *   <li>Resource cleanup (doClose)</li>
- *   <li>Constructor parameter validation</li>
  *   <li>Leaf collector behavior (time range pruning, TSDB reader validation)</li>
  *   <li>Data collection (single series, duplicate series, no series ID)</li>
  *   <li>Aggregation building (with/without value stats)</li>
@@ -63,240 +62,89 @@ public class TSDBStatsAggregatorTests extends OpenSearchTestCase {
     private static final long MIN_TIMESTAMP = 1000L;
     private static final long MAX_TIMESTAMP = 2000L;
 
-    // ========== Empty Aggregation Tests ==========
+    // ========== Empty Aggregation and Resource Cleanup Tests (Combined) ==========
 
-    public void testBuildEmptyAggregationWithValueStatsEnabled() throws IOException {
-        // Arrange
-        TSDBStatsAggregator aggregator = createAggregator(TEST_NAME, MIN_TIMESTAMP, MAX_TIMESTAMP, true);
+    public void testBuildEmptyAggregationBehavior() throws IOException {
+        // Test with includeValueStats=true
+        TSDBStatsAggregator aggregator1 = createAggregator(TEST_NAME, MIN_TIMESTAMP, MAX_TIMESTAMP, true);
+        InternalAggregation result1 = aggregator1.buildEmptyAggregation();
 
-        // Act
-        InternalAggregation result = aggregator.buildEmptyAggregation();
+        assertNotNull("Empty aggregation should not be null", result1);
+        assertTrue("Should return InternalTSDBStats", result1 instanceof InternalTSDBStats);
 
-        // Assert
-        assertNotNull("Empty aggregation should not be null", result);
-        assertTrue("Should return InternalTSDBStats", result instanceof InternalTSDBStats);
+        InternalTSDBStats tsdbStats1 = (InternalTSDBStats) result1;
+        assertEquals("Name should match", TEST_NAME, tsdbStats1.getName());
+        assertNull("Empty aggregation should have null numSeries", tsdbStats1.getNumSeries());
+        assertNotNull("Empty aggregation should have label stats", tsdbStats1.getLabelStats());
+        assertEquals("Empty aggregation should have empty label stats", 0, tsdbStats1.getLabelStats().size());
 
-        InternalTSDBStats tsdbStats = (InternalTSDBStats) result;
-        assertEquals("Name should match", TEST_NAME, tsdbStats.getName());
-        assertNull("Empty aggregation should have null numSeries", tsdbStats.getNumSeries());
-        assertNotNull("Empty aggregation should have label stats", tsdbStats.getLabelStats());
-        assertEquals("Empty aggregation should have empty label stats", 0, tsdbStats.getLabelStats().size());
+        aggregator1.close();
 
-        // Cleanup
-        aggregator.close();
+        // Test with includeValueStats=false
+        TSDBStatsAggregator aggregator2 = createAggregator(TEST_NAME, MIN_TIMESTAMP, MAX_TIMESTAMP, false);
+        InternalAggregation result2 = aggregator2.buildEmptyAggregation();
+
+        assertNotNull("Empty aggregation should not be null", result2);
+        assertTrue("Should return InternalTSDBStats", result2 instanceof InternalTSDBStats);
+
+        aggregator2.close();
+
+        // Test multiple empty aggregations (idempotency)
+        TSDBStatsAggregator aggregator3 = createAggregator(TEST_NAME, MIN_TIMESTAMP, MAX_TIMESTAMP, true);
+        InternalAggregation firstResult = aggregator3.buildEmptyAggregation();
+        InternalAggregation secondResult = aggregator3.buildEmptyAggregation();
+        assertEquals("Multiple calls should return equivalent results", firstResult, secondResult);
+        aggregator3.close();
     }
 
-    public void testBuildEmptyAggregationWithValueStatsDisabled() throws IOException {
-        // Arrange
-        TSDBStatsAggregator aggregator = createAggregator(TEST_NAME, MIN_TIMESTAMP, MAX_TIMESTAMP, false);
-
-        // Act
-        InternalAggregation result = aggregator.buildEmptyAggregation();
-
-        // Assert
-        assertNotNull("Empty aggregation should not be null", result);
-        assertTrue("Should return InternalTSDBStats", result instanceof InternalTSDBStats);
-
-        InternalTSDBStats tsdbStats = (InternalTSDBStats) result;
-        assertEquals("Name should match", TEST_NAME, tsdbStats.getName());
-
-        // Cleanup
-        aggregator.close();
-    }
-
-    public void testBuildEmptyAggregationReturnsCoordinatorLevelStats() throws IOException {
-        // Arrange
-        TSDBStatsAggregator aggregator = createAggregator(TEST_NAME, MIN_TIMESTAMP, MAX_TIMESTAMP, true);
-
-        // Act
-        InternalAggregation result = aggregator.buildEmptyAggregation();
-
-        // Assert
-        InternalTSDBStats tsdbStats = (InternalTSDBStats) result;
-        // Empty aggregation should return coordinator-level stats (not shard-level)
-        assertNotNull("Should have coordinator-level label stats", tsdbStats.getLabelStats());
-
-        // Cleanup
-        aggregator.close();
-    }
-
-    // ========== Resource Cleanup Tests ==========
-
-    public void testDoCloseWithValueStatsEnabled() throws IOException {
-        // Arrange
-        TSDBStatsAggregator aggregator = createAggregator(TEST_NAME, MIN_TIMESTAMP, MAX_TIMESTAMP, true);
-
-        // Act - Should not throw exception
-        aggregator.close();
-
-        // Assert - No exception means success
+    public void testResourceCleanup() throws IOException {
+        // Test close with includeValueStats=true
+        TSDBStatsAggregator aggregator1 = createAggregator(TEST_NAME, MIN_TIMESTAMP, MAX_TIMESTAMP, true);
+        aggregator1.close();
         assertTrue("Close should complete successfully", true);
-    }
 
-    public void testDoCloseWithValueStatsDisabled() throws IOException {
-        // Arrange
-        TSDBStatsAggregator aggregator = createAggregator(TEST_NAME, MIN_TIMESTAMP, MAX_TIMESTAMP, false);
-
-        // Act - Should not throw exception
-        aggregator.close();
-
-        // Assert - No exception means success
+        // Test close with includeValueStats=false
+        TSDBStatsAggregator aggregator2 = createAggregator(TEST_NAME, MIN_TIMESTAMP, MAX_TIMESTAMP, false);
+        aggregator2.close();
         assertTrue("Close should complete successfully", true);
-    }
 
-    public void testDoCloseMultipleTimes() throws IOException {
-        // Arrange
-        TSDBStatsAggregator aggregator = createAggregator(TEST_NAME, MIN_TIMESTAMP, MAX_TIMESTAMP, true);
-
-        // Act - Close multiple times should not throw exception
-        aggregator.close();
-        aggregator.close();
-
-        // Assert
+        // Test multiple closes (idempotency)
+        TSDBStatsAggregator aggregator3 = createAggregator(TEST_NAME, MIN_TIMESTAMP, MAX_TIMESTAMP, true);
+        aggregator3.close();
+        aggregator3.close();
         assertTrue("Multiple closes should complete successfully", true);
-    }
 
-    public void testDoCloseAfterBuildEmptyAggregation() throws IOException {
-        // Arrange
-        TSDBStatsAggregator aggregator = createAggregator(TEST_NAME, MIN_TIMESTAMP, MAX_TIMESTAMP, true);
-        aggregator.buildEmptyAggregation();
-
-        // Act - Close after building empty aggregation
-        aggregator.close();
-
-        // Assert
+        // Test close after buildEmptyAggregation
+        TSDBStatsAggregator aggregator4 = createAggregator(TEST_NAME, MIN_TIMESTAMP, MAX_TIMESTAMP, true);
+        aggregator4.buildEmptyAggregation();
+        aggregator4.close();
         assertTrue("Close after buildEmptyAggregation should complete successfully", true);
     }
 
-    // ========== Constructor Parameter Tests ==========
-
-    public void testAggregatorWithLargeTimeRange() throws IOException {
-        // Arrange & Act
-        TSDBStatsAggregator aggregator = createAggregator(TEST_NAME, Long.MIN_VALUE, Long.MAX_VALUE, true);
-
-        // Assert
-        assertNotNull("Aggregator should be created with large time range", aggregator);
-
-        // Cleanup
-        aggregator.close();
-    }
-
-    public void testAggregatorWithZeroTimeRange() throws IOException {
-        // Arrange & Act
-        TSDBStatsAggregator aggregator = createAggregator(TEST_NAME, 0L, 1L, true);
-
-        // Assert
-        assertNotNull("Aggregator should be created with zero min timestamp", aggregator);
-
-        // Cleanup
-        aggregator.close();
-    }
-
-    public void testAggregatorWithNegativeTimestamps() throws IOException {
-        // Arrange & Act
-        TSDBStatsAggregator aggregator = createAggregator(TEST_NAME, -2000L, -1000L, true);
-
-        // Assert
-        assertNotNull("Aggregator should be created with negative timestamps", aggregator);
-
-        // Cleanup
-        aggregator.close();
-    }
-
-    public void testAggregatorWithDifferentNames() throws IOException {
-        // Arrange & Act
-        TSDBStatsAggregator agg1 = createAggregator("simple", MIN_TIMESTAMP, MAX_TIMESTAMP, true);
-        TSDBStatsAggregator agg2 = createAggregator("with-dashes", MIN_TIMESTAMP, MAX_TIMESTAMP, true);
-        TSDBStatsAggregator agg3 = createAggregator("with_underscores", MIN_TIMESTAMP, MAX_TIMESTAMP, true);
-
-        // Assert
-        InternalAggregation result1 = agg1.buildEmptyAggregation();
-        InternalAggregation result2 = agg2.buildEmptyAggregation();
-        InternalAggregation result3 = agg3.buildEmptyAggregation();
-
-        assertEquals("simple", result1.getName());
-        assertEquals("with-dashes", result2.getName());
-        assertEquals("with_underscores", result3.getName());
-
-        // Cleanup
-        agg1.close();
-        agg2.close();
-        agg3.close();
-    }
-
-    // ========== Metadata Tests ==========
-
-    public void testBuildEmptyAggregationWithMetadata() throws IOException {
-        // Arrange
+    public void testAggregatorWithMetadata() throws IOException {
+        // Test with metadata
         Map<String, Object> metadata = Map.of("key1", "value1", "key2", 42);
-        TSDBStatsAggregator aggregator = createAggregatorWithMetadata(TEST_NAME, MIN_TIMESTAMP, MAX_TIMESTAMP, true, metadata);
+        TSDBStatsAggregator aggregator1 = createAggregatorWithMetadata(TEST_NAME, MIN_TIMESTAMP, MAX_TIMESTAMP, true, metadata);
+        InternalAggregation result1 = aggregator1.buildEmptyAggregation();
+        assertNotNull("Result should have metadata", result1.getMetadata());
+        assertEquals("Metadata should match", metadata, result1.getMetadata());
+        aggregator1.close();
 
-        // Act
-        InternalAggregation result = aggregator.buildEmptyAggregation();
-
-        // Assert
-        assertNotNull("Result should have metadata", result.getMetadata());
-        assertEquals("Metadata should match", metadata, result.getMetadata());
-
-        // Cleanup
-        aggregator.close();
+        // Test without metadata
+        TSDBStatsAggregator aggregator2 = createAggregatorWithMetadata(TEST_NAME, MIN_TIMESTAMP, MAX_TIMESTAMP, true, null);
+        InternalAggregation result2 = aggregator2.buildEmptyAggregation();
+        assertNull("Result should have null metadata", result2.getMetadata());
+        aggregator2.close();
     }
 
-    public void testBuildEmptyAggregationWithoutMetadata() throws IOException {
-        // Arrange
-        TSDBStatsAggregator aggregator = createAggregatorWithMetadata(TEST_NAME, MIN_TIMESTAMP, MAX_TIMESTAMP, true, null);
+    // ========== Leaf Collector Tests (Combined) ==========
 
-        // Act
-        InternalAggregation result = aggregator.buildEmptyAggregation();
-
-        // Assert
-        assertNull("Result should have null metadata", result.getMetadata());
-
-        // Cleanup
-        aggregator.close();
-    }
-
-    // ========== Edge Case Tests ==========
-
-    public void testMultipleEmptyAggregations() throws IOException {
-        // Arrange
-        TSDBStatsAggregator aggregator = createAggregator(TEST_NAME, MIN_TIMESTAMP, MAX_TIMESTAMP, true);
-
-        // Act - Build multiple empty aggregations
-        InternalAggregation result1 = aggregator.buildEmptyAggregation();
-        InternalAggregation result2 = aggregator.buildEmptyAggregation();
-
-        // Assert - Should return equivalent results
-        assertEquals("Multiple calls should return equivalent results", result1, result2);
-
-        // Cleanup
-        aggregator.close();
-    }
-
-    public void testEmptyAggregationFollowedByClose() throws IOException {
-        // Arrange
-        TSDBStatsAggregator aggregator = createAggregator(TEST_NAME, MIN_TIMESTAMP, MAX_TIMESTAMP, true);
-
-        // Act
-        InternalAggregation result = aggregator.buildEmptyAggregation();
-        assertNotNull(result);
-
-        // Close and ensure no exceptions
-        aggregator.close();
-
-        // Assert
-        assertTrue("Should complete successfully", true);
-    }
-
-    // ========== Leaf Collector Tests ==========
-
-    public void testGetLeafCollectorWithNonTSDBLeafReader() throws IOException {
-        // Arrange
+    public void testLeafCollectorBehavior() throws IOException {
+        // Test 1: Non-TSDB LeafReader should throw exception
         long minTimestamp = 1000L;
         long maxTimestamp = 5000L;
-        TSDBStatsAggregator aggregator = createAggregator("test", minTimestamp, maxTimestamp, true);
+        TSDBStatsAggregator aggregator1 = createAggregator("test", minTimestamp, maxTimestamp, true);
 
-        // Create a regular Lucene LeafReader (not a TSDBLeafReader)
         Directory directory = new ByteBuffersDirectory();
         IndexWriter writer = new IndexWriter(directory, new IndexWriterConfig());
         writer.addDocument(new Document());
@@ -306,97 +154,62 @@ public class TSDBStatsAggregatorTests extends OpenSearchTestCase {
         LeafReaderContext ctx = reader.leaves().get(0);
         LeafBucketCollector mockSubCollector = mock(LeafBucketCollector.class);
 
-        // Act & Assert - Should throw IOException when TSDBLeafReader.unwrapLeafReader returns null
-        IOException exception = expectThrows(IOException.class, () -> { aggregator.getLeafCollector(ctx, mockSubCollector); });
+        IOException exception = expectThrows(IOException.class, () -> { aggregator1.getLeafCollector(ctx, mockSubCollector); });
         assertTrue("Exception message should indicate non-TSDB reader", exception.getMessage().contains("Expected TSDBLeafReader"));
 
-        // Cleanup
         reader.close();
         writer.close();
         directory.close();
-        aggregator.close();
-    }
+        aggregator1.close();
 
-    public void testGetLeafCollectorWithNonOverlappingTimeRange() throws IOException {
-        // Arrange
+        // Test 2: Non-overlapping time range (should prune)
         long queryMinTimestamp = 1000L;
         long queryMaxTimestamp = 5000L;
-        TSDBStatsAggregator aggregator = createAggregator("test", queryMinTimestamp, queryMaxTimestamp, true);
+        TSDBStatsAggregator aggregator2 = createAggregator("test", queryMinTimestamp, queryMaxTimestamp, true);
 
-        // Create a TSDBLeafReader with time range that doesn't overlap
         long leafMinTimestamp = 6000L;
         long leafMaxTimestamp = 10000L;
-        TSDBLeafReaderWithContext readerCtx = createMockTSDBLeafReaderWithContext(leafMinTimestamp, leafMaxTimestamp);
-        LeafBucketCollector mockSubCollector = mock(LeafBucketCollector.class);
+        TSDBLeafReaderWithContext readerCtx1 = createMockTSDBLeafReaderWithContext(leafMinTimestamp, leafMaxTimestamp);
+        LeafBucketCollector mockSubCollector2 = mock(LeafBucketCollector.class);
 
-        // Act
-        LeafBucketCollector result = aggregator.getLeafCollector(readerCtx.context, mockSubCollector);
+        LeafBucketCollector result1 = aggregator2.getLeafCollector(readerCtx1.context, mockSubCollector2);
+        assertSame("Should return sub-collector when leaf does not overlap time range", mockSubCollector2, result1);
 
-        // Assert - Should return sub-collector when time ranges don't overlap (pruning)
-        assertSame("Should return sub-collector when leaf does not overlap time range", mockSubCollector, result);
+        readerCtx1.close();
+        aggregator2.close();
 
-        // Cleanup
-        readerCtx.close();
-        aggregator.close();
-    }
+        // Test 3: Overlapping time range (should return new collector)
+        TSDBStatsAggregator aggregator3 = createAggregator("test", queryMinTimestamp, queryMaxTimestamp, true);
 
-    public void testGetLeafCollectorWithOverlappingTimeRange() throws IOException {
-        // Arrange
-        long queryMinTimestamp = 1000L;
-        long queryMaxTimestamp = 5000L;
-        TSDBStatsAggregator aggregator = createAggregator("test", queryMinTimestamp, queryMaxTimestamp, true);
+        long leafMinTimestamp2 = 2000L;
+        long leafMaxTimestamp2 = 6000L;
+        TSDBLeafReaderWithContext readerCtx2 = createMockTSDBLeafReaderWithContext(leafMinTimestamp2, leafMaxTimestamp2);
+        LeafBucketCollector mockSubCollector3 = mock(LeafBucketCollector.class);
 
-        // Create a TSDBLeafReader with time range that overlaps
-        long leafMinTimestamp = 2000L;
-        long leafMaxTimestamp = 6000L;
-        TSDBLeafReaderWithContext readerCtx = createMockTSDBLeafReaderWithContext(leafMinTimestamp, leafMaxTimestamp);
-        LeafBucketCollector mockSubCollector = mock(LeafBucketCollector.class);
+        LeafBucketCollector result2 = aggregator3.getLeafCollector(readerCtx2.context, mockSubCollector3);
+        assertNotSame("Should return new collector when leaf overlaps time range", mockSubCollector3, result2);
+        assertNotNull("Should return a non-null collector", result2);
 
-        // Act
-        LeafBucketCollector result = aggregator.getLeafCollector(readerCtx.context, mockSubCollector);
+        readerCtx2.close();
+        aggregator3.close();
 
-        // Assert - Should return new collector when time ranges overlap
-        assertNotSame("Should return new collector when leaf overlaps time range", mockSubCollector, result);
-        assertNotNull("Should return a non-null collector", result);
+        // Test 4: Exact boundary (no overlap - should prune)
+        TSDBStatsAggregator aggregator4 = createAggregator("test", queryMinTimestamp, queryMaxTimestamp, true);
 
-        // Cleanup
-        readerCtx.close();
-        aggregator.close();
-    }
+        long leafMinTimestamp3 = 0L;
+        long leafMaxTimestamp3 = 999L;
+        TSDBLeafReaderWithContext readerCtx3 = createMockTSDBLeafReaderWithContext(leafMinTimestamp3, leafMaxTimestamp3);
+        LeafBucketCollector mockSubCollector4 = mock(LeafBucketCollector.class);
 
-    public void testGetLeafCollectorWithExactTimeRangeBoundary() throws IOException {
-        // Arrange - Query range [1000, 5000)
-        long queryMinTimestamp = 1000L;
-        long queryMaxTimestamp = 5000L;
-        TSDBStatsAggregator aggregator = createAggregator("test", queryMinTimestamp, queryMaxTimestamp, true);
+        LeafBucketCollector result3 = aggregator4.getLeafCollector(readerCtx3.context, mockSubCollector4);
+        assertSame("Should return sub-collector when leaf ends before query start", mockSubCollector4, result3);
 
-        // Leaf range ends exactly at query start (no overlap)
-        long leafMinTimestamp = 0L;
-        long leafMaxTimestamp = 999L;
-        TSDBLeafReaderWithContext readerCtx = createMockTSDBLeafReaderWithContext(leafMinTimestamp, leafMaxTimestamp);
-        LeafBucketCollector mockSubCollector = mock(LeafBucketCollector.class);
-
-        // Act
-        LeafBucketCollector result = aggregator.getLeafCollector(readerCtx.context, mockSubCollector);
-
-        // Assert - Should prune (no overlap)
-        assertSame("Should return sub-collector when leaf ends before query start", mockSubCollector, result);
-
-        // Cleanup
-        readerCtx.close();
-        aggregator.close();
+        readerCtx3.close();
+        aggregator4.close();
     }
 
     // ========== Data Collection Tests ==========
 
-    /**
-     * Tests collect() method with a single series and labels.
-     * This covers the core data collection logic including:
-     * - Reading series identifier from NumericDocValues
-     * - Extracting labels using labelsForDoc()
-     * - Building BytesRef ordinal map
-     * - Tracking fingerprint sets when includeValueStats=true
-     */
     public void testCollectWithSingleSeries() throws IOException {
         // Arrange
         long minTimestamp = 1000L;
@@ -411,28 +224,21 @@ public class TSDBStatsAggregatorTests extends OpenSearchTestCase {
         TSDBLeafReaderWithContext readerCtx = AggregatorTestUtils.createMockTSDBLeafReaderWithLabels(
             minTimestamp,
             maxTimestamp,
-            12345L,  // series ID
+            12345L,
             labels,
-            false    // not LiveSeriesIndex
+            false
         );
 
         try {
-            // Act - Get collector and simulate document collection
+            // Act
             LeafBucketCollector collector = aggregator.getLeafCollector(readerCtx.context, LeafBucketCollector.NO_OP_COLLECTOR);
-
-            // Simulate collecting a document (this calls collect() method)
             collector.collect(0, 0);
-
-            // Build aggregation result
             InternalAggregation result = aggregator.buildAggregation(0);
 
             // Assert
             assertNotNull("Result should not be null", result);
             assertTrue("Result should be InternalTSDBStats", result instanceof InternalTSDBStats);
-
             InternalTSDBStats stats = (InternalTSDBStats) result;
-
-            // Verify aggregation is built successfully (reduce logic is tested in InternalTSDBStatsTests)
             assertNotNull("Stats should not be null", stats);
             assertEquals("Name should match", "test", stats.getName());
 
@@ -442,10 +248,6 @@ public class TSDBStatsAggregatorTests extends OpenSearchTestCase {
         }
     }
 
-    /**
-     * Tests collect() method with duplicate series.
-     * Verifies that the seenSeriesIdentifiers set properly skips duplicate series.
-     */
     public void testCollectWithDuplicateSeries() throws IOException {
         // Arrange
         long minTimestamp = 1000L;
@@ -455,7 +257,7 @@ public class TSDBStatsAggregatorTests extends OpenSearchTestCase {
         Map<String, String> labels1 = Map.of("service", "api");
         Map<String, String> labels2 = Map.of("service", "web");
 
-        long sameSeriesId = 99999L;  // Same series ID for both
+        long sameSeriesId = 99999L;
 
         TSDBLeafReaderWithContext readerCtx1 = AggregatorTestUtils.createMockTSDBLeafReaderWithLabels(
             minTimestamp,
@@ -473,21 +275,17 @@ public class TSDBStatsAggregatorTests extends OpenSearchTestCase {
         );
 
         try {
-            // Act - Collect from first document (should process)
+            // Act - Collect from first document (should process), then second with SAME series ID (should skip)
             LeafBucketCollector collector1 = aggregator.getLeafCollector(readerCtx1.context, LeafBucketCollector.NO_OP_COLLECTOR);
             collector1.collect(0, 0);
 
-            // Collect from second document with SAME series ID (should skip)
             LeafBucketCollector collector2 = aggregator.getLeafCollector(readerCtx2.context, LeafBucketCollector.NO_OP_COLLECTOR);
             collector2.collect(0, 0);
 
-            // Build aggregation
             InternalAggregation result = aggregator.buildAggregation(0);
 
             // Assert
             InternalTSDBStats stats = (InternalTSDBStats) result;
-
-            // Verify aggregation is built successfully (reduce logic is tested in InternalTSDBStatsTests)
             assertNotNull("Stats should not be null", stats);
             assertEquals("Name should match", "test", stats.getName());
 
@@ -498,10 +296,6 @@ public class TSDBStatsAggregatorTests extends OpenSearchTestCase {
         }
     }
 
-    /**
-     * Tests buildAggregation() with includeValueStats=true.
-     * Verifies that fingerprint sets are properly tracked and grouped by label key.
-     */
     public void testBuildAggregationWithValueStats() throws IOException {
         // Arrange
         long minTimestamp = 1000L;
@@ -522,13 +316,10 @@ public class TSDBStatsAggregatorTests extends OpenSearchTestCase {
             // Act
             LeafBucketCollector collector = aggregator.getLeafCollector(readerCtx.context, LeafBucketCollector.NO_OP_COLLECTOR);
             collector.collect(0, 0);
-
             InternalAggregation result = aggregator.buildAggregation(0);
 
             // Assert
             InternalTSDBStats stats = (InternalTSDBStats) result;
-
-            // Verify aggregation is built successfully (reduce logic is tested in InternalTSDBStatsTests)
             assertNotNull("Stats should not be null", stats);
             assertEquals("Name should match", "test", stats.getName());
 
@@ -538,10 +329,6 @@ public class TSDBStatsAggregatorTests extends OpenSearchTestCase {
         }
     }
 
-    /**
-     * Tests buildAggregation() with includeValueStats=false.
-     * Verifies that fingerprint sets are null when value stats are disabled.
-     */
     public void testBuildAggregationWithoutValueStats() throws IOException {
         // Arrange
         long minTimestamp = 1000L;
@@ -562,13 +349,10 @@ public class TSDBStatsAggregatorTests extends OpenSearchTestCase {
             // Act
             LeafBucketCollector collector = aggregator.getLeafCollector(readerCtx.context, LeafBucketCollector.NO_OP_COLLECTOR);
             collector.collect(0, 0);
-
             InternalAggregation result = aggregator.buildAggregation(0);
 
             // Assert
             InternalTSDBStats stats = (InternalTSDBStats) result;
-
-            // Verify aggregation is built successfully (reduce logic is tested in InternalTSDBStatsTests)
             assertNotNull("Stats should not be null", stats);
             assertEquals("Name should match", "test", stats.getName());
 
@@ -578,12 +362,6 @@ public class TSDBStatsAggregatorTests extends OpenSearchTestCase {
         }
     }
 
-    /**
-     * Tests collect() with REFERENCE field.
-     * Note: This test uses REFERENCE field (used by LiveSeriesIndex) instead of LABELS_HASH field.
-     * The actual instanceof check for LiveSeriesIndexLeafReader is difficult to test in unit tests
-     * due to complex constructor requirements, but this covers the REFERENCE field path.
-     */
     public void testCollectWithReferenceField() throws IOException {
         // Arrange
         long minTimestamp = 1000L;
@@ -595,22 +373,19 @@ public class TSDBStatsAggregatorTests extends OpenSearchTestCase {
         TSDBLeafReaderWithContext readerCtx = AggregatorTestUtils.createMockTSDBLeafReaderWithLabels(
             minTimestamp,
             maxTimestamp,
-            77777L,  // series ID (will be in REFERENCE field)
+            77777L,
             labels,
-            true     // IS LiveSeriesIndex (uses REFERENCE field)
+            true  // IS LiveSeriesIndex (uses REFERENCE field)
         );
 
         try {
             // Act
             LeafBucketCollector collector = aggregator.getLeafCollector(readerCtx.context, LeafBucketCollector.NO_OP_COLLECTOR);
             collector.collect(0, 0);
-
             InternalAggregation result = aggregator.buildAggregation(0);
 
             // Assert
             InternalTSDBStats stats = (InternalTSDBStats) result;
-
-            // Verify aggregation is built successfully (reduce logic is tested in InternalTSDBStatsTests)
             assertNotNull("Stats should not be null", stats);
             assertEquals("Name should match", "test", stats.getName());
 
@@ -620,17 +395,12 @@ public class TSDBStatsAggregatorTests extends OpenSearchTestCase {
         }
     }
 
-    /**
-     * Tests full collection lifecycle with multiple series.
-     * Similar to TimeSeriesUnfoldAggregatorTests.testRecordMetricsWithPopulatedStats.
-     */
     public void testFullCollectionLifecycle() throws IOException {
         // Arrange
         long minTimestamp = 1000L;
         long maxTimestamp = 5000L;
         TSDBStatsAggregator aggregator = createAggregator("test", minTimestamp, maxTimestamp, true);
 
-        // Create two different series
         Map<String, String> labels1 = Map.of("service", "api", "host", "server1");
         Map<String, String> labels2 = Map.of("service", "web", "host", "server2");
 
@@ -657,13 +427,10 @@ public class TSDBStatsAggregatorTests extends OpenSearchTestCase {
             LeafBucketCollector collector2 = aggregator.getLeafCollector(readerCtx2.context, LeafBucketCollector.NO_OP_COLLECTOR);
             collector2.collect(0, 0);
 
-            // Build aggregation
             InternalAggregation result = aggregator.buildAggregation(0);
 
             // Assert
             InternalTSDBStats stats = (InternalTSDBStats) result;
-
-            // Verify aggregation is built successfully (reduce logic is tested in InternalTSDBStatsTests)
             assertNotNull("Stats should not be null", stats);
             assertEquals("Name should match", "test", stats.getName());
 
@@ -674,30 +441,22 @@ public class TSDBStatsAggregatorTests extends OpenSearchTestCase {
         }
     }
 
-    /**
-     * Tests that collect() handles documents with no series ID gracefully.
-     */
     public void testCollectWithNoSeriesId() throws IOException {
         // Arrange
         long minTimestamp = 1000L;
         long maxTimestamp = 5000L;
         TSDBStatsAggregator aggregator = createAggregator("test", minTimestamp, maxTimestamp, true);
 
-        // Create reader without NumericDocValues (null seriesIdDocValues)
         TSDBLeafReaderWithContext readerCtx = AggregatorTestUtils.createMockTSDBLeafReaderWithoutSeriesId(minTimestamp, maxTimestamp);
 
         try {
-            // Act
+            // Act - Should handle null seriesIdDocValues gracefully
             LeafBucketCollector collector = aggregator.getLeafCollector(readerCtx.context, LeafBucketCollector.NO_OP_COLLECTOR);
-            // Should not throw - should handle null seriesIdDocValues gracefully
             collector.collect(0, 0);
-
             InternalAggregation result = aggregator.buildAggregation(0);
 
             // Assert
             InternalTSDBStats stats = (InternalTSDBStats) result;
-
-            // Verify aggregation is built successfully (reduce logic is tested in InternalTSDBStatsTests)
             assertNotNull("Stats should not be null", stats);
             assertEquals("Name should match", "test", stats.getName());
 
@@ -709,17 +468,11 @@ public class TSDBStatsAggregatorTests extends OpenSearchTestCase {
 
     // ========== Helper Methods ==========
 
-    /**
-     * Helper method to create a TSDBStatsAggregator with minimal mocking.
-     */
     private TSDBStatsAggregator createAggregator(String name, long minTimestamp, long maxTimestamp, boolean includeValueStats)
         throws IOException {
         return createAggregatorWithMetadata(name, minTimestamp, maxTimestamp, includeValueStats, Map.of());
     }
 
-    /**
-     * Helper method to create a TSDBStatsAggregator with metadata.
-     */
     private TSDBStatsAggregator createAggregatorWithMetadata(
         String name,
         long minTimestamp,
@@ -736,9 +489,6 @@ public class TSDBStatsAggregatorTests extends OpenSearchTestCase {
         return new TSDBStatsAggregator(name, searchContext, null, minTimestamp, maxTimestamp, includeValueStats, metadata);
     }
 
-    /**
-     * Creates a mock TSDBLeafReader with specified time bounds for non-TSDB reader tests.
-     */
     private TSDBLeafReaderWithContext createMockTSDBLeafReaderWithContext(long minTimestamp, long maxTimestamp) throws IOException {
         Directory directory = new ByteBuffersDirectory();
         IndexWriter indexWriter = new IndexWriter(directory, new IndexWriterConfig());

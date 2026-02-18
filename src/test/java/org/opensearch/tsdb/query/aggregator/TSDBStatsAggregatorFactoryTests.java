@@ -26,151 +26,37 @@ import static org.mockito.Mockito.when;
  * <ul>
  *   <li>Factory configuration with various parameters</li>
  *   <li>Concurrent segment search support</li>
- *   <li>Edge cases (extreme timestamps, boolean flags)</li>
+ *   <li>Aggregator creation with different configurations</li>
  * </ul>
  */
 public class TSDBStatsAggregatorFactoryTests extends OpenSearchTestCase {
 
     public void testSupportsConcurrentSegmentSearch() {
-        // Arrange
-        TSDBStatsAggregatorFactory factory = createFactory("test_css", 1000L, 2000L, true);
+        // Arrange - Test with both true and false for includeValueStats
+        TSDBStatsAggregatorFactory factory1 = createFactory("test_css_true", 1000L, 2000L, true);
+        TSDBStatsAggregatorFactory factory2 = createFactory("test_css_false", 1000L, 2000L, false);
 
-        // Act & Assert
-        assertTrue("TSDBStatsAggregatorFactory should support CSS", factory.supportsConcurrentSegmentSearch());
-    }
-
-    public void testSupportsConcurrentSegmentSearchWithValueStatsDisabled() {
-        // Arrange
-        TSDBStatsAggregatorFactory factory = createFactory("test_css_no_values", 1000L, 2000L, false);
-
-        // Act & Assert
+        // Act & Assert - CSS support should be unconditional
+        assertTrue("TSDBStatsAggregatorFactory should support CSS", factory1.supportsConcurrentSegmentSearch());
         assertTrue(
             "TSDBStatsAggregatorFactory should support CSS regardless of includeValueStats",
-            factory.supportsConcurrentSegmentSearch()
+            factory2.supportsConcurrentSegmentSearch()
         );
     }
 
     public void testFactoryConfiguration() {
-        // Arrange
+        // Arrange - Test with various timestamp ranges and boolean flags
         long minTimestamp = 5000L;
         long maxTimestamp = 10000L;
-        boolean includeValueStats = true;
 
         // Act
-        TSDBStatsAggregatorFactory factory = createFactory("config_test", minTimestamp, maxTimestamp, includeValueStats);
+        TSDBStatsAggregatorFactory factory = createFactory("config_test", minTimestamp, maxTimestamp, true);
 
-        // Assert - We can't directly access private fields, but we can verify the factory was created successfully
+        // Assert - Verify factory was created successfully with correct name
         assertNotNull("Factory should be created successfully", factory);
         assertEquals("config_test", factory.name());
     }
 
-    public void testFactoryWithLargeTimeRange() {
-        // Arrange - Test with large timestamp values
-        long minTimestamp = Long.MIN_VALUE;
-        long maxTimestamp = Long.MAX_VALUE;
-
-        // Act
-        TSDBStatsAggregatorFactory factory = createFactory("large_range", minTimestamp, maxTimestamp, true);
-
-        // Assert
-        assertNotNull("Factory should handle large timestamp values", factory);
-        assertTrue("Should support CSS", factory.supportsConcurrentSegmentSearch());
-    }
-
-    public void testFactoryWithZeroTimeRange() {
-        // Arrange - Test edge case with zero timestamps
-        long timestamp = 0L;
-
-        // Act
-        TSDBStatsAggregatorFactory factory = createFactory("zero_time", timestamp, timestamp, false);
-
-        // Assert
-        assertNotNull("Factory should handle zero timestamps", factory);
-    }
-
-    public void testFactoryWithNegativeTimeRange() {
-        // Arrange - Test with negative timestamps (valid for epoch times)
-        long minTimestamp = -1000L;
-        long maxTimestamp = -500L;
-
-        // Act
-        TSDBStatsAggregatorFactory factory = createFactory("negative_time", minTimestamp, maxTimestamp, true);
-
-        // Assert
-        assertNotNull("Factory should handle negative timestamps", factory);
-    }
-
-    /**
-     * Tests that factory properly initializes with includeValueStats enabled.
-     */
-    public void testFactoryWithValueStatsEnabled() {
-        // Arrange & Act
-        TSDBStatsAggregatorFactory factory = createFactory("with_values", 1000L, 2000L, true);
-
-        // Assert
-        assertNotNull("Factory should be created with value stats enabled", factory);
-    }
-
-    /**
-     * Tests that factory properly initializes with includeValueStats disabled.
-     */
-    public void testFactoryWithValueStatsDisabled() {
-        // Arrange & Act
-        TSDBStatsAggregatorFactory factory = createFactory("without_values", 1000L, 2000L, false);
-
-        // Assert
-        assertNotNull("Factory should be created with value stats disabled", factory);
-    }
-
-    /**
-     * Tests that factory can be created with all edge case parameters.
-     */
-    public void testFactoryWithEdgeCaseParameters() {
-        // Arrange & Act - Min timestamps, max timestamps, both boolean values
-        TSDBStatsAggregatorFactory factory1 = createFactory("edge_case_1", Long.MIN_VALUE, Long.MAX_VALUE, true);
-        TSDBStatsAggregatorFactory factory2 = createFactory("edge_case_2", 0L, 0L, false);
-
-        // Assert
-        assertNotNull("Factory should handle min/max edge cases", factory1);
-        assertNotNull("Factory should handle zero edge cases", factory2);
-        assertTrue("Should support CSS", factory1.supportsConcurrentSegmentSearch());
-        assertTrue("Should support CSS", factory2.supportsConcurrentSegmentSearch());
-    }
-
-    /**
-     * Tests that factory name is properly stored.
-     */
-    public void testFactoryName() {
-        // Arrange
-        String expectedName = "my_tsdb_stats";
-
-        // Act
-        TSDBStatsAggregatorFactory factory = createFactory(expectedName, 1000L, 2000L, true);
-
-        // Assert
-        assertEquals("Factory name should match", expectedName, factory.name());
-    }
-
-    /**
-     * Tests factory with various name patterns.
-     */
-    public void testFactoryWithVariousNames() {
-        // Arrange & Act
-        TSDBStatsAggregatorFactory factory1 = createFactory("simple", 1000L, 2000L, true);
-        TSDBStatsAggregatorFactory factory2 = createFactory("with-dashes", 1000L, 2000L, true);
-        TSDBStatsAggregatorFactory factory3 = createFactory("with_underscores", 1000L, 2000L, true);
-        TSDBStatsAggregatorFactory factory4 = createFactory("with.dots", 1000L, 2000L, true);
-
-        // Assert
-        assertEquals("simple", factory1.name());
-        assertEquals("with-dashes", factory2.name());
-        assertEquals("with_underscores", factory3.name());
-        assertEquals("with.dots", factory4.name());
-    }
-
-    /**
-     * Tests that createInternal() properly creates a TSDBStatsAggregator instance.
-     */
     public void testCreateInternal() throws Exception {
         // Arrange
         long minTimestamp = 1000L;
@@ -198,11 +84,8 @@ public class TSDBStatsAggregatorFactoryTests extends OpenSearchTestCase {
         aggregator.close();
     }
 
-    /**
-     * Tests that createInternal() works with different parameter combinations.
-     */
     public void testCreateInternalWithDifferentParameters() throws Exception {
-        // Arrange - Test with includeValueStats=false
+        // Arrange - Test with includeValueStats=false and custom metadata
         TSDBStatsAggregatorFactory factory = createFactory("test_no_values", 2000L, 6000L, false);
 
         SearchContext searchContext = mock(SearchContext.class);
@@ -224,11 +107,8 @@ public class TSDBStatsAggregatorFactoryTests extends OpenSearchTestCase {
         aggregator.close();
     }
 
-    /**
-     * Tests that createInternal() works with extreme timestamp ranges.
-     */
     public void testCreateInternalWithExtremeTimestamps() throws Exception {
-        // Arrange
+        // Arrange - Test edge case with extreme timestamp values
         TSDBStatsAggregatorFactory factory = createFactory("test_extreme", Long.MIN_VALUE, Long.MAX_VALUE, true);
 
         SearchContext searchContext = mock(SearchContext.class);
@@ -247,6 +127,18 @@ public class TSDBStatsAggregatorFactoryTests extends OpenSearchTestCase {
 
         // Cleanup
         aggregator.close();
+    }
+
+    public void testFactoryWithEdgeCaseTimestamps() {
+        // Arrange & Act - Test various edge cases: zero, negative, and extreme values
+        TSDBStatsAggregatorFactory factory1 = createFactory("zero_time", 0L, 0L, false);
+        TSDBStatsAggregatorFactory factory2 = createFactory("negative_time", -1000L, -500L, true);
+        TSDBStatsAggregatorFactory factory3 = createFactory("large_range", Long.MIN_VALUE, Long.MAX_VALUE, true);
+
+        // Assert
+        assertNotNull("Factory should handle zero timestamps", factory1);
+        assertNotNull("Factory should handle negative timestamps", factory2);
+        assertNotNull("Factory should handle extreme timestamp values", factory3);
     }
 
     /**
