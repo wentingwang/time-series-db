@@ -620,6 +620,94 @@ public class ClosedChunkIndexManager implements Closeable {
     }
 
     /**
+     * Adds a historical block from disk to the manager.
+     * This is used for loading pre-existing blocks (e.g., historical data recovery).
+     * <p>
+     * The method:
+     * 1. Validates and parses the block directory name to extract metadata
+     * 2. Copies the block files to the blocks directory
+     * 3. Opens the block as a ClosedChunkIndex
+     * 4. Registers it in the closedChunkIndexMap
+     * 5. Updates the metadata store
+     * </p>
+     *
+     * @param sourceBlockPath Path to the block directory on disk (must follow naming convention: block_minTs_maxTs_uuid)
+     * @return true if the block was successfully added, false if a block with overlapping time range already exists
+     * @throws IOException if there is an error reading or copying the block
+     * @throws IllegalArgumentException if the block directory name is invalid
+     */
+    public boolean addHistoricalBlock(Path sourceBlockPath) throws IOException {
+        ensureOpen();
+
+        // Extract metadata from the directory name
+        String dirName = sourceBlockPath.getFileName().toString();
+        if (!dirName.startsWith(BLOCK_PREFIX)) {
+            throw new IllegalArgumentException("Invalid block directory name: " + dirName + ". Must start with '" + BLOCK_PREFIX + "'");
+        }
+
+        // Parse directory name: block_minTs_maxTs_uuid
+        String[] parts = dirName.split("_");
+        if (parts.length < 4) {
+            throw new IllegalArgumentException(
+                "Invalid block directory name format: " + dirName + ". Expected format: block_<minTimestamp>_<maxTimestamp>_<uuid>"
+            );
+        }
+
+        long minTimestamp;
+        long maxTimestamp;
+        try {
+            minTimestamp = Long.parseLong(parts[1]);
+            maxTimestamp = Long.parseLong(parts[2]);
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException("Invalid timestamp in block directory name: " + dirName, e);
+        }
+
+        lock.lock();
+        try {
+            // Check if we already have a block for this time range
+            if (closedChunkIndexMap.containsKey(maxTimestamp)) {
+                log.warn("Block with maxTimestamp {} already exists, skipping", maxTimestamp);
+                return false;
+            }
+
+            // Copy block files to the blocks directory
+            Path targetBlockPath = dir.resolve(dirName);
+            if (Files.exists(targetBlockPath)) {
+                throw new IOException("Target block directory already exists: " + targetBlockPath);
+            }
+
+            log.info("Copying historical block from {} to {}", sourceBlockPath, targetBlockPath);
+            org.opensearch.tsdb.core.utils.Files.copyDirectory(sourceBlockPath, targetBlockPath);
+
+            // Create metadata
+            ClosedChunkIndex.Metadata metadata = new ClosedChunkIndex.Metadata(dirName, minTimestamp, maxTimestamp);
+
+            // Open the block
+            ClosedChunkIndex newIndex = new ClosedChunkIndex(targetBlockPath, metadata, resolution, indexSettings);
+            closedChunkIndexMap.put(maxTimestamp, newIndex);
+
+            // Update metadata store
+            List<String> indexMetadata = new ArrayList<>();
+            for (ClosedChunkIndex index : closedChunkIndexMap.values()) {
+                indexMetadata.add(index.getMetadata().marshal());
+            }
+
+            try (XContentBuilder builder = XContentFactory.jsonBuilder()) {
+                builder.startObject();
+                builder.array(INDEX_METADATA_KEY, indexMetadata.toArray(new String[0]));
+                builder.endObject();
+                metadataStore.store(METADATA_STORE_KEY, builder.toString());
+            }
+
+            log.info("Successfully added historical block: {}, range: [{}, {}]", dirName, minTimestamp, maxTimestamp);
+            TSDBMetrics.incrementCounter(TSDBMetrics.INDEX.indexCreatedTotal, 1);
+            return true;
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    /**
      * Calls commit on all indexes that have pending changes.
      * <p>
      * Since we need to ensure we don't replay data that has been committed, we commit changes indexes in ascending order (based

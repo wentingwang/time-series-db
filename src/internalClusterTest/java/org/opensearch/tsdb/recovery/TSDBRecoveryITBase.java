@@ -284,4 +284,21 @@ public abstract class TSDBRecoveryITBase extends TimeSeriesTestFramework {
         assertNotNull("Target node should not be null", state.getTargetNode());
         assertThat("Target node name mismatch", state.getTargetNode().getName(), equalTo(targetNode));
     }
+
+    /**
+     * Helper method to access the engine from an IndexShard.
+     * Uses reflection to access the protected getEngineOrNull() method.
+     *
+     * @param indexShard the index shard
+     * @return the engine, or null if not available
+     */
+    protected org.opensearch.index.engine.Engine getShardEngine(org.opensearch.index.shard.IndexShard indexShard) {
+        try {
+            java.lang.reflect.Method method = indexShard.getClass().getDeclaredMethod("getEngineOrNull");
+            method.setAccessible(true);
+            return (org.opensearch.index.engine.Engine) method.invoke(indexShard);
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to get engine from shard", e);
+        }
+    }
 }
