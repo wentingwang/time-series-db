@@ -923,6 +923,325 @@ public class InternalTSDBStatsTests extends OpenSearchTestCase {
         assertEquals(0, deserialized4.labelStats().size());
     }
 
+    // ========== ShardLevelStats Serialization with null value fingerprint sets ==========
+
+    public void testShardLevelStatsSerializationWithNullValueSets() throws IOException {
+        // Test serialization where individual value fingerprint sets are null (includeValueStats=false scenario)
+        Set<Long> fingerprints = new HashSet<>();
+        fingerprints.add(1L);
+
+        Map<String, Map<String, Set<Long>>> labelStats = new LinkedHashMap<>();
+        Map<String, Set<Long>> clusterValues = new LinkedHashMap<>();
+        clusterValues.put("prod", null);  // null fingerprint set for this value
+        clusterValues.put("staging", null);  // null fingerprint set for this value
+        labelStats.put("cluster", clusterValues);
+
+        InternalTSDBStats.ShardLevelStats original = new InternalTSDBStats.ShardLevelStats(fingerprints, labelStats, false);
+
+        BytesStreamOutput out = new BytesStreamOutput();
+        original.writeTo(out);
+        StreamInput in = out.bytes().streamInput();
+        InternalTSDBStats.ShardLevelStats deserialized = new InternalTSDBStats.ShardLevelStats(in);
+
+        // Verify null fingerprint sets round-trip correctly
+        assertNotNull(deserialized.labelStats().get("cluster"));
+        assertNull(deserialized.labelStats().get("cluster").get("prod"));
+        assertNull(deserialized.labelStats().get("cluster").get("staging"));
+        assertFalse(deserialized.includeValueStats());
+    }
+
+    // ========== CoordinatorLevelStats equals edge cases ==========
+
+    public void testCoordinatorLevelStatsEqualsEdgeCases() {
+        Map<String, InternalTSDBStats.CoordinatorLevelStats.LabelStats> labelStats = new LinkedHashMap<>();
+        labelStats.put("cluster", new InternalTSDBStats.CoordinatorLevelStats.LabelStats(100L, Map.of("prod", 80L)));
+
+        InternalTSDBStats.CoordinatorLevelStats stats1 = new InternalTSDBStats.CoordinatorLevelStats(500L, labelStats);
+        InternalTSDBStats.CoordinatorLevelStats stats2 = new InternalTSDBStats.CoordinatorLevelStats(500L, labelStats);
+        InternalTSDBStats.CoordinatorLevelStats stats3 = new InternalTSDBStats.CoordinatorLevelStats(999L, labelStats);
+
+        // Self-reference
+        assertEquals(stats1, stats1);
+
+        // Equal objects
+        assertEquals(stats1, stats2);
+        assertEquals(stats1.hashCode(), stats2.hashCode());
+
+        // Different totalNumSeries
+        assertNotEquals(stats1, stats3);
+
+        // Null and different type
+        assertNotEquals(stats1, null);
+        assertNotEquals(stats1, "string");
+    }
+
+    // ========== InternalTSDBStats equals edge cases ==========
+
+    public void testInternalTSDBStatsEqualsEdgeCases() {
+        InternalTSDBStats.HeadStats headStats = new InternalTSDBStats.HeadStats(100L, 200L, 1000L, 2000L);
+        Map<String, InternalTSDBStats.CoordinatorLevelStats.LabelStats> labelStats = createTestLabelStats();
+
+        InternalTSDBStats stats1 = InternalTSDBStats.forCoordinatorLevel(
+            TEST_NAME,
+            headStats,
+            new InternalTSDBStats.CoordinatorLevelStats(500L, labelStats),
+            TEST_METADATA
+        );
+
+        // Self-reference
+        assertEquals(stats1, stats1);
+
+        // Null and different type
+        assertNotEquals(stats1, null);
+        assertNotEquals(stats1, "string");
+
+        // Different headStats
+        InternalTSDBStats stats2 = InternalTSDBStats.forCoordinatorLevel(
+            TEST_NAME,
+            new InternalTSDBStats.HeadStats(999L, 200L, 1000L, 2000L),
+            new InternalTSDBStats.CoordinatorLevelStats(500L, labelStats),
+            TEST_METADATA
+        );
+        assertNotEquals(stats1, stats2);
+
+        // Different metadata
+        InternalTSDBStats stats3 = InternalTSDBStats.forCoordinatorLevel(
+            TEST_NAME,
+            headStats,
+            new InternalTSDBStats.CoordinatorLevelStats(500L, labelStats),
+            Map.of("different", "metadata")
+        );
+        assertNotEquals(stats1, stats3);
+
+        // Shard-level vs coordinator-level
+        Set<Long> fingerprints = new HashSet<>();
+        fingerprints.add(1L);
+        InternalTSDBStats shardStats = InternalTSDBStats.forShardLevel(
+            TEST_NAME,
+            new InternalTSDBStats.ShardLevelStats(fingerprints, new HashMap<>(), true),
+            TEST_METADATA
+        );
+        assertNotEquals(stats1, shardStats);
+    }
+
+    // ========== Constructor validation ==========
+
+    public void testConstructorRejectsBothStatsNull() {
+        IllegalArgumentException exception = expectThrows(
+            IllegalArgumentException.class,
+            () -> InternalTSDBStats.forCoordinatorLevel(TEST_NAME, null, null, TEST_METADATA)
+        );
+        assertTrue(exception.getMessage().contains("Exactly one of shardStats or coordinatorStats must be non-null"));
+    }
+
+    // ========== Reduce error path tests ==========
+
+    public void testReduceShardLevelThrowsOnCoordinatorInput() {
+        // Create coordinator-level stats but try shard-level reduce
+        Map<String, InternalTSDBStats.CoordinatorLevelStats.LabelStats> labelStats = new LinkedHashMap<>();
+        labelStats.put("cluster", new InternalTSDBStats.CoordinatorLevelStats.LabelStats(100L, Map.of("prod", 80L)));
+
+        InternalTSDBStats coordStats = InternalTSDBStats.forCoordinatorLevel(
+            TEST_NAME,
+            null,
+            new InternalTSDBStats.CoordinatorLevelStats(500L, labelStats),
+            TEST_METADATA
+        );
+
+        // Create a valid shard-level stats as the reducer
+        Set<Long> fingerprints = new HashSet<>();
+        fingerprints.add(1L);
+        InternalTSDBStats shardStats = InternalTSDBStats.forShardLevel(
+            TEST_NAME,
+            new InternalTSDBStats.ShardLevelStats(fingerprints, new HashMap<>(), true),
+            TEST_METADATA
+        );
+
+        List<InternalAggregation> aggregations = List.of(shardStats, coordStats);
+
+        PipelineAggregator.PipelineTree emptyPipelineTree = new PipelineAggregator.PipelineTree(
+            Collections.emptyMap(),
+            Collections.emptyList()
+        );
+        InternalAggregation.ReduceContext shardReduceContext = InternalAggregation.ReduceContext.forPartialReduction(
+            null,
+            null,
+            () -> emptyPipelineTree
+        );
+
+        // Act & Assert - should throw because coordStats is not shard-level
+        expectThrows(IllegalStateException.class, () -> shardStats.reduce(aggregations, shardReduceContext));
+    }
+
+    public void testReduceCoordinatorLevelThrowsOnShardInput() {
+        // Create shard-level stats but try coordinator-level reduce
+        Set<Long> fingerprints = new HashSet<>();
+        fingerprints.add(1L);
+        InternalTSDBStats shardStats = InternalTSDBStats.forShardLevel(
+            TEST_NAME,
+            new InternalTSDBStats.ShardLevelStats(fingerprints, new HashMap<>(), true),
+            TEST_METADATA
+        );
+
+        // Create a valid coordinator-level stats as the reducer
+        Map<String, InternalTSDBStats.CoordinatorLevelStats.LabelStats> labelStats = new LinkedHashMap<>();
+        labelStats.put("cluster", new InternalTSDBStats.CoordinatorLevelStats.LabelStats(100L, Map.of("prod", 80L)));
+        InternalTSDBStats coordStats = InternalTSDBStats.forCoordinatorLevel(
+            TEST_NAME,
+            null,
+            new InternalTSDBStats.CoordinatorLevelStats(500L, labelStats),
+            TEST_METADATA
+        );
+
+        List<InternalAggregation> aggregations = List.of(coordStats, shardStats);
+
+        PipelineAggregator.PipelineTree emptyPipelineTree = new PipelineAggregator.PipelineTree(
+            Collections.emptyMap(),
+            Collections.emptyList()
+        );
+        InternalAggregation.ReduceContext finalReduceContext = InternalAggregation.ReduceContext.forFinalReduction(
+            null,
+            null,
+            (s) -> {},
+            emptyPipelineTree
+        );
+
+        // Act & Assert - should throw because shardStats is not coordinator-level
+        expectThrows(IllegalStateException.class, () -> coordStats.reduce(aggregations, finalReduceContext));
+    }
+
+    // ========== Reduce with null value fingerprint sets ==========
+
+    public void testReduceShardLevelWithNullValueFingerprintSets() {
+        // Arrange - null value fingerprint sets (includeValueStats=false)
+        Set<Long> fingerprints = new HashSet<>();
+        fingerprints.add(1L);
+        fingerprints.add(2L);
+
+        Map<String, Map<String, Set<Long>>> labelStats = new LinkedHashMap<>();
+        Map<String, Set<Long>> clusterValues = new LinkedHashMap<>();
+        clusterValues.put("prod", null);  // null set
+        clusterValues.put("staging", null);  // null set
+        labelStats.put("cluster", clusterValues);
+
+        InternalTSDBStats.ShardLevelStats shardStats = new InternalTSDBStats.ShardLevelStats(fingerprints, labelStats, false);
+        InternalTSDBStats agg = InternalTSDBStats.forShardLevel(TEST_NAME, shardStats, TEST_METADATA);
+
+        List<InternalAggregation> aggregations = List.of(agg);
+
+        PipelineAggregator.PipelineTree emptyPipelineTree = new PipelineAggregator.PipelineTree(
+            Collections.emptyMap(),
+            Collections.emptyList()
+        );
+        InternalAggregation.ReduceContext shardReduceContext = InternalAggregation.ReduceContext.forPartialReduction(
+            null,
+            null,
+            () -> emptyPipelineTree
+        );
+
+        // Act
+        InternalAggregation result = agg.reduce(aggregations, shardReduceContext);
+
+        // Assert
+        assertTrue(result instanceof InternalTSDBStats);
+        InternalTSDBStats reducedStats = (InternalTSDBStats) result;
+
+        Map<String, InternalTSDBStats.CoordinatorLevelStats.LabelStats> resultLabelStats = reducedStats.getLabelStats();
+        assertEquals(1, resultLabelStats.size());
+        // Value counts should be 0 (sentinel for "not counted")
+        assertEquals(0L, resultLabelStats.get("cluster").valuesStats().get("prod").longValue());
+        assertEquals(0L, resultLabelStats.get("cluster").valuesStats().get("staging").longValue());
+    }
+
+    // ========== Reduce with empty fingerprint set for value ==========
+
+    public void testReduceShardLevelWithEmptyFingerprintSetForValue() {
+        // Arrange - Tests the branch where fingerprintSetForValue is empty
+        Set<Long> fingerprints = new HashSet<>();
+        fingerprints.add(1L);
+
+        Map<String, Map<String, Set<Long>>> labelStats = new LinkedHashMap<>();
+        Map<String, Set<Long>> clusterValues = new LinkedHashMap<>();
+        clusterValues.put("prod", new HashSet<>());  // empty set (not null)
+        Set<Long> stagingFingerprints = new HashSet<>();
+        stagingFingerprints.add(100L);
+        clusterValues.put("staging", stagingFingerprints);
+        labelStats.put("cluster", clusterValues);
+
+        InternalTSDBStats.ShardLevelStats shardStats = new InternalTSDBStats.ShardLevelStats(fingerprints, labelStats, true);
+        InternalTSDBStats agg = InternalTSDBStats.forShardLevel(TEST_NAME, shardStats, TEST_METADATA);
+
+        List<InternalAggregation> aggregations = List.of(agg);
+
+        PipelineAggregator.PipelineTree emptyPipelineTree = new PipelineAggregator.PipelineTree(
+            Collections.emptyMap(),
+            Collections.emptyList()
+        );
+        InternalAggregation.ReduceContext shardReduceContext = InternalAggregation.ReduceContext.forPartialReduction(
+            null,
+            null,
+            () -> emptyPipelineTree
+        );
+
+        // Act
+        InternalAggregation result = agg.reduce(aggregations, shardReduceContext);
+
+        // Assert
+        InternalTSDBStats reducedStats = (InternalTSDBStats) result;
+        Map<String, InternalTSDBStats.CoordinatorLevelStats.LabelStats> resultLabelStats = reducedStats.getLabelStats();
+
+        // prod has empty set -> count should be 0
+        assertEquals(0L, resultLabelStats.get("cluster").valuesStats().get("prod").longValue());
+        // staging has 1 fingerprint -> count should be 1
+        assertEquals(1L, resultLabelStats.get("cluster").valuesStats().get("staging").longValue());
+    }
+
+    // ========== XContent for shard-level stats ==========
+
+    public void testDoXContentBodyForShardLevelStats() throws IOException {
+        // shard-level stats should produce empty labelStats in XContent
+        Set<Long> fingerprints = new HashSet<>();
+        fingerprints.add(1L);
+
+        InternalTSDBStats.ShardLevelStats shardStats = new InternalTSDBStats.ShardLevelStats(fingerprints, new HashMap<>(), true);
+        InternalTSDBStats internal = InternalTSDBStats.forShardLevel(TEST_NAME, shardStats, TEST_METADATA);
+
+        XContentBuilder builder = XContentFactory.jsonBuilder();
+        builder.startObject();
+        internal.doXContentBody(builder, null);
+        builder.endObject();
+
+        String json = builder.toString();
+        // Shard-level stats should have empty labelStats (coordinatorStats is null)
+        assertTrue(json.contains("\"labelStats\":{}"));
+    }
+
+    // ========== XContent with null numSeries in LabelStats ==========
+
+    public void testDoXContentBodyWithNullLabelNumSeries() throws IOException {
+        Map<String, InternalTSDBStats.CoordinatorLevelStats.LabelStats> labelStats = new HashMap<>();
+        labelStats.put("cluster", new InternalTSDBStats.CoordinatorLevelStats.LabelStats(null, Map.of("prod", 80L)));
+
+        InternalTSDBStats internal = InternalTSDBStats.forCoordinatorLevel(
+            TEST_NAME,
+            null,
+            new InternalTSDBStats.CoordinatorLevelStats(500L, labelStats),
+            TEST_METADATA
+        );
+
+        XContentBuilder builder = XContentFactory.jsonBuilder();
+        builder.startObject();
+        internal.doXContentBody(builder, null);
+        builder.endObject();
+
+        String json = builder.toString();
+        // numSeries at top level should be present
+        assertTrue(json.contains("\"numSeries\":500"));
+        // cluster should not have its own numSeries since it's null
+        assertTrue(json.contains("\"cluster\""));
+        assertTrue(json.contains("\"prod\""));
+    }
+
     // ========== Helper Methods ==========
 
     private Map<String, InternalTSDBStats.CoordinatorLevelStats.LabelStats> createTestLabelStats() {

@@ -466,6 +466,53 @@ public class TSDBStatsAggregatorTests extends OpenSearchTestCase {
         }
     }
 
+    // ========== Duplicate Ordinal Test (Same label key:value seen from different series) ==========
+
+    public void testCollectWithDuplicateLabelValues() throws IOException {
+        // This test covers the ordinal re-use path (ord < 0 -> ord = -1 - ord)
+        // When two different series share the same label key:value, the BytesRefHash returns negative ordinal
+        long minTimestamp = 1000L;
+        long maxTimestamp = 5000L;
+        TSDBStatsAggregator aggregator = createAggregator("test", minTimestamp, maxTimestamp, true);
+
+        // Two series with the SAME "service:api" label but different series IDs
+        Map<String, String> labels1 = Map.of("service", "api");
+        Map<String, String> labels2 = Map.of("service", "api");
+
+        TSDBLeafReaderWithContext readerCtx1 = AggregatorTestUtils.createMockTSDBLeafReaderWithLabels(
+            minTimestamp,
+            maxTimestamp,
+            11111L,  // Different series ID
+            labels1,
+            false
+        );
+        TSDBLeafReaderWithContext readerCtx2 = AggregatorTestUtils.createMockTSDBLeafReaderWithLabels(
+            minTimestamp,
+            maxTimestamp,
+            22222L,  // Different series ID, same labels
+            labels2,
+            false
+        );
+
+        try {
+            LeafBucketCollector collector1 = aggregator.getLeafCollector(readerCtx1.context, LeafBucketCollector.NO_OP_COLLECTOR);
+            collector1.collect(0, 0);
+
+            LeafBucketCollector collector2 = aggregator.getLeafCollector(readerCtx2.context, LeafBucketCollector.NO_OP_COLLECTOR);
+            collector2.collect(0, 0);
+
+            InternalAggregation result = aggregator.buildAggregation(0);
+
+            InternalTSDBStats stats = (InternalTSDBStats) result;
+            assertNotNull("Stats should not be null", stats);
+
+        } finally {
+            readerCtx1.close();
+            readerCtx2.close();
+            aggregator.close();
+        }
+    }
+
     // ========== Helper Methods ==========
 
     private TSDBStatsAggregator createAggregator(String name, long minTimestamp, long maxTimestamp, boolean includeValueStats)

@@ -578,6 +578,94 @@ public class TSDBStatsResponseListenerTests extends OpenSearchTestCase {
         assertEquals(expected2, actual2);
     }
 
+    // ========== Flat Format with HeadStats ==========
+
+    public void testFlatFormatWithHeadStats() throws IOException {
+        // Tests the headStats branch in flat format (includeHeadStats=true && stats.getHeadStats() != null)
+        FakeRestChannel channel = new FakeRestChannel(new FakeRestRequest(), true, 1);
+        TSDBStatsResponseListener listener = new TSDBStatsResponseListener(channel, List.of("all"), "flat");
+
+        InternalTSDBStats.HeadStats headStats = new InternalTSDBStats.HeadStats(100L, 200L, 1000L, 2000L);
+
+        // Empty label stats to focus on headStats branch
+        InternalTSDBStats tsdbStats = InternalTSDBStats.forCoordinatorLevel(
+            "tsdb_stats",
+            headStats,
+            new InternalTSDBStats.CoordinatorLevelStats(null, new HashMap<>()),
+            Map.of()
+        );
+        SearchResponse searchResponse = createSearchResponse(tsdbStats);
+
+        listener.onResponse(searchResponse);
+
+        RestResponse response = channel.capturedResponse();
+        assertEquals(RestStatus.OK, response.status());
+        String content = response.content().utf8ToString();
+        // Verify headStats is included
+        assertTrue(content.contains("\"headStats\""));
+        assertTrue(content.contains("\"numSeries\":100"));
+        assertTrue(content.contains("\"chunkCount\":200"));
+    }
+
+    // ========== Flat Format without labelStats included ==========
+
+    public void testFlatFormatWithoutLabelStats() throws IOException {
+        // Tests the !includeLabelStats branch in flat format
+        FakeRestChannel channel = new FakeRestChannel(new FakeRestRequest(), true, 1);
+        TSDBStatsResponseListener listener = new TSDBStatsResponseListener(channel, List.of("headStats"), "flat");
+
+        InternalTSDBStats.HeadStats headStats = new InternalTSDBStats.HeadStats(100L, 200L, 1000L, 2000L);
+        Map<String, InternalTSDBStats.CoordinatorLevelStats.LabelStats> labelStats = new HashMap<>();
+        labelStats.put("cluster", new InternalTSDBStats.CoordinatorLevelStats.LabelStats(100L, Map.of("prod", 80L)));
+
+        InternalTSDBStats tsdbStats = InternalTSDBStats.forCoordinatorLevel(
+            "tsdb_stats",
+            headStats,
+            new InternalTSDBStats.CoordinatorLevelStats(500L, labelStats),
+            Map.of()
+        );
+        SearchResponse searchResponse = createSearchResponse(tsdbStats);
+
+        listener.onResponse(searchResponse);
+
+        RestResponse response = channel.capturedResponse();
+        assertEquals(RestStatus.OK, response.status());
+        String content = response.content().utf8ToString();
+        // Verify headStats is included but labelStats-related fields are excluded
+        assertTrue(content.contains("\"headStats\""));
+        assertFalse(content.contains("\"seriesCountByMetricName\""));
+        assertFalse(content.contains("\"labelValueCountByLabelName\""));
+    }
+
+    // ========== Grouped Format with null numSeries per label ==========
+
+    public void testGroupedFormatWithNullLabelNumSeries() throws IOException {
+        // Tests the labelStats.numSeries() == null branch in grouped format
+        FakeRestChannel channel = new FakeRestChannel(new FakeRestRequest(), true, 1);
+        TSDBStatsResponseListener listener = new TSDBStatsResponseListener(channel, List.of("all"), "grouped");
+
+        Map<String, InternalTSDBStats.CoordinatorLevelStats.LabelStats> labelStats = new HashMap<>();
+        labelStats.put("cluster", new InternalTSDBStats.CoordinatorLevelStats.LabelStats(null, Map.of("prod", 80L)));
+
+        InternalTSDBStats tsdbStats = InternalTSDBStats.forCoordinatorLevel(
+            "tsdb_stats",
+            null,
+            new InternalTSDBStats.CoordinatorLevelStats(500L, labelStats),
+            Map.of()
+        );
+        SearchResponse searchResponse = createSearchResponse(tsdbStats);
+
+        listener.onResponse(searchResponse);
+
+        RestResponse response = channel.capturedResponse();
+        assertEquals(RestStatus.OK, response.status());
+        String content = response.content().utf8ToString();
+        // Verify top-level numSeries is present but per-label numSeries is not
+        assertTrue(content.contains("\"numSeries\":500"));
+        assertTrue(content.contains("\"cluster\""));
+        assertTrue(content.contains("\"prod\""));
+    }
+
     // ========== Helper Methods ==========
 
     @SuppressWarnings("unchecked")

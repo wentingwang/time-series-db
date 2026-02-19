@@ -420,6 +420,84 @@ public class TSDBStatsAggregationBuilderTests extends OpenSearchTestCase {
         assertEquals(Long.MAX_VALUE, builder.getMaxTimestamp());
     }
 
+    // ========== Parse Edge Case Tests ==========
+
+    public void testXContentParsingWithUnknownNumberField() throws IOException {
+        // Tests the else branch in VALUE_NUMBER parsing (unknown number field -> skipChildren)
+        String json = String.format(
+            Locale.ROOT,
+            "{\"min_timestamp\":%d,\"unknown_number\":12345,\"max_timestamp\":%d,\"include_value_stats\":true}",
+            MIN_TIMESTAMP,
+            MAX_TIMESTAMP
+        );
+
+        try (XContentParser parser = createParser(XContentType.JSON.xContent(), json)) {
+            parser.nextToken();
+            TSDBStatsAggregationBuilder parsed = TSDBStatsAggregationBuilder.parse(TEST_NAME, parser);
+
+            assertEquals(MIN_TIMESTAMP, parsed.getMinTimestamp());
+            assertEquals(MAX_TIMESTAMP, parsed.getMaxTimestamp());
+            assertTrue(parsed.isIncludeValueStats());
+        }
+    }
+
+    public void testXContentParsingWithUnknownBooleanField() throws IOException {
+        // Tests the else branch in VALUE_BOOLEAN parsing (unknown boolean field -> skipChildren)
+        String json = String.format(
+            Locale.ROOT,
+            "{\"min_timestamp\":%d,\"max_timestamp\":%d,\"unknown_bool\":false,\"include_value_stats\":true}",
+            MIN_TIMESTAMP,
+            MAX_TIMESTAMP
+        );
+
+        try (XContentParser parser = createParser(XContentType.JSON.xContent(), json)) {
+            parser.nextToken();
+            TSDBStatsAggregationBuilder parsed = TSDBStatsAggregationBuilder.parse(TEST_NAME, parser);
+
+            assertEquals(MIN_TIMESTAMP, parsed.getMinTimestamp());
+            assertEquals(MAX_TIMESTAMP, parsed.getMaxTimestamp());
+            assertTrue(parsed.isIncludeValueStats());
+        }
+    }
+
+    public void testXContentParsingWithNestedObject() throws IOException {
+        // Tests the START_OBJECT/START_ARRAY skip branch in parsing
+        String json = String.format(
+            Locale.ROOT,
+            "{\"min_timestamp\":%d,\"max_timestamp\":%d,\"include_value_stats\":true,\"nested\":{\"a\":1}}",
+            MIN_TIMESTAMP,
+            MAX_TIMESTAMP
+        );
+
+        try (XContentParser parser = createParser(XContentType.JSON.xContent(), json)) {
+            parser.nextToken();
+            TSDBStatsAggregationBuilder parsed = TSDBStatsAggregationBuilder.parse(TEST_NAME, parser);
+
+            assertEquals(MIN_TIMESTAMP, parsed.getMinTimestamp());
+            assertEquals(MAX_TIMESTAMP, parsed.getMaxTimestamp());
+        }
+    }
+
+    public void testXContentParsingWithNestedArray() throws IOException {
+        // Tests the START_ARRAY skip branch in parsing
+        String json = String.format(
+            Locale.ROOT,
+            "{\"min_timestamp\":%d,\"max_timestamp\":%d,\"include_value_stats\":true,\"arr\":[1,2,3]}",
+            MIN_TIMESTAMP,
+            MAX_TIMESTAMP
+        );
+
+        try (XContentParser parser = createParser(XContentType.JSON.xContent(), json)) {
+            parser.nextToken();
+            TSDBStatsAggregationBuilder parsed = TSDBStatsAggregationBuilder.parse(TEST_NAME, parser);
+
+            assertEquals(MIN_TIMESTAMP, parsed.getMinTimestamp());
+            assertEquals(MAX_TIMESTAMP, parsed.getMaxTimestamp());
+        }
+    }
+
+    // ========== Round Trip Tests ==========
+
     public void testRoundTripSerializationPreservesEquality() throws IOException {
         // Arrange
         TSDBStatsAggregationBuilder original = new TSDBStatsAggregationBuilder(TEST_NAME, MIN_TIMESTAMP, MAX_TIMESTAMP, true);
