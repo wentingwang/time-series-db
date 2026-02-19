@@ -254,7 +254,8 @@ public class RestTSDBStatsAction extends BaseTSDBAction {
     }
 
     /**
-     * Validates that the M3QL query contains a fetch statement with required filters.
+     * Validates that the M3QL query contains a fetch statement with required filters,
+     * and returns the parsed FetchPlanNode for reuse.
      *
      * <p>The query must:
      * <ul>
@@ -263,9 +264,10 @@ public class RestTSDBStatsAction extends BaseTSDBAction {
      * </ul>
      *
      * @param query the M3QL query string
+     * @return the parsed FetchPlanNode for reuse in query building
      * @throws IllegalArgumentException if the query is invalid or doesn't contain required filters
      */
-    private void validateQuery(String query) {
+    private FetchPlanNode validateQuery(String query) {
         if (query == null || query.trim().isEmpty()) {
             throw new IllegalArgumentException("Query parameter is required");
         }
@@ -295,6 +297,8 @@ public class RestTSDBStatsAction extends BaseTSDBAction {
                     "Query must include filters for 'service' and/or 'name' labels. " + "Example: fetch service:api OR fetch name:http_*"
                 );
             }
+
+            return fetchPlan;
 
         } catch (ParseException e) {
             throw new IllegalArgumentException("Failed to parse M3QL query: " + e.getMessage(), e);
@@ -380,9 +384,10 @@ public class RestTSDBStatsAction extends BaseTSDBAction {
             };
         }
 
-        // Validate query - must be a fetch statement with service and/or name filters
+        // Validate query and parse FetchPlanNode (reused below to avoid duplicate parsing)
+        FetchPlanNode fetchPlan;
         try {
-            validateQuery(query);
+            fetchPlan = validateQuery(query);
         } catch (IllegalArgumentException e) {
             return channel -> {
                 XContentBuilder response = channel.newErrorBuilder();
@@ -397,8 +402,8 @@ public class RestTSDBStatsAction extends BaseTSDBAction {
         boolean includeValueStats = includeOptions.contains(INCLUDE_TYPE_ALL) || includeOptions.contains(INCLUDE_TYPE_VALUE_STATS);
 
         try {
-            // Translate M3QL fetch to QueryBuilder
-            QueryBuilder filter = buildQueryFromFetch(query, startMs, endMs);
+            // Build QueryBuilder from the already-parsed FetchPlanNode
+            QueryBuilder filter = buildQueryFromFetch(fetchPlan, startMs, endMs);
 
             // Build aggregation
             TSDBStatsAggregationBuilder aggBuilder = new TSDBStatsAggregationBuilder("tsdb_stats", startMs, endMs, includeValueStats);
@@ -434,64 +439,42 @@ public class RestTSDBStatsAction extends BaseTSDBAction {
     }
 
     /**
-     * Builds a QueryBuilder from an M3QL fetch expression.
+     * Builds a QueryBuilder from an already-parsed FetchPlanNode.
      *
-     * @param query the M3QL fetch query
+     * @param fetchPlan the parsed FetchPlanNode from validateQuery
      * @param startMs the start timestamp in milliseconds
      * @param endMs the end timestamp in milliseconds
      * @return a QueryBuilder matching the fetch filters and time range
-     * @throws ParseException if the query cannot be parsed
      */
-    private QueryBuilder buildQueryFromFetch(String query, long startMs, long endMs) throws ParseException {
-        try (M3PlannerContext context = M3PlannerContext.create()) {
-            // Parse the M3QL query
-            RootNode astRoot = M3QLParser.parse(query, true);
+    private QueryBuilder buildQueryFromFetch(FetchPlanNode fetchPlan, long startMs, long endMs) {
+        // Build a simple match query from the filters
+        Map<String, List<String>> matchFilters = fetchPlan.getMatchFilters();
+        BoolQueryBuilder boolQuery = QueryBuilders.boolQuery();
 
-            // Convert AST to plan
-            M3ASTConverter astConverter = new M3ASTConverter(context);
-            M3PlanNode planRoot = astConverter.buildPlan(astRoot);
+        // Add label filters
+        for (Map.Entry<String, List<String>> entry : matchFilters.entrySet()) {
+            String labelKey = entry.getKey();
+            List<String> values = entry.getValue();
 
-            // Find the FetchPlanNode
-            FetchPlanNode fetchPlan = findFetchPlanNode(planRoot);
-            if (fetchPlan == null) {
-                throw new IllegalArgumentException("Query must contain a fetch expression");
-            }
-
-            // Build a simple match query from the filters
-            Map<String, List<String>> matchFilters = fetchPlan.getMatchFilters();
-            BoolQueryBuilder boolQuery = QueryBuilders.boolQuery();
-
-            // Add label filters
-            for (Map.Entry<String, List<String>> entry : matchFilters.entrySet()) {
-                String labelKey = entry.getKey();
-                List<String> values = entry.getValue();
-
-                // For each value, create a term or wildcard query
-                BoolQueryBuilder labelQuery = QueryBuilders.boolQuery();
-                for (String value : values) {
-                    String labelFilter = labelKey + ":" + value;  // Format: "service:api"
-                    if (value.contains("*") || value.contains("?")) {
-                        // Wildcard query on labels field
-                        labelQuery.should(
-                            new CachedWildcardQueryBuilder(org.opensearch.tsdb.core.mapping.Constants.IndexSchema.LABELS, labelFilter)
-                        );
-                    } else {
-                        // Exact term query on labels field
-                        labelQuery.should(
-                            QueryBuilders.termQuery(org.opensearch.tsdb.core.mapping.Constants.IndexSchema.LABELS, labelFilter)
-                        );
-                    }
+            // For each value, create a term or wildcard query
+            BoolQueryBuilder labelQuery = QueryBuilders.boolQuery();
+            for (String value : values) {
+                String labelFilter = labelKey + ":" + value;  // Format: "service:api"
+                if (value.contains("*") || value.contains("?")) {
+                    // Wildcard query on labels field
+                    labelQuery.should(
+                        new CachedWildcardQueryBuilder(org.opensearch.tsdb.core.mapping.Constants.IndexSchema.LABELS, labelFilter)
+                    );
+                } else {
+                    // Exact term query on labels field
+                    labelQuery.should(QueryBuilders.termQuery(org.opensearch.tsdb.core.mapping.Constants.IndexSchema.LABELS, labelFilter));
                 }
-                boolQuery.filter(labelQuery);
             }
-
-            // Wrap with time range pruning query
-            return new TimeRangePruningQueryBuilder(boolQuery, startMs, endMs);
-        } catch (ParseException e) {
-            throw e;
-        } catch (Exception e) {
-            throw new IllegalArgumentException("Failed to build query from fetch expression: " + e.getMessage(), e);
+            boolQuery.filter(labelQuery);
         }
+
+        // Wrap with time range pruning query
+        return new TimeRangePruningQueryBuilder(boolQuery, startMs, endMs);
     }
 
     /**

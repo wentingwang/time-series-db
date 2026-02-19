@@ -55,8 +55,10 @@ public class TSDBStatsAggregator extends MetricsAggregator {
     // Series identifiers (reference or labels_hash) we've already processed
     private final Set<Long> seenSeriesIdentifiers;
 
-    // BytesRefHash to store "key:value" strings and assign ordinals (shard-level, shared across segments)
+    // BytesRefHash to store "key:value" strings and assign ordinals (shard-level, shared across segments).
+    // BytesRefHash is NOT thread-safe, so all access must be synchronized via ordinalMapLock.
     private final BytesRefHash labelValuePairOrdinalMap;
+    private final Object ordinalMapLock = new Object();
 
     // Track fingerprint set per ordinal: ordinal -> Set<Long>
     // Key grouping is deferred to buildAggregation() to avoid parsing in hot path
@@ -153,8 +155,13 @@ public class TSDBStatsAggregator extends MetricsAggregator {
             // Process each label using BytesRef directly (avoid String conversion)
             BytesRef[] keyValuePairs = labels.toKeyValueBytesRefs();
             for (BytesRef keyValue : keyValuePairs) {
-                // Add "key:value" to hash and get ordinal
-                long ord = labelValuePairOrdinalMap.add(keyValue);
+                // Add "key:value" to hash and get ordinal.
+                // Synchronized because BytesRefHash is not thread-safe and segments
+                // may be collected concurrently (Concurrent Segment Search).
+                long ord;
+                synchronized (ordinalMapLock) {
+                    ord = labelValuePairOrdinalMap.add(keyValue);
+                }
                 if (ord < 0) {
                     // Already exists, get existing ordinal
                     ord = -1 - ord;

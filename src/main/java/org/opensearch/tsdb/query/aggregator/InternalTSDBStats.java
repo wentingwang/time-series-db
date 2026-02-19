@@ -660,10 +660,7 @@ public class InternalTSDBStats extends InternalAggregation {
                 if (stats.numSeries() != null) {
                     builder.field("numSeries", stats.numSeries());
                 }
-                builder.field("values", stats.valuesStats().keySet());
-                if (stats.valuesStats() != null) {
-                    builder.field("valuesStats", stats.valuesStats());
-                }
+                builder.field("valuesStats", stats.valuesStats());
                 builder.endObject();
             }
         }
