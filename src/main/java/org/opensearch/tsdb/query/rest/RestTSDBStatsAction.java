@@ -401,13 +401,21 @@ public class RestTSDBStatsAction extends BaseTSDBAction {
         // Determine what statistics to include
         boolean includeValueStats = includeOptions.contains(TSDBStatsConstants.INCLUDE_ALL)
             || includeOptions.contains(TSDBStatsConstants.INCLUDE_VALUE_STATS);
+        boolean includeHeadStats = includeOptions.contains(TSDBStatsConstants.INCLUDE_ALL)
+            || includeOptions.contains(TSDBStatsConstants.INCLUDE_HEAD_STATS);
 
         try {
             // Build QueryBuilder from the already-parsed FetchPlanNode
             QueryBuilder filter = buildQueryFromFetch(fetchPlan, startMs, endMs);
 
             // Build aggregation
-            TSDBStatsAggregationBuilder aggBuilder = new TSDBStatsAggregationBuilder(AGGREGATION_NAME, startMs, endMs, includeValueStats);
+            TSDBStatsAggregationBuilder aggBuilder = new TSDBStatsAggregationBuilder(
+                AGGREGATION_NAME,
+                startMs,
+                endMs,
+                includeValueStats,
+                includeHeadStats
+            );
 
             // Build search request
             SearchSourceBuilder searchSourceBuilder = new SearchSourceBuilder().query(filter).aggregation(aggBuilder).size(0);

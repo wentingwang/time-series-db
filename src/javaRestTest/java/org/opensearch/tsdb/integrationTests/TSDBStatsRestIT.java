@@ -55,6 +55,12 @@ public class TSDBStatsRestIT extends RestTimeSeriesTestFramework {
 
         String expectedJson = """
             {
+              "headStats": {
+                "numSeries": 10,
+                "chunkCount": 0,
+                "minTime": 0,
+                "maxTime": 9223372036854775807
+              },
               "labelStats": {
                 "numSeries": 10,
                 "name": {
@@ -274,6 +280,12 @@ public class TSDBStatsRestIT extends RestTimeSeriesTestFramework {
         // Grouped format - same as default/testTSDBStatsEndpointExists
         String expectedGroupedJson = """
             {
+              "headStats": {
+                "numSeries": 10,
+                "chunkCount": 0,
+                "minTime": 0,
+                "maxTime": 9223372036854775807
+              },
               "labelStats": {
                 "numSeries": 10,
                 "name": {
@@ -348,6 +360,12 @@ public class TSDBStatsRestIT extends RestTimeSeriesTestFramework {
         // Flat format has arrays sorted by count descending, then name ascending
         String expectedFlatJson = """
             {
+              "headStats": {
+                "numSeries": 10,
+                "chunkCount": 0,
+                "minTime": 0,
+                "maxTime": 9223372036854775807
+              },
               "seriesCountByMetricName": [
                 {"name": "http_requests_total", "value": 6},
                 {"name": "db_connections", "value": 2},
@@ -410,6 +428,12 @@ public class TSDBStatsRestIT extends RestTimeSeriesTestFramework {
         // Filtered to service:api AND name:http_* (5 series - all api series have http_* names)
         String expectedJson = """
             {
+              "headStats": {
+                "numSeries": 10,
+                "chunkCount": 0,
+                "minTime": 0,
+                "maxTime": 9223372036854775807
+              },
               "labelStats": {
                 "numSeries": 5,
                 "name": {

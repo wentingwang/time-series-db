@@ -146,7 +146,8 @@ public class TSDBStatsAggregatorFactoryTests extends OpenSearchTestCase {
                 Map.of(), // metadata
                 minTimestamp,
                 maxTimestamp,
-                includeValueStats
+                includeValueStats,
+                true // includeHeadStats - default to true for existing tests
             );
         } catch (Exception e) {
             throw new RuntimeException("Failed to create factory for test", e);
