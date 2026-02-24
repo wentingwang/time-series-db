@@ -264,6 +264,7 @@ public class AggregatorTestUtils {
             .toArray(BytesRef[]::new);
 
         when(mockLabels.toKeyValueBytesRefs()).thenReturn(keyValuePairs);
+        when(mockLabels.keyValuePairIterator()).thenAnswer(inv -> java.util.Arrays.asList(keyValuePairs).iterator());
         return mockLabels;
     }
 
