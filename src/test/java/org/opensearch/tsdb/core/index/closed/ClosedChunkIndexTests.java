@@ -267,7 +267,7 @@ public class ClosedChunkIndexTests extends OpenSearchTestCase {
             // Collect all label hashes from the index in document order
             List<Long> documentHashes = new ArrayList<>();
             for (LeafReaderContext leaf : reader.leaves()) {
-                NumericDocValues hashDocValues = leaf.reader().getNumericDocValues(Constants.IndexSchema.LABELS_HASH);
+                NumericDocValues hashDocValues = leaf.reader().getNumericDocValues(Constants.IndexSchema.REFERENCE);
                 if (hashDocValues != null) {
                     for (int docId = 0; docId < leaf.reader().maxDoc(); docId++) {
                         if (hashDocValues.advanceExact(docId)) {

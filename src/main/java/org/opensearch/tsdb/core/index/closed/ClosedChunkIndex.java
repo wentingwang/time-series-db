@@ -116,7 +116,7 @@ public class ClosedChunkIndex implements Closeable {
             this.snapshotDeletionPolicy = new SnapshotDeletionPolicy(baseDeletionPolicy);
             iwc.setIndexDeletionPolicy(snapshotDeletionPolicy);
 
-            SortField primarySortField = new SortField(Constants.IndexSchema.LABELS_HASH, SortField.Type.LONG, false); // ascending
+            SortField primarySortField = new SortField(Constants.IndexSchema.REFERENCE, SortField.Type.LONG, false); // ascending
             SortField secondarySortField = new SortField(Constants.IndexSchema.MIN_TIMESTAMP, SortField.Type.LONG, false); // ascending
             Sort indexSort = new Sort(primarySortField, secondarySortField);
             iwc.setIndexSort(indexSort);
@@ -142,7 +142,7 @@ public class ClosedChunkIndex implements Closeable {
         Chunk chunk = memChunk.getCompoundChunk().toChunk();
 
         Document doc = new Document();
-        doc.add(new NumericDocValuesField(Constants.IndexSchema.LABELS_HASH, labels.stableHash()));
+        doc.add(new NumericDocValuesField(Constants.IndexSchema.REFERENCE, labels.stableHash()));
 
         BytesRef[] labelRefs = labels.toKeyValueBytesRefs();
 

@@ -36,11 +36,6 @@ public final class Constants {
         public static final String LABELS = "labels";
 
         /**
-         * Hash of the labels. Not guaranteed to be stable across versions.
-         */
-        public static final String LABELS_HASH = "labels_hash";
-
-        /**
          * Store the reference to chunks for live series index
          */
         public static final String REFERENCE = "reference";
