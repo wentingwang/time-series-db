@@ -950,16 +950,16 @@ public class ClosedChunkIndexManagerTests extends OpenSearchTestCase {
 
         assertEquals("No blocks before add", 0, manager.getNumBlocks());
 
-        boolean added = manager.addHistoricalBlock(externalBlock);
-        assertTrue("addHistoricalBlock should return true", added);
+        ClosedChunkIndex added = manager.addHistoricalBlock(externalBlock);
+        assertNotNull("addHistoricalBlock should return non-null", added);
         assertEquals("One block after add", 1, manager.getNumBlocks());
 
         // Block should have been copied to blocks dir
         assertTrue("Block should exist in blocks dir", Files.exists(blocksDir.resolve(blockName)));
 
-        // Adding same block again should return false
-        boolean addedAgain = manager.addHistoricalBlock(externalBlock);
-        assertFalse("addHistoricalBlock again should return false (duplicate maxTimestamp)", addedAgain);
+        // Adding same block again should return null
+        ClosedChunkIndex addedAgain = manager.addHistoricalBlock(externalBlock);
+        assertNull("addHistoricalBlock again should return null (duplicate maxTimestamp)", addedAgain);
 
         manager.close();
     }

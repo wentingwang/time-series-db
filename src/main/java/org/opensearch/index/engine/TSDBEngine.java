@@ -1205,9 +1205,10 @@ public class TSDBEngine extends Engine {
      * Copies a historical block from a source path into the engine's blocks directory and registers it.
      *
      * @param sourceBlockPath path to a block directory (must follow naming: block_minTs_maxTs_uuid)
-     * @return true if added, false if a block with overlapping time range already exists
+     * @return the loaded ClosedChunkIndex, or null if a block with overlapping time range already exists
      */
-    public boolean addHistoricalBlock(java.nio.file.Path sourceBlockPath) throws IOException {
+    public org.opensearch.tsdb.core.index.closed.ClosedChunkIndex addHistoricalBlock(java.nio.file.Path sourceBlockPath)
+        throws IOException {
         return closedChunkIndexManager.addHistoricalBlock(sourceBlockPath);
     }
 

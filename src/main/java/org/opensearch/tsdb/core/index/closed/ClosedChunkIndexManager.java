@@ -831,11 +831,11 @@ public class ClosedChunkIndexManager implements Closeable {
      * </p>
      *
      * @param sourceBlockPath Path to the block directory on disk (must follow naming: block_minTs_maxTs_uuid)
-     * @return true if the block was successfully added, false if a block with overlapping time range already exists
+     * @return the loaded ClosedChunkIndex, or null if a block with overlapping time range already exists
      * @throws IOException if there is an error reading or copying the block
      * @throws IllegalArgumentException if the block directory name is invalid
      */
-    public boolean addHistoricalBlock(Path sourceBlockPath) throws IOException {
+    public ClosedChunkIndex addHistoricalBlock(Path sourceBlockPath) throws IOException {
         ensureOpen();
 
         String dirName = sourceBlockPath.getFileName().toString();
@@ -863,7 +863,7 @@ public class ClosedChunkIndexManager implements Closeable {
         try {
             if (closedChunkIndexMap.containsKey(maxTimestamp)) {
                 log.warn("Block with maxTimestamp {} already exists, skipping", maxTimestamp);
-                return false;
+                return null;
             }
 
             Path targetBlockPath = dir.resolve(dirName);
@@ -892,7 +892,7 @@ public class ClosedChunkIndexManager implements Closeable {
 
             log.info("Successfully added historical block: {}, range: [{}, {}]", dirName, minTimestamp, maxTimestamp);
             TSDBMetrics.incrementCounter(TSDBMetrics.INDEX.indexCreatedTotal, 1);
-            return true;
+            return newIndex;
         } finally {
             lock.unlock();
         }

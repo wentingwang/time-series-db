@@ -11,6 +11,11 @@ import com.amazonaws.services.s3.AmazonS3;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.apache.lucene.index.BinaryDocValues;
+import org.apache.lucene.index.DirectoryReader;
+import org.apache.lucene.index.LeafReaderContext;
+import org.apache.lucene.index.NumericDocValues;
+import org.apache.lucene.util.BytesRef;
 import org.opensearch.action.ActionListenerResponseHandler;
 import org.opensearch.action.support.ActionFilters;
 import org.opensearch.action.support.HandledTransportAction;
@@ -30,12 +35,18 @@ import org.opensearch.index.shard.IndexShard;
 import org.opensearch.indices.IndicesService;
 import org.opensearch.tasks.Task;
 import org.opensearch.transport.TransportService;
+import org.opensearch.tsdb.core.chunk.ChunkIterator;
+import org.opensearch.tsdb.core.index.closed.ClosedChunkIndex;
+import org.opensearch.tsdb.core.index.closed.ClosedChunkIndexIO;
+import org.opensearch.tsdb.core.mapping.Constants;
 
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -160,6 +171,10 @@ public class TransportReloadBlockAction extends HandledTransportAction<ReloadBlo
         Path tempDir = null;
 
         try {
+            long e2eStart = System.nanoTime();
+            long downloadDurationMs = 0;
+            long extractDurationMs = 0;
+            long downloadFileSize = 0;
             Path sourceBlockPath;
 
             if (isTerraBlobUrl(url)) {
@@ -170,12 +185,19 @@ public class TransportReloadBlockAction extends HandledTransportAction<ReloadBlo
                 String blockName = S3BlockDownloader.blockNameFromFileName(fileName);
                 Path tarGzFile = tempDir.resolve(fileName);
 
+                // Download
                 logger.info("Downloading block from terrablob: tpath={}", tpath);
+                long t0 = System.nanoTime();
                 AmazonS3 s3 = S3BlockDownloader.createS3Client("localhost", S3BlockDownloader.DEFAULT_PORT, S3BlockDownloader.SERVICE_NAME);
                 S3BlockDownloader.download(s3, S3BlockDownloader.DEFAULT_BUCKET, tpath, tarGzFile);
+                downloadDurationMs = (System.nanoTime() - t0) / 1_000_000;
+                downloadFileSize = Files.size(tarGzFile);
 
+                // Extract
                 logger.info("Extracting archive: {}", tarGzFile);
+                long t1 = System.nanoTime();
                 sourceBlockPath = S3BlockDownloader.extractTarGz(tarGzFile, tempDir, blockName);
+                extractDurationMs = (System.nanoTime() - t1) / 1_000_000;
             } else {
                 // Local directory path
                 sourceBlockPath = Path.of(url);
@@ -192,13 +214,36 @@ public class TransportReloadBlockAction extends HandledTransportAction<ReloadBlo
             String blockDirName = sourceBlockPath.getFileName().toString();
             logger.info("Loading block from source: {}", sourceBlockPath);
 
-            if (tsdbEngine.addHistoricalBlock(sourceBlockPath)) {
+            // Load
+            long t2 = System.nanoTime();
+            ClosedChunkIndex loadedIndex = tsdbEngine.addHistoricalBlock(sourceBlockPath);
+            long loadDurationMs = (System.nanoTime() - t2) / 1_000_000;
+            long totalDurationMs = (System.nanoTime() - e2eStart) / 1_000_000;
+
+            LoadBlockResponse.BlockLoadMetrics metrics = null;
+            if (loadedIndex != null) {
                 loadedBlocks.add(blockDirName);
+
+                // Collect stats from the loaded block
+                long blockSize = loadedIndex.getIndexSize();
+                int chunkCount = loadedIndex.getDocCount();
+                SampleSeriesStats stats = countSamplesAndSeries(loadedIndex);
+                metrics = new LoadBlockResponse.BlockLoadMetrics(
+                    totalDurationMs,
+                    downloadDurationMs,
+                    extractDurationMs,
+                    loadDurationMs,
+                    downloadFileSize,
+                    blockSize,
+                    chunkCount,
+                    stats.sampleCount,
+                    stats.seriesCount
+                );
             } else {
                 failedBlocks.add(blockDirName + " (already loaded or overlapping time range)");
             }
 
-            listener.onResponse(new LoadBlockResponse(loadedBlocks.size(), loadedBlocks, failedBlocks));
+            listener.onResponse(new LoadBlockResponse(loadedBlocks.size(), loadedBlocks, failedBlocks, metrics));
         } catch (Exception e) {
             logger.error("Failed to load block from URL {}: {}", url, e.getMessage(), e);
             listener.onFailure(e);
@@ -207,6 +252,50 @@ public class TransportReloadBlockAction extends HandledTransportAction<ReloadBlo
                 cleanupTempDir(tempDir);
             }
         }
+    }
+
+    private record SampleSeriesStats(long sampleCount, int seriesCount) {
+    }
+
+    private static SampleSeriesStats countSamplesAndSeries(ClosedChunkIndex index) {
+        long sampleCount = 0;
+        Set<Long> uniqueLabelsHashes = new HashSet<>();
+        try {
+            DirectoryReader reader = (DirectoryReader) index.getDirectoryReaderManager().acquire();
+            try {
+                for (LeafReaderContext leaf : reader.leaves()) {
+                    BinaryDocValues chunkDv = leaf.reader().getBinaryDocValues(Constants.IndexSchema.CHUNK);
+                    NumericDocValues labelsHashDv = leaf.reader().getNumericDocValues(Constants.IndexSchema.LABELS_HASH);
+
+                    for (int doc = 0; doc < leaf.reader().maxDoc(); doc++) {
+                        // Collect unique series
+                        if (labelsHashDv != null && labelsHashDv.advanceExact(doc)) {
+                            uniqueLabelsHashes.add(labelsHashDv.longValue());
+                        }
+
+                        // Count samples in each chunk
+                        if (chunkDv != null && chunkDv.advanceExact(doc)) {
+                            BytesRef chunkBytes = chunkDv.binaryValue();
+                            try {
+                                var closedChunk = ClosedChunkIndexIO.getClosedChunkFromSerialized(chunkBytes);
+                                ChunkIterator it = closedChunk.getChunkIterator();
+                                while (it.next() != ChunkIterator.ValueType.NONE) {
+                                    sampleCount++;
+                                }
+                            } catch (Exception e) {
+                                logger.warn("Failed to deserialize chunk at doc {}: {}", doc, e.getMessage());
+                            }
+                        }
+                    }
+                }
+            } finally {
+                index.getDirectoryReaderManager().release(reader);
+            }
+        } catch (Exception e) {
+            logger.warn("Failed to count samples and series: {}", e.getMessage());
+            return new SampleSeriesStats(0, 0);
+        }
+        return new SampleSeriesStats(sampleCount, uniqueLabelsHashes.size());
     }
 
     private void handleLocalReload(ReloadBlockRequest request, TSDBEngine tsdbEngine, ActionListener<LoadBlockResponse> listener) {

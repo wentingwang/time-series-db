@@ -223,6 +223,21 @@ public class ClosedChunkIndex implements Closeable {
         }
     }
 
+    /**
+     * Get the number of documents (chunks) in this index.
+     *
+     * @return the number of documents
+     * @throws IOException if there's an error accessing the reader
+     */
+    public int getDocCount() throws IOException {
+        DirectoryReader reader = (DirectoryReader) directoryReaderManager.acquire();
+        try {
+            return reader.numDocs();
+        } finally {
+            directoryReaderManager.release(reader);
+        }
+    }
+
     public void commit() {
         try {
             indexWriter.commit();
