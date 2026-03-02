@@ -16,11 +16,22 @@ import java.io.IOException;
 
 import static org.opensearch.action.ValidateActions.addValidationError;
 
-/** Request to reload blocks already in the engine's blocks directory (blockName null = reload all). */
+/**
+ * Request to reload blocks in a TSDB index.
+ * <p>
+ * Supports two modes:
+ * <ul>
+ *   <li>Local reload (existing): reload blocks already in the engine's blocks directory</li>
+ *   <li>URL download (new): download a block from terrablob or load from a local directory path</li>
+ * </ul>
+ * When {@code url} is provided, it takes precedence and {@code blockName} is ignored.
+ */
 public class ReloadBlockRequest extends ActionRequest {
 
     private String index;
     private String blockName;
+    private String url;
+    private int shard = 0;
 
     public ReloadBlockRequest() {}
 
@@ -39,6 +50,8 @@ public class ReloadBlockRequest extends ActionRequest {
         super(in);
         this.index = in.readString();
         this.blockName = in.readOptionalString();
+        this.url = in.readOptionalString();
+        this.shard = in.readVInt();
     }
 
     @Override
@@ -46,6 +59,8 @@ public class ReloadBlockRequest extends ActionRequest {
         super.writeTo(out);
         out.writeString(index);
         out.writeOptionalString(blockName);
+        out.writeOptionalString(url);
+        out.writeVInt(shard);
     }
 
     @Override
@@ -53,6 +68,9 @@ public class ReloadBlockRequest extends ActionRequest {
         ActionRequestValidationException e = null;
         if (index == null || index.isEmpty()) {
             e = addValidationError("index is required", e);
+        }
+        if (shard < 0) {
+            e = addValidationError("shard must be >= 0", e);
         }
         return e;
     }
@@ -72,6 +90,29 @@ public class ReloadBlockRequest extends ActionRequest {
 
     public ReloadBlockRequest setBlockName(String blockName) {
         this.blockName = blockName;
+        return this;
+    }
+
+    public String getUrl() {
+        return url;
+    }
+
+    public ReloadBlockRequest setUrl(String url) {
+        this.url = url;
+        return this;
+    }
+
+    /** Returns true if a URL (terrablob or local path) was provided. */
+    public boolean hasUrl() {
+        return url != null && !url.isEmpty();
+    }
+
+    public int getShard() {
+        return shard;
+    }
+
+    public ReloadBlockRequest setShard(int shard) {
+        this.shard = shard;
         return this;
     }
 

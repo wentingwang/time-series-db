@@ -821,6 +821,113 @@ public class ClosedChunkIndexManager implements Closeable {
     }
 
     /**
+     * Adds a historical block from an external source path.
+     * <p>
+     * This method:
+     * 1. Validates the block directory name format (block_minTs_maxTs_uuid)
+     * 2. Copies the block directory into the engine's blocks directory
+     * 3. Opens and registers the block in closedChunkIndexMap
+     * 4. Updates the metadata store
+     * </p>
+     *
+     * @param sourceBlockPath Path to the block directory on disk (must follow naming: block_minTs_maxTs_uuid)
+     * @return true if the block was successfully added, false if a block with overlapping time range already exists
+     * @throws IOException if there is an error reading or copying the block
+     * @throws IllegalArgumentException if the block directory name is invalid
+     */
+    public boolean addHistoricalBlock(Path sourceBlockPath) throws IOException {
+        ensureOpen();
+
+        String dirName = sourceBlockPath.getFileName().toString();
+        if (!dirName.startsWith(BLOCK_PREFIX + "_")) {
+            throw new IllegalArgumentException("Invalid block directory name: " + dirName + ". Must start with '" + BLOCK_PREFIX + "_'");
+        }
+
+        String[] parts = dirName.split("_");
+        if (parts.length < 4) {
+            throw new IllegalArgumentException(
+                "Invalid block directory name format: " + dirName + ". Expected format: block_<minTimestamp>_<maxTimestamp>_<uuid>"
+            );
+        }
+
+        long minTimestamp;
+        long maxTimestamp;
+        try {
+            minTimestamp = Long.parseLong(parts[1]);
+            maxTimestamp = Long.parseLong(parts[2]);
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException("Invalid timestamp in block directory name: " + dirName, e);
+        }
+
+        lock.lock();
+        try {
+            if (closedChunkIndexMap.containsKey(maxTimestamp)) {
+                log.warn("Block with maxTimestamp {} already exists, skipping", maxTimestamp);
+                return false;
+            }
+
+            Path targetBlockPath = dir.resolve(dirName);
+            if (Files.exists(targetBlockPath)) {
+                throw new IOException("Target block directory already exists: " + targetBlockPath);
+            }
+
+            log.info("Copying historical block from {} to {}", sourceBlockPath, targetBlockPath);
+            copyDirectory(sourceBlockPath, targetBlockPath);
+
+            ClosedChunkIndex.Metadata metadata = new ClosedChunkIndex.Metadata(dirName, minTimestamp, maxTimestamp);
+            ClosedChunkIndex newIndex = new ClosedChunkIndex(targetBlockPath, metadata, resolution, indexSettings);
+            closedChunkIndexMap.put(maxTimestamp, newIndex);
+
+            List<String> indexMetadata = new ArrayList<>();
+            for (ClosedChunkIndex index : closedChunkIndexMap.values()) {
+                indexMetadata.add(index.getMetadata().marshal());
+            }
+
+            try (XContentBuilder builder = XContentFactory.jsonBuilder()) {
+                builder.startObject();
+                builder.array(INDEX_METADATA_KEY, indexMetadata.toArray(new String[0]));
+                builder.endObject();
+                metadataStore.store(METADATA_STORE_KEY, builder.toString());
+            }
+
+            log.info("Successfully added historical block: {}, range: [{}, {}]", dirName, minTimestamp, maxTimestamp);
+            TSDBMetrics.incrementCounter(TSDBMetrics.INDEX.indexCreatedTotal, 1);
+            return true;
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    private static void copyDirectory(Path source, Path target) throws IOException {
+        if (!Files.exists(source)) {
+            throw new IOException("Source directory does not exist: " + source);
+        }
+        if (!Files.isDirectory(source)) {
+            throw new IOException("Source is not a directory: " + source);
+        }
+
+        java.nio.file.Files.walkFileTree(source, new java.nio.file.SimpleFileVisitor<Path>() {
+            @Override
+            public java.nio.file.FileVisitResult preVisitDirectory(Path dir, java.nio.file.attribute.BasicFileAttributes attrs)
+                throws IOException {
+                String relativePath = source.relativize(dir).toString();
+                Path targetDir = relativePath.isEmpty() ? target : target.resolve(relativePath);
+                java.nio.file.Files.createDirectories(targetDir);
+                return java.nio.file.FileVisitResult.CONTINUE;
+            }
+
+            @Override
+            public java.nio.file.FileVisitResult visitFile(Path file, java.nio.file.attribute.BasicFileAttributes attrs)
+                throws IOException {
+                String relativePath = source.relativize(file).toString();
+                Path targetFile = target.resolve(relativePath);
+                java.nio.file.Files.copy(file, targetFile);
+                return java.nio.file.FileVisitResult.CONTINUE;
+            }
+        });
+    }
+
+    /**
      * Snapshot all closed chunk indexes.
      *
      * @return a SnapshotResult containing the list of IndexCommits and release actions

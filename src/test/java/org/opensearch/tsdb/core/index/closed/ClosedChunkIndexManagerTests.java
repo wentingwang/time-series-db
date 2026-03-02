@@ -925,6 +925,67 @@ public class ClosedChunkIndexManagerTests extends OpenSearchTestCase {
         }
     }
 
+    public void testAddHistoricalBlockFromExternalPath() throws IOException, URISyntaxException {
+        Path tempDir = createTempDir("testAddHistoricalBlock");
+        Path blocksDir = tempDir.resolve("blocks");
+        Files.createDirectories(blocksDir);
+
+        // Create a source block in a separate temp directory (simulating external source)
+        String blockName = "block_1736988453796_1736995653796_test";
+        Path externalDir = createTempDir("external-source");
+        Path sourceBlock = Path.of(getClass().getResource("reload_block/" + blockName).toURI());
+        Path externalBlock = externalDir.resolve(blockName);
+        copyDirectory(sourceBlock, externalBlock);
+
+        MetadataStore metadataStore = new InMemoryMetadataStore();
+        ClosedChunkIndexManager manager = new ClosedChunkIndexManager(
+            tempDir,
+            metadataStore,
+            new NOOPRetention(),
+            new NoopCompaction(),
+            threadPool,
+            new ShardId("index", "uuid", 0),
+            defaultSettings
+        );
+
+        assertEquals("No blocks before add", 0, manager.getNumBlocks());
+
+        boolean added = manager.addHistoricalBlock(externalBlock);
+        assertTrue("addHistoricalBlock should return true", added);
+        assertEquals("One block after add", 1, manager.getNumBlocks());
+
+        // Block should have been copied to blocks dir
+        assertTrue("Block should exist in blocks dir", Files.exists(blocksDir.resolve(blockName)));
+
+        // Adding same block again should return false
+        boolean addedAgain = manager.addHistoricalBlock(externalBlock);
+        assertFalse("addHistoricalBlock again should return false (duplicate maxTimestamp)", addedAgain);
+
+        manager.close();
+    }
+
+    public void testAddHistoricalBlockInvalidNameThrows() throws IOException {
+        Path tempDir = createTempDir("testAddHistoricalBlockInvalid");
+        Path externalDir = createTempDir("external-invalid");
+        Path invalidBlock = Files.createDirectory(externalDir.resolve("not_a_block"));
+
+        ClosedChunkIndexManager manager = new ClosedChunkIndexManager(
+            tempDir,
+            new InMemoryMetadataStore(),
+            new NOOPRetention(),
+            new NoopCompaction(),
+            threadPool,
+            new ShardId("index", "uuid", 0),
+            defaultSettings
+        );
+        try {
+            IllegalArgumentException e = expectThrows(IllegalArgumentException.class, () -> manager.addHistoricalBlock(invalidBlock));
+            assertTrue(e.getMessage().contains("Invalid block directory name"));
+        } finally {
+            manager.close();
+        }
+    }
+
     private static void copyDirectory(Path source, Path target) throws IOException {
         Path sourceNormalized = source.normalize();
         Files.walkFileTree(source, new SimpleFileVisitor<>() {

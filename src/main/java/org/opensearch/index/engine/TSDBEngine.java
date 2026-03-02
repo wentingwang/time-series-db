@@ -1202,6 +1202,16 @@ public class TSDBEngine extends Engine {
     }
 
     /**
+     * Copies a historical block from a source path into the engine's blocks directory and registers it.
+     *
+     * @param sourceBlockPath path to a block directory (must follow naming: block_minTs_maxTs_uuid)
+     * @return true if added, false if a block with overlapping time range already exists
+     */
+    public boolean addHistoricalBlock(java.nio.file.Path sourceBlockPath) throws IOException {
+        return closedChunkIndexManager.addHistoricalBlock(sourceBlockPath);
+    }
+
+    /**
      * Prepares an index operation from the source document.
      *
      * <p>TSDBEngine handles its own parsing of the indexing request source,
