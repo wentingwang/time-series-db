@@ -416,7 +416,67 @@ compileJava.dependsOn generateJavaCC
 // Exclude store-subdirectory from dependency license checks since it's an internal OpenSearch plugin
 tasks.named("dependencyLicenses").configure {
     ignoreSha('store-subdirectory')
+    mapping from: /aws-java-sdk-.*/, to: 'aws-java-sdk'
+    mapping from: /jmespath-java.*/, to: 'aws-java-sdk'
+    mapping from: /jackson-.*/, to: 'jackson'
+    mapping from: /commons-compress.*/, to: 'commons-compress'
+    mapping from: /commons-io.*/, to: 'commons-io'
+    mapping from: /commons-lang3.*/, to: 'commons-lang3'
+    mapping from: /commons-logging.*/, to: 'commons-logging'
+    mapping from: /httpclient.*/, to: 'httpclient'
+    mapping from: /httpcore.*/, to: 'httpcore'
 }
+
+// Missing classes from transitive dependencies of AWS SDK / commons-compress that are optional
+thirdPartyAudit.ignoreMissingClasses(
+    // javax.servlet (optional for httpcomponents)
+    'javax.servlet.ServletContextEvent',
+    'javax.servlet.ServletContextListener',
+    // javax.xml.bind (optional for AWS SDK on Java 9+)
+    'javax.xml.bind.DatatypeConverter',
+    'javax.xml.bind.JAXBContext',
+    // Avalon/LogKit logging (optional for commons-logging)
+    'org.apache.avalon.framework.logger.Logger',
+    'org.apache.log.Hierarchy',
+    'org.apache.log.Logger',
+    // Log4j 1.x (optional for commons-logging)
+    'org.apache.log4j.Level',
+    'org.apache.log4j.Logger',
+    'org.apache.log4j.Priority',
+    // Apache Commons Codec (optional for httpcomponents/AWS SDK)
+    'org.apache.commons.codec.binary.Base64',
+    'org.apache.commons.codec.digest.PureJavaCrc32C',
+    'org.apache.commons.codec.digest.XXHash32',
+    // Brotli (optional for commons-compress)
+    'org.brotli.dec.BrotliInputStream',
+    // ASM (optional for commons-compress)
+    'org.objectweb.asm.AnnotationVisitor',
+    'org.objectweb.asm.Attribute',
+    'org.objectweb.asm.ClassReader',
+    'org.objectweb.asm.ClassVisitor',
+    'org.objectweb.asm.FieldVisitor',
+    'org.objectweb.asm.Label',
+    'org.objectweb.asm.MethodVisitor',
+    'org.objectweb.asm.Type',
+    // SLF4J (optional for httpcomponents)
+    'org.slf4j.ILoggerFactory',
+    'org.slf4j.Logger',
+    'org.slf4j.LoggerFactory',
+    'org.slf4j.Marker',
+    'org.slf4j.MarkerFactory',
+    'org.slf4j.spi.LocationAwareLogger',
+    // XZ/LZMA (optional for commons-compress)
+    'org.tukaani.xz.DeltaOptions',
+    'org.tukaani.xz.FilterOptions',
+    'org.tukaani.xz.LZMA2InputStream',
+    'org.tukaani.xz.LZMA2Options',
+    'org.tukaani.xz.LZMAInputStream',
+    'org.tukaani.xz.LZMAOutputStream',
+    'org.tukaani.xz.MemoryLimitException',
+    'org.tukaani.xz.UnsupportedOptionsException',
+    'org.tukaani.xz.XZ',
+    'org.tukaani.xz.XZOutputStream',
+)
 
 // Exclude generated files and TransportReloadBlockAction (uses reflection for IndexShard.getEngineOrNull)
 forbiddenApisMain {
