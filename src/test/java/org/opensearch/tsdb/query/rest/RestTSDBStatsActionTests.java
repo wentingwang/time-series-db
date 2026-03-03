@@ -25,6 +25,7 @@ import org.opensearch.test.rest.FakeRestRequest;
 import org.opensearch.transport.client.node.NodeClient;
 import org.opensearch.tsdb.TSDBPlugin;
 import org.opensearch.tsdb.query.aggregator.InternalTSDBStats;
+import org.opensearch.tsdb.query.utils.TSDBStatsConstants;
 
 import java.util.HashMap;
 import java.util.HashSet;
@@ -84,7 +85,7 @@ public class RestTSDBStatsActionTests extends OpenSearchTestCase {
 
             // Create a mock InternalTSDBStats aggregation with sample data
             InternalTSDBStats mockStats = InternalTSDBStats.forCoordinatorLevel(
-                "tsdb_stats",
+                TSDBStatsConstants.AGGREGATION_NAME,
                 null, // headStats
                 new InternalTSDBStats.CoordinatorLevelStats(100L, labelStats), // coordinator stats with sample label data
                 null // metadata

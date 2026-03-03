@@ -18,6 +18,7 @@ import org.opensearch.test.rest.FakeRestChannel;
 import org.opensearch.test.rest.FakeRestRequest;
 import org.opensearch.tsdb.query.aggregator.InternalTSDBStats;
 import org.opensearch.tsdb.query.aggregator.InternalTimeSeries;
+import org.opensearch.tsdb.query.utils.TSDBStatsConstants;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -63,7 +64,7 @@ public class TSDBStatsResponseListenerTests extends OpenSearchTestCase {
         labelStats.put("cluster", new InternalTSDBStats.CoordinatorLevelStats.LabelStats(100L, clusterValues));
 
         return InternalTSDBStats.forCoordinatorLevel(
-            "tsdb_stats",
+            TSDBStatsConstants.AGGREGATION_NAME,
             HEAD_STATS,
             new InternalTSDBStats.CoordinatorLevelStats(25644L, labelStats),
             Map.of()
@@ -76,7 +77,7 @@ public class TSDBStatsResponseListenerTests extends OpenSearchTestCase {
         labelStats.put("cluster", new InternalTSDBStats.CoordinatorLevelStats.LabelStats(100L, Map.of("prod", 80L)));
 
         return InternalTSDBStats.forCoordinatorLevel(
-            "tsdb_stats",
+            TSDBStatsConstants.AGGREGATION_NAME,
             headStats,
             new InternalTSDBStats.CoordinatorLevelStats(500L, labelStats),
             Map.of()
@@ -86,7 +87,7 @@ public class TSDBStatsResponseListenerTests extends OpenSearchTestCase {
     /** Empty stats: no labels, null numSeries */
     private static InternalTSDBStats createEmptyStats() {
         return InternalTSDBStats.forCoordinatorLevel(
-            "tsdb_stats",
+            TSDBStatsConstants.AGGREGATION_NAME,
             null,
             new InternalTSDBStats.CoordinatorLevelStats(null, new HashMap<>()),
             Map.of()
@@ -99,7 +100,7 @@ public class TSDBStatsResponseListenerTests extends OpenSearchTestCase {
         labelStats.put("cluster", new InternalTSDBStats.CoordinatorLevelStats.LabelStats(null, Map.of("prod", 80L)));
 
         return InternalTSDBStats.forCoordinatorLevel(
-            "tsdb_stats",
+            TSDBStatsConstants.AGGREGATION_NAME,
             null,
             new InternalTSDBStats.CoordinatorLevelStats(500L, labelStats),
             Map.of()
@@ -117,7 +118,7 @@ public class TSDBStatsResponseListenerTests extends OpenSearchTestCase {
         labelStats.put("name", new InternalTSDBStats.CoordinatorLevelStats.LabelStats(650L, nameValues));
 
         return InternalTSDBStats.forCoordinatorLevel(
-            "tsdb_stats",
+            TSDBStatsConstants.AGGREGATION_NAME,
             null,
             new InternalTSDBStats.CoordinatorLevelStats(650L, labelStats),
             Map.of()
@@ -290,7 +291,7 @@ public class TSDBStatsResponseListenerTests extends OpenSearchTestCase {
         Map<String, InternalTSDBStats.CoordinatorLevelStats.LabelStats> labelStats = new HashMap<>();
         labelStats.put("name", new InternalTSDBStats.CoordinatorLevelStats.LabelStats(100L, nameValues));
         InternalTSDBStats stats2 = InternalTSDBStats.forCoordinatorLevel(
-            "tsdb_stats",
+            TSDBStatsConstants.AGGREGATION_NAME,
             null,
             new InternalTSDBStats.CoordinatorLevelStats(100L, labelStats),
             Map.of()
@@ -398,7 +399,7 @@ public class TSDBStatsResponseListenerTests extends OpenSearchTestCase {
         FakeRestChannel channel3 = new FakeRestChannel(new FakeRestRequest(), true, 1);
         TSDBStatsResponseListener listener3 = new TSDBStatsResponseListener(channel3, List.of(), "grouped");
 
-        InternalTimeSeries wrongAgg = new InternalTimeSeries("tsdb_stats", new ArrayList<>(), Map.of());
+        InternalTimeSeries wrongAgg = new InternalTimeSeries(TSDBStatsConstants.AGGREGATION_NAME, new ArrayList<>(), Map.of());
         SearchResponse searchResponse3 = mock(SearchResponse.class);
         when(searchResponse3.getAggregations()).thenReturn(new Aggregations(List.of(wrongAgg)));
         listener3.onResponse(searchResponse3);
