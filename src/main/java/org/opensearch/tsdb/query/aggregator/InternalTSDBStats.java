@@ -369,15 +369,15 @@ public class InternalTSDBStats extends InternalAggregation {
             out.writeBoolean(false);
         }
 
+        if (shardStats == null && coordinatorStats == null) {
+            throw new IllegalStateException("InternalTSDBStats has neither shardStats nor coordinatorStats");
+        }
         // Write which mode we're in and the corresponding stats
         if (shardStats != null) {
             out.writeBoolean(true); // isShardLevel = true
             shardStats.writeTo(out);
         } else {
             out.writeBoolean(false); // isShardLevel = false
-            if (coordinatorStats == null) {
-                throw new IllegalStateException("InternalTSDBStats has neither shardStats nor coordinatorStats");
-            }
             coordinatorStats.writeTo(out);
         }
     }
