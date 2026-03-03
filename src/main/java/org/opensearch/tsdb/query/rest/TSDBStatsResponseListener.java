@@ -16,13 +16,19 @@ import org.opensearch.rest.RestResponse;
 import org.opensearch.rest.action.RestToXContentListener;
 import org.opensearch.search.aggregations.Aggregation;
 import org.opensearch.tsdb.query.aggregator.InternalTSDBStats;
-import org.opensearch.tsdb.query.utils.TSDBStatsConstants;
 
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+
+import static org.opensearch.tsdb.query.utils.TSDBStatsConstants.AGGREGATION_NAME;
+import static org.opensearch.tsdb.query.utils.TSDBStatsConstants.FORMAT_FLAT;
+import static org.opensearch.tsdb.query.utils.TSDBStatsConstants.INCLUDE_ALL;
+import static org.opensearch.tsdb.query.utils.TSDBStatsConstants.INCLUDE_HEAD_STATS;
+import static org.opensearch.tsdb.query.utils.TSDBStatsConstants.INCLUDE_LABEL_VALUES;
+import static org.opensearch.tsdb.query.utils.TSDBStatsConstants.INCLUDE_VALUE_STATS;
 
 /**
  * Response listener for TSDB stats queries.
@@ -102,7 +108,7 @@ public class TSDBStatsResponseListener extends RestToXContentListener<SearchResp
             return new BytesRestResponse(RestStatus.INTERNAL_SERVER_ERROR, builder);
         }
 
-        Aggregation agg = searchResponse.getAggregations().get(TSDBStatsConstants.AGG_NAME);
+        Aggregation agg = searchResponse.getAggregations().get(AGGREGATION_NAME);
         if (!(agg instanceof InternalTSDBStats)) {
             builder.field(FIELD_ERROR, "Unexpected aggregation type");
             builder.endObject();
@@ -111,7 +117,7 @@ public class TSDBStatsResponseListener extends RestToXContentListener<SearchResp
 
         InternalTSDBStats tsdbStats = (InternalTSDBStats) agg;
 
-        if (TSDBStatsConstants.FORMAT_FLAT.equals(format)) {
+        if (FORMAT_FLAT.equals(format)) {
             formatFlatResponse(tsdbStats, builder);
         } else {
             formatGroupedResponse(tsdbStats, builder);
@@ -144,12 +150,9 @@ public class TSDBStatsResponseListener extends RestToXContentListener<SearchResp
      * @throws IOException if an I/O error occurs
      */
     private void formatGroupedResponse(InternalTSDBStats stats, XContentBuilder builder) throws IOException {
-        boolean includeValueStats = includeOptions.contains(TSDBStatsConstants.INCLUDE_ALL)
-            || includeOptions.contains(TSDBStatsConstants.INCLUDE_VALUE_STATS);
-        boolean includeHeadStats = includeOptions.contains(TSDBStatsConstants.INCLUDE_ALL)
-            || includeOptions.contains(TSDBStatsConstants.INCLUDE_HEAD_STATS);
-        boolean includeLabelStats = includeOptions.contains(TSDBStatsConstants.INCLUDE_ALL)
-            || includeOptions.contains(TSDBStatsConstants.INCLUDE_LABEL_VALUES);
+        boolean includeValueStats = includeOptions.contains(INCLUDE_ALL) || includeOptions.contains(INCLUDE_VALUE_STATS);
+        boolean includeHeadStats = includeOptions.contains(INCLUDE_ALL) || includeOptions.contains(INCLUDE_HEAD_STATS);
+        boolean includeLabelStats = includeOptions.contains(INCLUDE_ALL) || includeOptions.contains(INCLUDE_LABEL_VALUES);
 
         if (includeHeadStats && stats.getHeadStats() != null) {
             writeHeadStats(stats.getHeadStats(), builder);
@@ -186,12 +189,9 @@ public class TSDBStatsResponseListener extends RestToXContentListener<SearchResp
      * @throws IOException if an I/O error occurs
      */
     private void formatFlatResponse(InternalTSDBStats stats, XContentBuilder builder) throws IOException {
-        boolean includeValueStats = includeOptions.contains(TSDBStatsConstants.INCLUDE_ALL)
-            || includeOptions.contains(TSDBStatsConstants.INCLUDE_VALUE_STATS);
-        boolean includeHeadStats = includeOptions.contains(TSDBStatsConstants.INCLUDE_ALL)
-            || includeOptions.contains(TSDBStatsConstants.INCLUDE_HEAD_STATS);
-        boolean includeLabelValues = includeOptions.contains(TSDBStatsConstants.INCLUDE_ALL)
-            || includeOptions.contains(TSDBStatsConstants.INCLUDE_LABEL_VALUES);
+        boolean includeValueStats = includeOptions.contains(INCLUDE_ALL) || includeOptions.contains(INCLUDE_VALUE_STATS);
+        boolean includeHeadStats = includeOptions.contains(INCLUDE_ALL) || includeOptions.contains(INCLUDE_HEAD_STATS);
+        boolean includeLabelValues = includeOptions.contains(INCLUDE_ALL) || includeOptions.contains(INCLUDE_LABEL_VALUES);
 
         if (includeHeadStats && stats.getHeadStats() != null) {
             writeHeadStats(stats.getHeadStats(), builder);

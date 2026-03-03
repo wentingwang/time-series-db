@@ -46,7 +46,7 @@ import java.util.stream.Collectors;
 import static org.opensearch.tsdb.core.mapping.Constants.IndexSchema.LABELS;
 import static org.opensearch.rest.RestRequest.Method.GET;
 import static org.opensearch.rest.RestRequest.Method.POST;
-import static org.opensearch.tsdb.query.utils.TSDBStatsConstants.AGG_NAME;
+import static org.opensearch.tsdb.query.utils.TSDBStatsConstants.AGGREGATION_NAME;
 
 /**
  * REST handler for TSDB Stats queries.
@@ -407,7 +407,7 @@ public class RestTSDBStatsAction extends BaseTSDBAction {
             QueryBuilder filter = buildQueryFromFetch(fetchPlan, startMs, endMs);
 
             // Build aggregation
-            TSDBStatsAggregationBuilder aggBuilder = new TSDBStatsAggregationBuilder(AGG_NAME, startMs, endMs, includeValueStats);
+            TSDBStatsAggregationBuilder aggBuilder = new TSDBStatsAggregationBuilder(AGGREGATION_NAME, startMs, endMs, includeValueStats);
 
             // Build search request
             SearchSourceBuilder searchSourceBuilder = new SearchSourceBuilder().query(filter).aggregation(aggBuilder).size(0);

@@ -14,8 +14,8 @@ public final class TSDBStatsConstants {
 
     private TSDBStatsConstants() {}
 
-    // Aggregation name
-    public static final String AGG_NAME = "tsdb_stats";
+    // User defined aggregation name
+    public static final String AGGREGATION_NAME = "tsdb_stats_summary";
 
     // Include option values
     public static final String INCLUDE_ALL = "all";

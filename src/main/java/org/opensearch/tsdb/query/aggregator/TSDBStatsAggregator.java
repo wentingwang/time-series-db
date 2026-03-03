@@ -29,7 +29,6 @@ import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Aggregator that collects TSDB statistics from time series data.
@@ -58,9 +57,9 @@ public class TSDBStatsAggregator extends MetricsAggregator {
     private final Set<Long> seenSeriesIds;
 
     // BytesRefHash to store "key:value" strings and assign ordinals (shard-level, shared across segments).
-    // BytesRefHash is NOT thread-safe, so all access must be synchronized via ordinalMapLock.
+    // Each aggregator instance is used by exactly one thread (CSS creates separate instances per slice),
+    // so no synchronization is needed.
     private final BytesRefHash labelValuePairOrdinalMap;
-    private final Object ordinalMapLock = new Object();
 
     // Track seriesId set per ordinal: ordinal -> Set<Long>
     // Key grouping is deferred to buildAggregation() to avoid parsing in hot path
@@ -92,12 +91,12 @@ public class TSDBStatsAggregator extends MetricsAggregator {
         this.maxTimestamp = maxTimestamp;
         this.includeValueStats = includeValueStats;
 
-        this.seenSeriesIds = ConcurrentHashMap.newKeySet();
+        this.seenSeriesIds = new HashSet<>();
 
         ByteBlockPool pool = new ByteBlockPool(new ByteBlockPool.DirectAllocator());
         this.labelValuePairOrdinalMap = new BytesRefHash(pool);
 
-        this.ordinalToSeriesIdsMap = includeValueStats ? new ConcurrentHashMap<>() : null;
+        this.ordinalToSeriesIdsMap = includeValueStats ? new HashMap<>() : null;
     }
 
     @Override
@@ -132,8 +131,9 @@ public class TSDBStatsAggregator extends MetricsAggregator {
             Labels labels = tsdbLeafReader.labelsForDoc(doc, tsdbDocValues);
             // We assume labels hash is the seriesId
             // This need to be changed when we start accepting reference/seriesId from indexing
-            // Uses 64-bit MurmurHash3 for series identity. Collision probability is ~n²/2^65:
-            // ~1 in 37M for 1M series, ~1 in 370 for 1B series. Acceptable for stats counting.
+            // Currently we by default use BytesLabels which uses 64-bit MurmurHash3 for series identity.
+            // Collision probability is ~n²/2^65: ~1 in 37M for 1M series, ~1 in 370 for 1B series.
+            // Acceptable for stats counting.
             long seriesId = labels.stableHash();
             // Already processed this series - skip entire document
             if (!seenSeriesIds.add(seriesId)) {
@@ -143,12 +143,7 @@ public class TSDBStatsAggregator extends MetricsAggregator {
             // TODO process each label using BytesRef directly (avoid String conversion)
             BytesRef[] keyValuePairs = labels.toKeyValueBytesRefs();
             for (BytesRef keyValue : keyValuePairs) {
-                // Synchronized because BytesRefHash is not thread-safe and segments
-                // may be collected concurrently (Concurrent Segment Search).
-                long ord;
-                synchronized (ordinalMapLock) {
-                    ord = labelValuePairOrdinalMap.add(keyValue);
-                }
+                long ord = labelValuePairOrdinalMap.add(keyValue);
                 if (ord < 0) {
                     // Already exists, get existing ordinal
                     ord = -1 - ord;
@@ -158,12 +153,7 @@ public class TSDBStatsAggregator extends MetricsAggregator {
                 // Track seriesId per value if enabled
                 // TODO skip ordinalToSeriesIdsMap when includeValueStats=false
                 if (ordinalToSeriesIdsMap != null) {
-                    // computeIfAbsent is atomic in ConcurrentHashMap
-                    Set<Long> seriesIds = ordinalToSeriesIdsMap.computeIfAbsent(
-                        ordinal,
-                        k -> ConcurrentHashMap.newKeySet()  // Thread-safe set
-                    );
-                    seriesIds.add(seriesId);
+                    ordinalToSeriesIdsMap.computeIfAbsent(ordinal, k -> new HashSet<>()).add(seriesId);
                 }
             }
         }
@@ -178,18 +168,10 @@ public class TSDBStatsAggregator extends MetricsAggregator {
         BytesRef scratch = new BytesRef();
 
         // Iterate all ordinals in labelValuePairOrdinalMap and group by key.
-        // Synchronized because BytesRefHash is not thread-safe. The OpenSearch framework guarantees
-        // buildAggregation() is called only after all collect() calls complete (happens-before),
-        // but we synchronize defensively to make the thread-safety contract explicit.
-        final int size;
-        synchronized (ordinalMapLock) {
-            size = labelValuePairOrdinalMap.size();
-        }
+        final int size = labelValuePairOrdinalMap.size();
         for (int ordinal = 0; ordinal < size; ordinal++) {
             // Lookup "key:value" from ordinal
-            synchronized (ordinalMapLock) {
-                labelValuePairOrdinalMap.get(ordinal, scratch);
-            }
+            labelValuePairOrdinalMap.get(ordinal, scratch);
             String keyValue = scratch.utf8ToString();
 
             // Parse to extract key and value

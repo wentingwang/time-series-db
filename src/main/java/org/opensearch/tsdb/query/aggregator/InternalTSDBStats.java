@@ -11,7 +11,6 @@ import org.opensearch.core.common.io.stream.StreamInput;
 import org.opensearch.core.common.io.stream.StreamOutput;
 import org.opensearch.core.xcontent.XContentBuilder;
 import org.opensearch.search.aggregations.InternalAggregation;
-import org.opensearch.tsdb.query.utils.TSDBStatsConstants;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -51,6 +50,7 @@ import java.util.stream.Collectors;
  */
 public class InternalTSDBStats extends InternalAggregation {
 
+    private static final String NAME = "tsdb_stats";
     private final HeadStats headStats;
 
     // Exactly one of these will be non-null to indicate which phase we're in
@@ -389,7 +389,7 @@ public class InternalTSDBStats extends InternalAggregation {
      */
     @Override
     public String getWriteableName() {
-        return TSDBStatsConstants.AGG_NAME;
+        return NAME;
     }
 
     /**

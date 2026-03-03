@@ -54,7 +54,7 @@ public class TSDBStatsAggregationBuilder extends AbstractAggregationBuilder<TSDB
     /**
      * Creates a TSDB stats aggregation builder.
      *
-     * @param name The name of the aggregation
+     * @param name The user defined name of the aggregation
      * @param minTimestamp The minimum timestamp for filtering
      * @param maxTimestamp The maximum timestamp for filtering
      * @param includeValueStats Whether to include per-value statistics
