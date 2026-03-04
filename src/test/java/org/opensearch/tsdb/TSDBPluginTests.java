@@ -82,7 +82,7 @@ public class TSDBPluginTests extends OpenSearchTestCase {
         List<Setting<?>> settings = plugin.getSettings();
 
         assertNotNull("Settings list should not be null", settings);
-        assertThat("Should have 26 settings", settings, hasSize(26));
+        assertThat("Should have 27 settings", settings, hasSize(27));
 
         // Verify TSDB_ENGINE_ENABLED is present
         assertTrue("Should contain TSDB_ENGINE_ENABLED setting", settings.contains(TSDBPlugin.TSDB_ENGINE_ENABLED));
@@ -147,6 +147,10 @@ public class TSDBPluginTests extends OpenSearchTestCase {
         assertTrue(
             "Should contain TSDB_ENGINE_FORCE_MERGE_MAX_SEGMENTS_AFTER_MERGE setting",
             settings.contains(TSDBPlugin.TSDB_ENGINE_FORCE_MERGE_MAX_SEGMENTS_AFTER_MERGE)
+        );
+        assertTrue(
+            "Should contain TSDB_ENGINE_INTERNAL_TIME_SERIES_FORMAT",
+            settings.contains(TSDBPlugin.TSDB_ENGINE_INTERNAL_TIME_SERIES_FORMAT)
         );
     }
 
@@ -390,6 +394,7 @@ public class TSDBPluginTests extends OpenSearchTestCase {
         allSettings.add(TSDBPlugin.TSDB_ENGINE_REMOTE_INDEX_SETTINGS_CACHE_MAX_SIZE);
         allSettings.add(TSDBPlugin.TSDB_INGESTION_LAG_COORDINATOR_METRICS_ENABLED);
         allSettings.add(TSDBPlugin.TSDB_INGESTION_LAG_SEARCHABLE_METRICS_ENABLED);
+        allSettings.add(TSDBPlugin.TSDB_ENGINE_INTERNAL_TIME_SERIES_FORMAT);
 
         ClusterSettings mockClusterSettings = new ClusterSettings(Settings.EMPTY, allSettings);
         when(mockClusterService.getClusterSettings()).thenReturn(mockClusterSettings);

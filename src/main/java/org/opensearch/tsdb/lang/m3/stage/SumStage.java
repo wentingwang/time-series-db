@@ -10,6 +10,7 @@ package org.opensearch.tsdb.lang.m3.stage;
 import org.opensearch.core.common.io.stream.StreamInput;
 import org.opensearch.tsdb.core.model.FloatSample;
 import org.opensearch.tsdb.core.model.Sample;
+import org.opensearch.tsdb.core.model.SampleList;
 import org.opensearch.tsdb.query.stage.PipelineStageAnnotation;
 import org.opensearch.tsdb.query.utils.RamUsageConstants;
 
@@ -91,6 +92,11 @@ public class SumStage extends AbstractGroupingSampleStage<Double> {
     @Override
     protected Sample bucketToSample(long timestamp, Double bucket) {
         return new FloatSample(timestamp, bucket);
+    }
+
+    @Override
+    protected SampleList mapToSampleList(Map<Long, Double> timestampToSample) {
+        return doubleMapToSampleList(timestampToSample);
     }
 
     @Override

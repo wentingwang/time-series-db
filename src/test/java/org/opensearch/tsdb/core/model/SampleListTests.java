@@ -8,8 +8,12 @@
 package org.opensearch.tsdb.core.model;
 
 import org.apache.lucene.util.RamUsageEstimator;
-import org.opensearch.test.OpenSearchTestCase;
+import org.opensearch.Version;
+import org.opensearch.common.io.stream.BytesStreamOutput;
+import org.opensearch.core.common.io.stream.StreamInput;
+import org.opensearch.test.AbstractWireTestCase;
 
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -17,7 +21,7 @@ import java.util.List;
 /**
  * Tests for SampleList interface and its implementations.
  */
-public class SampleListTests extends OpenSearchTestCase {
+public class SampleListTests extends AbstractWireTestCase<SampleList> {
 
     /**
      * Tests that ramBytesUsed() returns a reasonable value for an empty list.
@@ -101,5 +105,94 @@ public class SampleListTests extends OpenSearchTestCase {
 
         // Reference size should match RamUsageEstimator (4 with compressed OOPs, 8 without)
         assertEquals("REFERENCE_SIZE should use RamUsageEstimator", RamUsageEstimator.NUM_BYTES_OBJECT_REF, SampleList.REFERENCE_SIZE);
+    }
+
+    @Override
+    protected SampleList createTestInstance() {
+        return switch (randomFrom(SampleList.Implementations.values())) {
+            case FloatSampleList -> createRandomFloatList();
+            case FloatConstantList -> createRandomConstantList();
+            case ListWrapper -> createRandomListWrapper();
+        };
+    }
+
+    @Override
+    protected SampleList copyInstance(SampleList instance, Version version) throws IOException {
+        // Serialize and deserialize
+        try (BytesStreamOutput out = new BytesStreamOutput()) {
+            SampleList.writeTo(instance, out);
+            try (StreamInput in = out.bytes().streamInput()) {
+                return SampleList.readFrom(in);
+            }
+        }
+    }
+
+    private SampleList createRandomListWrapper() {
+        int size = randomIntBetween(0, 500);
+        long minTimestamp = randomLongBetween(100000, 10000000);
+        long step = randomLongBetween(1000, 10000);
+        List<Sample> samples = new ArrayList<>(size);
+        for (int i = 0; i < size; i++) {
+            long ts = minTimestamp + step * i;
+            double value = randomDouble();
+            Sample sample = switch (randomIntBetween(0, 3)) {
+                case 1 -> new SumCountSample(ts, value, randomLongBetween(1, 100));
+                case 2 -> new MultiValueSample(ts, value);
+                case 3 -> new MinMaxSample(ts, value, randomDoubleBetween(value, value + 10, false));
+                default -> new FloatSample(ts, value);
+            };
+            samples.add(sample);
+        }
+        return SampleList.fromList(samples);
+    }
+
+    private SampleList createRandomConstantList() {
+        int size = randomIntBetween(0, 500);
+        long minTimestamp = randomLongBetween(100000, 10000000);
+        long step = randomLongBetween(1000, 10000);
+        double value = randomDouble();
+        return new FloatSampleList.ConstantList(minTimestamp, minTimestamp + step * size, step, value);
+    }
+
+    private SampleList createRandomFloatList() {
+        int size = randomIntBetween(0, 500);
+        FloatSampleList.Builder builder = new FloatSampleList.Builder(size);
+        long minTimestamp = randomLongBetween(100000, 10000000);
+        long step = randomLongBetween(1000, 10000);
+        for (int i = 0; i < size; i++) {
+            long ts = minTimestamp + step * i;
+            double value = randomDouble();
+            builder.add(ts, value);
+        }
+        return builder.build();
+    }
+
+    public void testSerializationWrapper() throws IOException {
+        List<Sample> samples = List.of(
+            new FloatSample(1000L, 1.0),
+            new SumCountSample(3000L, 4.5, 1),
+            new MultiValueSample(4000L, List.of(1.2, 3.4)),
+            new MinMaxSample(5000L, 3.6, 7.8)
+        );
+        SampleList original = SampleList.fromList(samples);
+        assertSerializedEquals(original);
+    }
+
+    public void testSerializationEdgeCases() throws IOException {
+        FloatSampleList list = new FloatSampleList(new double[0], new long[0], 0);
+        assertSerializedEquals(list);
+
+        FloatSampleList list2 = new FloatSampleList(new double[] { 1.0 }, new long[] { 0 }, 1);
+        assertSerializedEquals(list2);
+    }
+
+    private static void assertSerializedEquals(SampleList original) throws IOException {
+        try (BytesStreamOutput out = new BytesStreamOutput()) {
+            SampleList.writeTo(original, out);
+            try (StreamInput in = out.bytes().streamInput()) {
+                SampleList deserialized = SampleList.readFrom(in);
+                assertEquals(original, deserialized);
+            }
+        }
     }
 }

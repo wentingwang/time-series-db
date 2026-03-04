@@ -534,6 +534,17 @@ public class TSDBPlugin extends Plugin implements SearchPlugin, EnginePlugin, Ac
     );
 
     /**
+     * Setting to track which time series format the data node should use for serialization. For back compatibility purpose,
+     * default should be changed accordingly once the new change has been deployed and setting being changed.
+     */
+    public static final Setting<Integer> TSDB_ENGINE_INTERNAL_TIME_SERIES_FORMAT = Setting.intSetting(
+        "tsdb_engine.query.internal_time_series_format",
+        0,  // default: false (compression disabled)
+        Setting.Property.NodeScope,
+        Setting.Property.Dynamic
+    );
+
+    /**
      * Setting to set the OpenSearch ccs_minimize_roundtrip parameter for all requests
      */
     public static final Setting<Boolean> TSDB_ENGINE_CCS_MINIMIZE_ROUNDTRIPS = Setting.boolSetting(
@@ -657,6 +668,9 @@ public class TSDBPlugin extends Plugin implements SearchPlugin, EnginePlugin, Ac
         this.coordinatorMetricsEnabled = TSDB_INGESTION_LAG_COORDINATOR_METRICS_ENABLED.get(environment.settings());
         this.searchableMetricsEnabled = TSDB_INGESTION_LAG_SEARCHABLE_METRICS_ENABLED.get(environment.settings());
 
+        // serial format setting initialization
+        InternalTimeSeries.serialFormatSetting = TSDB_ENGINE_INTERNAL_TIME_SERIES_FORMAT.get(environment.settings());
+
         // Register settings update consumers for dynamic updates
         clusterService.getClusterSettings().addSettingsUpdateConsumer(TSDB_INGESTION_LAG_COORDINATOR_METRICS_ENABLED, enabled -> {
             this.coordinatorMetricsEnabled = enabled;
@@ -665,6 +679,19 @@ public class TSDBPlugin extends Plugin implements SearchPlugin, EnginePlugin, Ac
         clusterService.getClusterSettings().addSettingsUpdateConsumer(TSDB_INGESTION_LAG_SEARCHABLE_METRICS_ENABLED, enabled -> {
             this.searchableMetricsEnabled = enabled;
             logger.info("Searchable ingestion lag metrics {}", enabled ? "enabled" : "disabled");
+        });
+
+        clusterService.getClusterSettings().addSettingsUpdateConsumer(TSDB_ENGINE_INTERNAL_TIME_SERIES_FORMAT, version -> {
+            if (version != InternalTimeSeries.CURRENT_SERIAL_VERSION && version != InternalTimeSeries.LEGACY_SERIAL_VERSION) {
+                // don't change the current setting if an unknown version is set
+                logger.warn(
+                    "Unknown InternalTimeSeries version has been set, keep current serial version {}",
+                    InternalTimeSeries.serialFormatSetting
+                );
+                return;
+            }
+            InternalTimeSeries.serialFormatSetting = version;
+            logger.info("Internal time series serial version has been set to {}", version);
         });
 
         if (metricsRegistry != null) {
@@ -727,7 +754,8 @@ public class TSDBPlugin extends Plugin implements SearchPlugin, EnginePlugin, Ac
             TSDB_ENGINE_REMOTE_INDEX_SETTINGS_CACHE_TTL,
             TSDB_ENGINE_REMOTE_INDEX_SETTINGS_CACHE_MAX_SIZE,
             TSDB_INGESTION_LAG_COORDINATOR_METRICS_ENABLED,
-            TSDB_INGESTION_LAG_SEARCHABLE_METRICS_ENABLED
+            TSDB_INGESTION_LAG_SEARCHABLE_METRICS_ENABLED,
+            TSDB_ENGINE_INTERNAL_TIME_SERIES_FORMAT
         );
     }
 

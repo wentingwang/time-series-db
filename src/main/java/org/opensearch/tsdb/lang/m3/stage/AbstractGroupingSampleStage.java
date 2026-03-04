@@ -11,6 +11,7 @@ import org.opensearch.common.Nullable;
 import org.opensearch.core.common.io.stream.StreamOutput;
 import org.opensearch.search.aggregations.InternalAggregation;
 import org.opensearch.tsdb.core.model.ByteLabels;
+import org.opensearch.tsdb.core.model.FloatSampleList;
 import org.opensearch.tsdb.core.model.Labels;
 import org.opensearch.tsdb.core.model.MultiValueSample;
 import org.opensearch.tsdb.core.model.Sample;
@@ -126,14 +127,7 @@ public abstract class AbstractGroupingSampleStage<A> extends AbstractGroupingSta
             }
         }
         // Create sorted samples - pre-allocate since we know the exact size
-        List<Sample> aggregatedSamples = new ArrayList<>(timestampToAggregated.size());
-        // TODO: We could do (slightly) better here in theory -- this is an O(N * log(N)) sort
-        // if we do k-way merge in above instead of using an HashMap, then it will be an O(N * log(k))
-        // algorithm, tho it's only slightly better
-        timestampToAggregated.entrySet()
-            .stream()
-            .sorted(Map.Entry.comparingByKey())
-            .forEach(entry -> aggregatedSamples.add(bucketToSample(entry.getKey(), entry.getValue())));
+        SampleList sampleList = mapToSampleList(timestampToAggregated);
 
         // Assumption: All time series in a group have the same metadata (start time, end time, step)
         // The result will inherit metadata from the first time series in the group
@@ -141,7 +135,7 @@ public abstract class AbstractGroupingSampleStage<A> extends AbstractGroupingSta
 
         // Return a single time series with the provided labels
         return new TimeSeries(
-            aggregatedSamples,
+            sampleList,
             groupLabels != null ? groupLabels : ByteLabels.emptyLabels(),
             firstSeries.getMinTimestamp(),
             firstSeries.getMaxTimestamp(),
@@ -197,12 +191,7 @@ public abstract class AbstractGroupingSampleStage<A> extends AbstractGroupingSta
             Map<Long, A> timestampToSample = entry.getValue();
 
             // Pre-allocate samples list since we know exactly how many timestamps we have
-            List<Sample> samples = new ArrayList<>(timestampToSample.size());
-            timestampToSample.entrySet().stream().sorted(Map.Entry.comparingByKey()).forEach(sampleEntry -> {
-                Sample sample = bucketToSample(sampleEntry.getKey(), sampleEntry.getValue());
-                // Always keep original sample type - materialization happens later if needed
-                samples.add(sample);
-            });
+            SampleList sampleList = mapToSampleList(timestampToSample);
 
             Labels finalLabels = groupLabels.isEmpty() ? ByteLabels.emptyLabels() : groupLabels;
 
@@ -212,7 +201,7 @@ public abstract class AbstractGroupingSampleStage<A> extends AbstractGroupingSta
             // Use metadata from the first nonEmpty time series
             resultTimeSeries.add(
                 new TimeSeries(
-                    samples,
+                    sampleList,
                     finalLabels,
                     firstTimeSeries.getMinTimestamp(),
                     firstTimeSeries.getMaxTimestamp(),
@@ -231,6 +220,36 @@ public abstract class AbstractGroupingSampleStage<A> extends AbstractGroupingSta
 
         TimeSeriesProvider result = firstAgg.createReduced(resultTimeSeries);
         return (InternalAggregation) result;
+    }
+
+    /**
+     * A general method to convert from the map of (timestamp -> bucket) to a sample list, which then may or may not
+     * participate in materialization based on {@link #needsMaterialization()}.
+     * This method uses {@link #bucketToSample(long, Object)} to convert each bucket to a sample and then add each sample to
+     * an ArrayList.
+     * <br>
+     * Child classes might want to override this method if a different type of {@link SampleList} need to be returned
+     */
+    protected SampleList mapToSampleList(Map<Long, A> timestampToSample) {
+        List<Sample> samples = new ArrayList<>(timestampToSample.size());
+        timestampToSample.entrySet().stream().sorted(Map.Entry.comparingByKey()).forEach(sampleEntry -> {
+            Sample sample = bucketToSample(sampleEntry.getKey(), sampleEntry.getValue());
+            // Always keep original sample type - materialization happens later if needed
+            samples.add(sample);
+        });
+        return SampleList.fromList(samples);
+    }
+
+    /**
+     * A version of {@link #mapToSampleList(Map)} specialized for bucket which is of Double type, then write result using
+     * FloatSampleList instead of a java List Wrapper
+     */
+    static SampleList doubleMapToSampleList(Map<Long, Double> timestampToSample) {
+        FloatSampleList.Builder builder = new FloatSampleList.Builder(timestampToSample.size());
+        timestampToSample.entrySet().stream().sorted(Map.Entry.comparingByKey()).forEach(sampleEntry -> {
+            builder.add(sampleEntry.getKey(), sampleEntry.getValue());
+        });
+        return builder.build();
     }
 
     /**

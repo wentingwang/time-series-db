@@ -7,6 +7,8 @@
  */
 package org.opensearch.tsdb.query.aggregator;
 
+import org.junit.After;
+import org.junit.Before;
 import org.opensearch.Version;
 import org.opensearch.common.io.stream.BytesStreamOutput;
 import org.opensearch.core.common.io.stream.StreamInput;
@@ -16,6 +18,7 @@ import org.opensearch.tsdb.core.model.FloatSample;
 import org.opensearch.tsdb.core.model.FloatSampleList;
 import org.opensearch.tsdb.core.model.Labels;
 import org.opensearch.tsdb.core.model.Sample;
+import org.opensearch.tsdb.core.model.SampleList;
 import org.opensearch.tsdb.core.model.SumCountSample;
 import org.opensearch.tsdb.lang.m3.stage.ScaleStage;
 import org.opensearch.tsdb.lang.m3.stage.SumStage;
@@ -72,6 +75,16 @@ public class InternalTimeSeriesSerializationTests extends AbstractWireTestCase<I
         String name = (instance.getName() != null ? instance.getName() : "test") + "_mutated";
 
         return new InternalTimeSeries(name, instance.getTimeSeries(), instance.getMetadata(), instance.getReduceStage());
+    }
+
+    @Before
+    void setSerialVersion() {
+        InternalTimeSeries.serialFormatSetting = InternalTimeSeries.CURRENT_SERIAL_VERSION;
+    }
+
+    @After
+    void resetSerialVersion() {
+        InternalTimeSeries.serialFormatSetting = InternalTimeSeries.LEGACY_SERIAL_VERSION;
     }
 
     /**
@@ -215,6 +228,31 @@ public class InternalTimeSeriesSerializationTests extends AbstractWireTestCase<I
         }
     }
 
+    public void testBackCompatibility() throws IOException {
+        for (int epoch = 0; epoch < 16; epoch++) {
+            // the test instance is randomly created, so loop it a bit more to realize the randomized options
+            InternalTimeSeries original = createTestInstance();
+            try (BytesStreamOutput out = new BytesStreamOutput()) {
+                int serialVersion = InternalTimeSeries.serialFormatSetting;
+                InternalTimeSeries.serialFormatSetting = InternalTimeSeries.LEGACY_SERIAL_VERSION;
+                original.writeTo(out);
+                InternalTimeSeries.serialFormatSetting = serialVersion;
+
+                try (StreamInput in = out.bytes().streamInput()) {
+                    InternalTimeSeries deserialized = new InternalTimeSeries(in);
+
+                    // Assert
+                    assertEquals(original.getName(), deserialized.getName());
+                    assertEquals(original.getMetadata(), deserialized.getMetadata());
+                    assertEquals(original.getTimeSeries().size(), deserialized.getTimeSeries().size());
+                    for (int i = 0; i < deserialized.getTimeSeries().size(); i++) {
+                        assertEquals(original.getTimeSeries().get(i), deserialized.getTimeSeries().get(i));
+                    }
+                }
+            }
+        }
+    }
+
     // ========== Helper Methods ==========
 
     private Map<String, Object> createRandomMetadata() {
@@ -240,27 +278,38 @@ public class InternalTimeSeriesSerializationTests extends AbstractWireTestCase<I
             Labels labels = ByteLabels.fromMap(labelMap);
 
             // Create random samples
-            List<Sample> samples = new ArrayList<>();
             int numSamples = randomIntBetween(1, 10);
             long baseTimestamp = randomLongBetween(1000L, 10000L);
-
-            for (int j = 0; j < numSamples; j++) {
-                long timestamp = baseTimestamp + j * 1000L;
-                double value = randomDoubleBetween(0.0, 100.0, true);
-
-                // Randomly use FloatSample or SumCountSample
-                if (randomBoolean()) {
-                    samples.add(new FloatSample(timestamp, (float) value));
-                } else {
-                    samples.add(new SumCountSample(timestamp, value, randomIntBetween(1, 10)));
+            SampleList sampleList;
+            if (randomBoolean()) {
+                FloatSampleList.Builder builder = new FloatSampleList.Builder();
+                for (int j = 0; j < numSamples; j++) {
+                    long timestamp = baseTimestamp + j * 1000L;
+                    double value = randomDoubleBetween(0.0, 100.0, true);
+                    builder.add(timestamp, value);
                 }
+                sampleList = builder.build();
+            } else {
+                List<Sample> samples = new ArrayList<>();
+                for (int j = 0; j < numSamples; j++) {
+                    long timestamp = baseTimestamp + j * 1000L;
+                    double value = randomDoubleBetween(0.0, 100.0, true);
+
+                    // Randomly use FloatSample or SumCountSample
+                    if (randomBoolean()) {
+                        samples.add(new FloatSample(timestamp, (float) value));
+                    } else {
+                        samples.add(new SumCountSample(timestamp, value, randomIntBetween(1, 10)));
+                    }
+                }
+                sampleList = SampleList.fromList(samples);
             }
 
             long minTimestamp = baseTimestamp;
             long maxTimestamp = baseTimestamp + (numSamples - 1) * 1000L;
             String alias = randomBoolean() ? null : randomAlphaOfLength(8);
 
-            timeSeries.add(new TimeSeries(samples, labels, minTimestamp, maxTimestamp, 1000L, alias));
+            timeSeries.add(new TimeSeries(sampleList, labels, minTimestamp, maxTimestamp, 1000L, alias));
         }
 
         return timeSeries;
