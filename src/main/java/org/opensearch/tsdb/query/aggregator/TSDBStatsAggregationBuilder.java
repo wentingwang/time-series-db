@@ -185,9 +185,7 @@ public class TSDBStatsAggregationBuilder extends AbstractAggregationBuilder<TSDB
             );
         }
         if (includeHeadStats == null) {
-            throw new IllegalArgumentException(
-                "Required parameter 'include_head_stats' is missing for aggregation '" + aggregationName + "'"
-            );
+            includeHeadStats = false;
         }
 
         return new TSDBStatsAggregationBuilder(aggregationName, minTimestamp, maxTimestamp, includeValueStats, includeHeadStats);

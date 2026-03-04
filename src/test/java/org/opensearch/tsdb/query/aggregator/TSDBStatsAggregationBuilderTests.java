@@ -191,7 +191,7 @@ public class TSDBStatsAggregationBuilderTests extends OpenSearchTestCase {
             assertTrue(ex.getMessage().contains("Required parameter 'include_value_stats' is missing"));
         }
 
-        // Missing include_head_stats
+        // Missing include_head_stats: should default to false (not throw)
         try (
             XContentParser parser = createParser(
                 XContentType.JSON.xContent(),
@@ -199,11 +199,8 @@ public class TSDBStatsAggregationBuilderTests extends OpenSearchTestCase {
             )
         ) {
             parser.nextToken();
-            IllegalArgumentException ex = expectThrows(
-                IllegalArgumentException.class,
-                () -> TSDBStatsAggregationBuilder.parse(TEST_NAME, parser)
-            );
-            assertTrue(ex.getMessage().contains("Required parameter 'include_head_stats' is missing"));
+            TSDBStatsAggregationBuilder parsed = TSDBStatsAggregationBuilder.parse(TEST_NAME, parser);
+            assertFalse("include_head_stats should default to false when not provided", parsed.isIncludeHeadStats());
         }
     }
 

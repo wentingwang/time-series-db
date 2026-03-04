@@ -37,16 +37,11 @@ public class TSDBStatsResponseListenerTests extends OpenSearchTestCase {
 
     // ========== Shared Test Fixtures ==========
 
-    /** HeadStats: 508 series, 937 chunks */
-    private static final InternalTSDBStats.HeadStats HEAD_STATS = new InternalTSDBStats.HeadStats(
-        508L,
-        937L,
-        1591516800000L,
-        1598896800143L
-    );
+    /** HeadStats: 508 series */
+    private static final InternalTSDBStats.HeadStats HEAD_STATS = new InternalTSDBStats.HeadStats(508L, 1591516800000L, 1598896800143L);
 
     /** HeadStats: small numbers for simple tests */
-    private static final InternalTSDBStats.HeadStats SIMPLE_HEAD_STATS = new InternalTSDBStats.HeadStats(100L, 200L, 1000L, 2000L);
+    private static final InternalTSDBStats.HeadStats SIMPLE_HEAD_STATS = new InternalTSDBStats.HeadStats(100L, 1000L, 2000L);
 
     /** Full stats: headStats + 2 labels (name, cluster) with multiple values, numSeries=25644 */
     private static InternalTSDBStats createFullStats() {
@@ -149,7 +144,6 @@ public class TSDBStatsResponseListenerTests extends OpenSearchTestCase {
             {
               "headStats": {
                 "numSeries": 508,
-                "chunkCount": 937,
                 "minTime": 1591516800000,
                 "maxTime": 1598896800143
               },
@@ -232,7 +226,6 @@ public class TSDBStatsResponseListenerTests extends OpenSearchTestCase {
             {
               "headStats": {
                 "numSeries": 508,
-                "chunkCount": 937,
                 "minTime": 1591516800000,
                 "maxTime": 1598896800143
               },
@@ -324,7 +317,6 @@ public class TSDBStatsResponseListenerTests extends OpenSearchTestCase {
             {
               "headStats": {
                 "numSeries": 100,
-                "chunkCount": 200,
                 "minTime": 1000,
                 "maxTime": 2000
               }
@@ -357,7 +349,6 @@ public class TSDBStatsResponseListenerTests extends OpenSearchTestCase {
             {
               "headStats": {
                 "numSeries": 100,
-                "chunkCount": 200,
                 "minTime": 1000,
                 "maxTime": 2000
               },

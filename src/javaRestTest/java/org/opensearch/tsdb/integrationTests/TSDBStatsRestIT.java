@@ -57,7 +57,6 @@ public class TSDBStatsRestIT extends RestTimeSeriesTestFramework {
             {
               "headStats": {
                 "numSeries": 10,
-                "chunkCount": 0,
                 "minTime": 0,
                 "maxTime": 9223372036854775807
               },
@@ -282,7 +281,6 @@ public class TSDBStatsRestIT extends RestTimeSeriesTestFramework {
             {
               "headStats": {
                 "numSeries": 10,
-                "chunkCount": 0,
                 "minTime": 0,
                 "maxTime": 9223372036854775807
               },
@@ -362,7 +360,6 @@ public class TSDBStatsRestIT extends RestTimeSeriesTestFramework {
             {
               "headStats": {
                 "numSeries": 10,
-                "chunkCount": 0,
                 "minTime": 0,
                 "maxTime": 9223372036854775807
               },
@@ -430,7 +427,6 @@ public class TSDBStatsRestIT extends RestTimeSeriesTestFramework {
             {
               "headStats": {
                 "numSeries": 10,
-                "chunkCount": 0,
                 "minTime": 0,
                 "maxTime": 9223372036854775807
               },

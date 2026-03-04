@@ -69,7 +69,6 @@ public class TSDBStatsAggregator extends MetricsAggregator {
 
     // HeadStats accumulator: tracks stats from LiveSeriesIndexLeafReader segments
     private long headNumSeries;
-    private long headChunkCount;
     private long headMinTime;
     private long headMaxTime;
     private boolean hasHeadStats;
@@ -112,7 +111,6 @@ public class TSDBStatsAggregator extends MetricsAggregator {
 
         // Initialize HeadStats accumulator
         this.headNumSeries = 0;
-        this.headChunkCount = 0;
         this.headMinTime = Long.MAX_VALUE;
         this.headMaxTime = Long.MIN_VALUE;
         this.hasHeadStats = false;
@@ -242,7 +240,7 @@ public class TSDBStatsAggregator extends MetricsAggregator {
 
         // Build HeadStats if any LiveSeriesIndexLeafReader segments were encountered
         InternalTSDBStats.HeadStats headStats = hasHeadStats
-            ? new InternalTSDBStats.HeadStats(headNumSeries, headChunkCount, headMinTime, headMaxTime)
+            ? new InternalTSDBStats.HeadStats(headNumSeries, headMinTime, headMaxTime)
             : null;
 
         // Return using factory method
