@@ -69,6 +69,7 @@ public class TSDBStatsAggregator extends MetricsAggregator {
 
     // HeadStats accumulator: tracks stats from LiveSeriesIndexLeafReader segments
     private long headNumSeries;
+    private long headNumChunks;
     private long headMinTime;
     private long headMaxTime;
     private boolean hasHeadStats;
@@ -111,6 +112,7 @@ public class TSDBStatsAggregator extends MetricsAggregator {
 
         // Initialize HeadStats accumulator
         this.headNumSeries = 0;
+        this.headNumChunks = 0;
         this.headMinTime = Long.MAX_VALUE;
         this.headMaxTime = Long.MIN_VALUE;
         this.hasHeadStats = false;
@@ -131,8 +133,6 @@ public class TSDBStatsAggregator extends MetricsAggregator {
         // Collect HeadStats from LiveSeriesIndexLeafReader segments
         if (includeHeadStats && tsdbLeafReader instanceof LiveSeriesIndexLeafReader) {
             hasHeadStats = true;
-            // LiveSeriesIndex guarantees one doc per series, so numDocs == numSeries
-            headNumSeries += ctx.reader().numDocs();
             long leafMinTime = tsdbLeafReader.getMinIndexTimestamp();
             long leafMaxTime = tsdbLeafReader.getMaxIndexTimestamp();
             if (leafMinTime < headMinTime) {
@@ -170,6 +170,12 @@ public class TSDBStatsAggregator extends MetricsAggregator {
             // Already processed this series - skip entire document
             if (!seenSeriesIds.add(seriesId)) {
                 return;
+            }
+
+            // Accumulate per-doc HeadStats for live series segments
+            if (includeHeadStats && tsdbLeafReader instanceof LiveSeriesIndexLeafReader) {
+                headNumSeries++;
+                headNumChunks += ((LiveSeriesIndexLeafReader) tsdbLeafReader).numChunksForDoc(doc, tsdbDocValues);
             }
 
             // TODO process each label using BytesRef directly (avoid String conversion)
@@ -240,7 +246,7 @@ public class TSDBStatsAggregator extends MetricsAggregator {
 
         // Build HeadStats if any LiveSeriesIndexLeafReader segments were encountered
         InternalTSDBStats.HeadStats headStats = hasHeadStats
-            ? new InternalTSDBStats.HeadStats(headNumSeries, headMinTime, headMaxTime)
+            ? new InternalTSDBStats.HeadStats(headNumSeries, headNumChunks, headMinTime, headMaxTime)
             : null;
 
         // Return using factory method

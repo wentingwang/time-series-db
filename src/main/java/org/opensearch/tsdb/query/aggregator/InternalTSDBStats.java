@@ -61,29 +61,19 @@ public class InternalTSDBStats extends InternalAggregation {
      * Statistics for the head (in-memory time series).
      *
      * @param numSeries the number of active time series in the head
+     * @param numChunks total MemChunks across all series (≥ numSeries due to OOO or not-yet-dropped chunks)
      * @param minTime the minimum sample timestamp present in the head
      * @param maxTime the maximum sample timestamp present in the head
      */
-    public record HeadStats(long numSeries, long minTime, long maxTime) {
+    public record HeadStats(long numSeries, long numChunks, long minTime, long maxTime) {
 
-        /**
-         * Deserializes a {@code HeadStats} instance from a stream.
-         *
-         * @param in the stream input to read from
-         * @throws IOException if an I/O error occurs during reading
-         */
         public HeadStats(StreamInput in) throws IOException {
-            this(in.readVLong(), in.readLong(), in.readLong());
+            this(in.readVLong(), in.readVLong(), in.readLong(), in.readLong());
         }
 
-        /**
-         * Serializes this {@code HeadStats} instance to a stream.
-         *
-         * @param out the stream output to write to
-         * @throws IOException if an I/O error occurs during writing
-         */
         public void writeTo(StreamOutput out) throws IOException {
             out.writeVLong(numSeries);
+            out.writeVLong(numChunks);
             out.writeLong(minTime);
             out.writeLong(maxTime);
         }
@@ -621,6 +611,7 @@ public class InternalTSDBStats extends InternalAggregation {
      */
     static HeadStats mergeHeadStats(List<InternalAggregation> aggregations) {
         long totalNumSeries = 0;
+        long totalNumChunks = 0;
         long minTime = Long.MAX_VALUE;
         long maxTime = Long.MIN_VALUE;
         boolean hasAny = false;
@@ -630,6 +621,7 @@ public class InternalTSDBStats extends InternalAggregation {
             if (stats.headStats != null) {
                 hasAny = true;
                 totalNumSeries += stats.headStats.numSeries();
+                totalNumChunks += stats.headStats.numChunks();
                 if (stats.headStats.minTime() < minTime) {
                     minTime = stats.headStats.minTime();
                 }
@@ -639,7 +631,7 @@ public class InternalTSDBStats extends InternalAggregation {
             }
         }
 
-        return hasAny ? new HeadStats(totalNumSeries, minTime, maxTime) : null;
+        return hasAny ? new HeadStats(totalNumSeries, totalNumChunks, minTime, maxTime) : null;
     }
 
     /**
@@ -712,6 +704,7 @@ public class InternalTSDBStats extends InternalAggregation {
         if (headStats != null) {
             builder.startObject("headStats");
             builder.field("numSeries", headStats.numSeries());
+            builder.field("numChunks", headStats.numChunks());
             builder.field("minTime", headStats.minTime());
             builder.field("maxTime", headStats.maxTime());
             builder.endObject();
