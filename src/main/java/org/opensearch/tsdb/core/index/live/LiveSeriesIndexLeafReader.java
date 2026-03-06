@@ -149,9 +149,15 @@ public class LiveSeriesIndexLeafReader extends TSDBLeafReader {
             return 0;
         }
         long seriesRef = seriesRefValue.longValue();
-        int total = memChunkReader.getChunks(seriesRef).size();
-        int mmaped = mMappedChunks.getOrDefault(seriesRef, Collections.emptySet()).size();
-        return total - mmaped;
+        int numChunks = 0;
+        Set<MemChunk> chunksToFilter = mMappedChunks.getOrDefault(seriesRef, Collections.emptySet());
+        List<MemChunk> memChunks = memChunkReader.getChunks(seriesRef); // get all memchunks for the series
+        for (MemChunk memChunk : memChunks) {
+            if (!chunksToFilter.contains(memChunk)) {
+                numChunks++;
+            }
+        }
+        return numChunks;
     }
 
     @Override
