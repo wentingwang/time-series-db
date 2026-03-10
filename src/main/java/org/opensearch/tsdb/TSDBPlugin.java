@@ -682,7 +682,7 @@ public class TSDBPlugin extends Plugin implements SearchPlugin, EnginePlugin, Ac
         });
 
         clusterService.getClusterSettings().addSettingsUpdateConsumer(TSDB_ENGINE_INTERNAL_TIME_SERIES_FORMAT, version -> {
-            if (version != InternalTimeSeries.CURRENT_SERIAL_VERSION && version != InternalTimeSeries.LEGACY_SERIAL_VERSION) {
+            if (!InternalTimeSeries.SUPPORTED_VERSIONS.contains(version)) {
                 // don't change the current setting if an unknown version is set
                 logger.warn(
                     "Unknown InternalTimeSeries version has been set, keep current serial version {}",

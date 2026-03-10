@@ -50,11 +50,20 @@ public class InternalTimeSeriesSerializationTests extends AbstractWireTestCase<I
         // Optionally include a reduce stage
         UnaryPipelineStage reduceStage = randomBoolean() ? null : createRandomReduceStage();
 
-        if (reduceStage != null) {
-            return new InternalTimeSeries(name, timeSeries, metadata, reduceStage);
-        } else {
-            return new InternalTimeSeries(name, timeSeries, metadata);
-        }
+        // Optionally include exec stats (for V2 testing)
+        AggregationExecStats execStats = randomBoolean()
+            ? AggregationExecStats.EMPTY
+            : new AggregationExecStats(
+                randomLongBetween(0, 1000),
+                randomLongBetween(0, 1000),
+                randomLongBetween(0, 1000),
+                randomLongBetween(0, 1000),
+                randomLongBetween(0, 1000),
+                randomLongBetween(0, 1000),
+                randomLongBetween(0, 1000)
+            );
+
+        return new InternalTimeSeries(name, timeSeries, metadata, reduceStage, execStats);
     }
 
     @Override
@@ -78,12 +87,12 @@ public class InternalTimeSeriesSerializationTests extends AbstractWireTestCase<I
     }
 
     @Before
-    void setSerialVersion() {
+    public void setSerialVersion() {
         InternalTimeSeries.serialFormatSetting = InternalTimeSeries.CURRENT_SERIAL_VERSION;
     }
 
     @After
-    void resetSerialVersion() {
+    public void resetSerialVersion() {
         InternalTimeSeries.serialFormatSetting = InternalTimeSeries.LEGACY_SERIAL_VERSION;
     }
 
@@ -140,17 +149,6 @@ public class InternalTimeSeriesSerializationTests extends AbstractWireTestCase<I
                     assertEquals(origSeries.getSamples().getSampleType(), deserSeries.getSamples().getSampleType());
                     assertEquals(origSeries.getSamples().getTimestamp(i), deserSeries.getSamples().getTimestamp(i));
                     assertEquals(origSeries.getSamples().getValue(i), deserSeries.getSamples().getValue(i), 0.001);
-
-                    // Now we don't really explicitly support mix type of samples from our interface for simplicity
-                    // Although it is still implicitly supported by using List<Sample> but there's no API to tell whether
-                    // the list is of mixed sample type
-                    // We should revisit if we see such a need of mixing sample types
-
-                    // if (origSample instanceof SumCountSample origSumCount) {
-                    // SumCountSample deserSumCount = (SumCountSample) deserSample;
-                    // assertEquals(origSumCount.sum(), deserSumCount.sum(), 0.001);
-                    // assertEquals(origSumCount.count(), deserSumCount.count());
-                    // }
                 }
             }
         }
@@ -207,6 +205,24 @@ public class InternalTimeSeriesSerializationTests extends AbstractWireTestCase<I
     }
 
     /**
+     * Test that EMPTY exec stats round-trips correctly in V2.
+     */
+    public void testSerializationWithEmptyExecStats() throws IOException {
+        // Arrange
+        InternalTimeSeries original = new InternalTimeSeries("test_empty_exec", new ArrayList<>(), Map.of());
+
+        // Act
+        try (BytesStreamOutput out = new BytesStreamOutput()) {
+            original.writeTo(out);
+            try (StreamInput in = out.bytes().streamInput()) {
+                InternalTimeSeries deserialized = new InternalTimeSeries(in);
+                // Assert - EMPTY should round-trip back to EMPTY
+                assertEquals(AggregationExecStats.EMPTY, deserialized.getExecStats());
+            }
+        }
+    }
+
+    /**
      * Test serialization with empty time series list.
      */
     public void testSerializationWithEmptyTimeSeries() throws IOException {
@@ -228,27 +244,87 @@ public class InternalTimeSeriesSerializationTests extends AbstractWireTestCase<I
         }
     }
 
+    /**
+     * Test backward compatibility: V0 write -> V0 read, V1 write -> V1 read, and
+     * verify that V0/V1 data yields EMPTY exec stats.
+     */
     public void testBackCompatibility() throws IOException {
-        for (int epoch = 0; epoch < 16; epoch++) {
-            // the test instance is randomly created, so loop it a bit more to realize the randomized options
-            InternalTimeSeries original = createTestInstance();
-            try (BytesStreamOutput out = new BytesStreamOutput()) {
-                int serialVersion = InternalTimeSeries.serialFormatSetting;
-                InternalTimeSeries.serialFormatSetting = InternalTimeSeries.LEGACY_SERIAL_VERSION;
-                original.writeTo(out);
-                InternalTimeSeries.serialFormatSetting = serialVersion;
+        for (int version : new int[] { 0, 1 }) {
+            for (int epoch = 0; epoch < 8; epoch++) {
+                InternalTimeSeries original = createTestInstance();
+                try (BytesStreamOutput out = new BytesStreamOutput()) {
+                    int savedVersion = InternalTimeSeries.serialFormatSetting;
+                    InternalTimeSeries.serialFormatSetting = version;
+                    original.writeTo(out);
+                    InternalTimeSeries.serialFormatSetting = savedVersion;
 
-                try (StreamInput in = out.bytes().streamInput()) {
-                    InternalTimeSeries deserialized = new InternalTimeSeries(in);
+                    try (StreamInput in = out.bytes().streamInput()) {
+                        InternalTimeSeries deserialized = new InternalTimeSeries(in);
 
-                    // Assert
-                    assertEquals(original.getName(), deserialized.getName());
-                    assertEquals(original.getMetadata(), deserialized.getMetadata());
-                    assertEquals(original.getTimeSeries().size(), deserialized.getTimeSeries().size());
-                    for (int i = 0; i < deserialized.getTimeSeries().size(); i++) {
-                        assertEquals(original.getTimeSeries().get(i), deserialized.getTimeSeries().get(i));
+                        // Assert
+                        assertEquals(original.getName(), deserialized.getName());
+                        assertEquals(original.getMetadata(), deserialized.getMetadata());
+                        assertEquals(original.getTimeSeries().size(), deserialized.getTimeSeries().size());
+                        for (int i = 0; i < deserialized.getTimeSeries().size(); i++) {
+                            assertEquals(original.getTimeSeries().get(i), deserialized.getTimeSeries().get(i));
+                        }
+                        // V0 and V1 should yield EMPTY exec stats
+                        assertEquals(AggregationExecStats.EMPTY, deserialized.getExecStats());
                     }
                 }
+            }
+        }
+    }
+
+    /**
+     * Test V2 write -> V2 read preserves exec stats.
+     */
+    public void testV2RoundTripWithExecStats() throws IOException {
+        for (int epoch = 0; epoch < 8; epoch++) {
+            AggregationExecStats execStats = new AggregationExecStats(
+                randomLongBetween(1, 1000),
+                randomLongBetween(1, 1000),
+                randomLongBetween(1, 1000),
+                randomLongBetween(1, 1000),
+                randomLongBetween(1, 1000),
+                randomLongBetween(1, 1000),
+                randomLongBetween(1, 1000)
+            );
+            List<TimeSeries> ts = createRandomTimeSeries();
+            UnaryPipelineStage reduceStage = randomBoolean() ? null : createRandomReduceStage();
+            InternalTimeSeries original = new InternalTimeSeries("test_v2", ts, Map.of("k", "v"), reduceStage, execStats);
+
+            try (BytesStreamOutput out = new BytesStreamOutput()) {
+                // serialFormatSetting is already 2 from @Before
+                original.writeTo(out);
+                try (StreamInput in = out.bytes().streamInput()) {
+                    InternalTimeSeries deserialized = new InternalTimeSeries(in);
+                    assertEquals(execStats, deserialized.getExecStats());
+                    assertEquals(original.getTimeSeries().size(), deserialized.getTimeSeries().size());
+                    if (reduceStage != null) {
+                        assertNotNull(deserialized.getReduceStage());
+                        assertEquals(reduceStage.getName(), deserialized.getReduceStage().getName());
+                    } else {
+                        assertNull(deserialized.getReduceStage());
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * Test that an unknown sentinel version throws.
+     */
+    public void testUnknownVersionThrows() throws IOException {
+        // Create a stream with sentinel -99 (unsupported version)
+        try (BytesStreamOutput out = new BytesStreamOutput()) {
+            // Write InternalAggregation header manually: name string + empty metadata map
+            out.writeString("test");
+            out.writeGenericValue(null); // metadata (null map)
+            // Write unsupported sentinel
+            out.writeVInt(-99);
+            try (StreamInput in = out.bytes().streamInput()) {
+                expectThrows(IllegalStateException.class, () -> new InternalTimeSeries(in));
             }
         }
     }

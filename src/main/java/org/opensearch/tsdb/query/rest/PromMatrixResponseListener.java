@@ -14,10 +14,14 @@ import org.opensearch.rest.BytesRestResponse;
 import org.opensearch.rest.RestChannel;
 import org.opensearch.rest.RestResponse;
 import org.opensearch.rest.action.RestToXContentListener;
+import org.opensearch.search.aggregations.Aggregation;
+import org.opensearch.search.aggregations.Aggregations;
 import org.opensearch.search.profile.ProfileResult;
 import org.opensearch.search.profile.ProfileShardResult;
 import org.opensearch.telemetry.metrics.Histogram;
 import org.opensearch.tsdb.metrics.TSDBMetrics;
+import org.opensearch.tsdb.query.aggregator.AggregationExecStats;
+import org.opensearch.tsdb.query.aggregator.InternalTimeSeries;
 import org.opensearch.tsdb.query.aggregator.TimeSeries;
 import org.opensearch.tsdb.query.aggregator.TimeSeriesUnfoldAggregator;
 import org.opensearch.tsdb.query.utils.ProfileInfoMapper;
@@ -116,6 +120,8 @@ public class PromMatrixResponseListener extends RestToXContentListener<SearchRes
 
     private final QueryMetrics queryMetrics;
 
+    private final boolean includeExecStats;
+
     /**
      * Container for query execution metrics.
      * Allows adding new metrics without changing constructor signatures.
@@ -150,7 +156,7 @@ public class PromMatrixResponseListener extends RestToXContentListener<SearchRes
         boolean includeMetadata,
         boolean includeAlias
     ) {
-        this(channel, finalAggregationName, profile, includeMetadata, includeAlias, null);
+        this(channel, finalAggregationName, profile, includeMetadata, includeAlias, null, false);
     }
 
     /**
@@ -172,6 +178,30 @@ public class PromMatrixResponseListener extends RestToXContentListener<SearchRes
         boolean includeAlias,
         QueryMetrics queryMetrics
     ) {
+        this(channel, finalAggregationName, profile, includeMetadata, includeAlias, queryMetrics, false);
+    }
+
+    /**
+     * Creates a new matrix response listener with metrics recording capability and exec stats control.
+     *
+     * @param channel the REST channel to send the response to
+     * @param finalAggregationName the name of the final aggregation to extract (must not be null)
+     * @param profile whether to include profiling information in the response
+     * @param includeMetadata whether to include metadata fields (step, start, end) in each time series
+     * @param includeAlias whether to include the alias field in each time series
+     * @param queryMetrics container for query execution metrics (can be null)
+     * @param includeExecStats whether to include execution stats in the response
+     * @throws NullPointerException if finalAggregationName is null
+     */
+    public PromMatrixResponseListener(
+        RestChannel channel,
+        String finalAggregationName,
+        boolean profile,
+        boolean includeMetadata,
+        boolean includeAlias,
+        QueryMetrics queryMetrics,
+        boolean includeExecStats
+    ) {
         super(channel);
         this.finalAggregationName = Objects.requireNonNull(finalAggregationName, "finalAggregationName cannot be null");
         this.profile = profile;
@@ -179,6 +209,16 @@ public class PromMatrixResponseListener extends RestToXContentListener<SearchRes
         this.includeAlias = includeAlias;
         this.startTimeNanos = System.nanoTime();
         this.queryMetrics = queryMetrics;
+        this.includeExecStats = includeExecStats;
+    }
+
+    /**
+     * Returns whether execution stats are included in the response.
+     *
+     * @return true if execution stats are included, false otherwise
+     */
+    boolean isIncludeExecStats() {
+        return includeExecStats;
     }
 
     /**
@@ -240,7 +280,69 @@ public class PromMatrixResponseListener extends RestToXContentListener<SearchRes
         if (profile) {
             ProfileInfoMapper.extractProfileInfo(response, builder);
         }
+
+        // Add execution stats if requested and available (stats are EMPTY when serialFormatSetting < 2)
+        if (includeExecStats) {
+            InternalTimeSeries its = findInternalTimeSeries(response.getAggregations(), finalAggregationName);
+            if (its != null && !AggregationExecStats.EMPTY.equals(its.getExecStats())) {
+                AggregationExecStats stats = its.getExecStats();
+                long latencyMs = (System.nanoTime() - startTimeNanos) / 1_000_000L;
+                long numSeriesOutput = its.getTimeSeries().size();
+                long numSamplesOutput = its.getTimeSeries().stream().mapToLong(ts -> ts.getSamples().size()).sum();
+
+                builder.startObject("execStats");
+                builder.field("latencyMs", latencyMs);
+                builder.startObject("data");
+                builder.startObject("series");
+                builder.field("numInput", stats.seriesNumInput());
+                builder.field("numOutput", numSeriesOutput);
+                builder.endObject();
+                builder.startObject("samples");
+                builder.field("numInput", stats.samplesNumInput());
+                builder.field("numOutput", numSamplesOutput);
+                builder.endObject();
+                builder.endObject();
+                builder.startObject("storage");
+                builder.startObject("chunks");
+                builder.field("closed", stats.chunksNumClosed());
+                builder.field("live", stats.chunksNumLive());
+                builder.endObject();
+                builder.startObject("documents");
+                builder.field("closed", stats.docsNumClosed());
+                builder.field("live", stats.docsNumLive());
+                builder.endObject();
+                builder.endObject();
+                builder.startObject("resource");
+                // memoryBytes is the SUM of per-shard peak circuit-breaker bytes, not a single-node
+                // peak. It is a reasonable proxy for total memory committed across the cluster during
+                // this query, but includes allocations that may have already been released (e.g.,
+                // input TimeSeries cleared after shard-level pipeline stages).
+                builder.field("memoryBytes", stats.memoryBytes());
+                builder.endObject();
+                builder.endObject(); // execStats
+            }
+        }
+
         builder.endObject();
+    }
+
+    /**
+     * Finds the first {@link InternalTimeSeries} in the aggregations that matches the given name.
+     *
+     * @param aggregations the aggregations to search (may be null)
+     * @param aggName the aggregation name to match, or null to match any
+     * @return the first matching {@link InternalTimeSeries}, or null if none found
+     */
+    private InternalTimeSeries findInternalTimeSeries(Aggregations aggregations, String aggName) {
+        if (aggregations == null) return null;
+        for (Aggregation agg : aggregations) {
+            if (agg instanceof InternalTimeSeries its) {
+                if (aggName == null || aggName.equals(its.getName())) {
+                    return its;
+                }
+            }
+        }
+        return null;
     }
 
     /**
@@ -318,6 +420,7 @@ public class PromMatrixResponseListener extends RestToXContentListener<SearchRes
                     double currentShardReduceTimeMillis = 0.0;
                     double currentShardPostCollectionTimeMillis = 0.0;
                     // TODO: Consolidate it with ProfileInfoMapper.extractPerShardStats()
+
                     if (shardResult.getAggregationProfileResults() != null) {
                         for (ProfileResult profileResult : shardResult.getAggregationProfileResults().getProfileResults()) {
                             // Only extract timing for TimeSeriesUnfoldAggregator

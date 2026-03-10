@@ -27,6 +27,7 @@ import org.opensearch.tsdb.core.model.ByteLabels;
 import org.opensearch.tsdb.core.model.FloatSample;
 import org.opensearch.tsdb.core.model.Labels;
 import org.opensearch.tsdb.core.model.Sample;
+import org.opensearch.tsdb.query.aggregator.AggregationExecStats;
 import org.opensearch.tsdb.metrics.TSDBMetrics;
 import org.opensearch.tsdb.query.aggregator.InternalTimeSeries;
 import org.opensearch.tsdb.query.aggregator.TimeSeries;
@@ -1785,5 +1786,53 @@ public class PromMatrixResponseListenerTests extends OpenSearchTestCase {
                 return idA.compareTo(idB);
             });
         }
+    }
+
+    // ========== ExecStats Tests ==========
+
+    public void testResponseIncludesExecStats_whenEnabled() throws Exception {
+        // Arrange
+        AggregationExecStats execStats = new AggregationExecStats(10L, 20L, 30L, 40L, 50L, 60L, 70L);
+
+        List<TimeSeries> timeSeriesList = createTimeSeriesWithLabels();
+        InternalTimeSeries its = new InternalTimeSeries(TEST_AGG_NAME, timeSeriesList, TEST_METADATA, null, execStats);
+        Aggregations aggregations = new Aggregations(List.of(its));
+        SearchResponse searchResponse = mock(SearchResponse.class);
+        when(searchResponse.getAggregations()).thenReturn(aggregations);
+
+        FakeRestChannel channel = new FakeRestChannel(new FakeRestRequest(), true, 1);
+        PromMatrixResponseListener listener = new PromMatrixResponseListener(channel, TEST_AGG_NAME, false, false, true, null, true);
+        XContentBuilder builder = JsonXContent.contentBuilder();
+
+        // Act
+        RestResponse response = listener.buildResponse(searchResponse, builder);
+
+        // Assert
+        assertEquals(RestStatus.OK, response.status());
+        String responseContent = response.content().utf8ToString();
+        assertTrue("execStats should be present", responseContent.contains("\"execStats\""));
+        assertTrue("latencyMs should be present", responseContent.contains("\"latencyMs\""));
+        assertTrue("data.series.numInput should be 10", responseContent.contains("\"numInput\":10"));
+        assertTrue("storage.chunks.closed should be 30", responseContent.contains("\"closed\":30"));
+        assertTrue("storage.chunks.live should be 40", responseContent.contains("\"live\":40"));
+        assertTrue("resource.memoryBytes should be 70", responseContent.contains("\"memoryBytes\":70"));
+    }
+
+    public void testResponseExcludesExecStats_byDefault() throws Exception {
+        // Arrange
+        FakeRestChannel channel = new FakeRestChannel(new FakeRestRequest(), true, 1);
+        PromMatrixResponseListener listener = new PromMatrixResponseListener(channel, TEST_AGG_NAME, false, false, true);
+
+        List<TimeSeries> timeSeriesList = createTimeSeriesWithLabels();
+        SearchResponse searchResponse = createSearchResponse(TEST_AGG_NAME, timeSeriesList);
+        XContentBuilder builder = JsonXContent.contentBuilder();
+
+        // Act
+        RestResponse response = listener.buildResponse(searchResponse, builder);
+
+        // Assert
+        assertEquals(RestStatus.OK, response.status());
+        String responseContent = response.content().utf8ToString();
+        assertFalse("execStats should NOT be present by default", responseContent.contains("\"execStats\""));
     }
 }
