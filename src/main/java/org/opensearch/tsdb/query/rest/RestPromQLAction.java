@@ -348,6 +348,7 @@ public class RestPromQLAction extends BaseTSDBAction {
         boolean pushdown = resolvePushdownParam(request, true);
         boolean profile = request.paramAsBoolean(PROFILE_PARAM, false);
         boolean includeMetadata = request.paramAsBoolean(INCLUDE_METADATA_PARAM, false);
+        // TODO make it default = true when InternalTimeSeries.serialFormatSetting upgrade to 2+
         boolean includeExecStats = request.paramAsBoolean(INCLUDE_EXEC_STATS_PARAM, false);
 
         return new RequestParams(

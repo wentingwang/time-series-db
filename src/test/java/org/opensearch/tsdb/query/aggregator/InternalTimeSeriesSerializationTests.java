@@ -31,6 +31,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import static org.opensearch.tsdb.query.aggregator.InternalTimeSeries.VERSION_2;
+
 /**
  * Serialization tests for InternalTimeSeries.
  * Extends AbstractWireTestCase to automatically test wire serialization,
@@ -210,6 +212,7 @@ public class InternalTimeSeriesSerializationTests extends AbstractWireTestCase<I
      */
     public void testSerializationWithEmptyExecStats() throws IOException {
         // Arrange
+        InternalTimeSeries.serialFormatSetting = VERSION_2;
         InternalTimeSeries original = new InternalTimeSeries("test_empty_exec", new ArrayList<>(), Map.of());
 
         // Act
@@ -289,7 +292,7 @@ public class InternalTimeSeriesSerializationTests extends AbstractWireTestCase<I
      */
     public void testV2RoundTripWithExecStats() throws IOException {
         // Change to V2
-        InternalTimeSeries.serialFormatSetting = InternalTimeSeries.VERSION_2;
+        InternalTimeSeries.serialFormatSetting = VERSION_2;
         for (int epoch = 0; epoch < 8; epoch++) {
             AggregationExecStats execStats = new AggregationExecStats(
                 randomLongBetween(1, 1000),

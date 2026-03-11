@@ -205,7 +205,7 @@ public class RestM3QLAction extends BaseTSDBAction {
         boolean ccsMinimizeRoundTrips = resolveCcsMinimizeRoundTrips(request);
         final boolean profileParam = request.paramAsBoolean(PROFILE_PARAM, false);
         final boolean includeMetadataParam = request.paramAsBoolean(INCLUDE_METADATA_PARAM, false);
-        final boolean includeExecStatsParam = request.paramAsBoolean(INCLUDE_EXEC_STATS_PARAM, true);
+        final boolean includeExecStatsParam = request.paramAsBoolean(INCLUDE_EXEC_STATS_PARAM, false);
 
         // Parse request parameters (may be async for remote index settings fetch)
         return channel -> {
@@ -467,7 +467,8 @@ public class RestM3QLAction extends BaseTSDBAction {
         boolean pushdown = resolvePushdownParam(request, true);
         boolean profile = request.paramAsBoolean(PROFILE_PARAM, false);
         boolean includeMetadata = request.paramAsBoolean(INCLUDE_METADATA_PARAM, false);
-        boolean includeExecStats = request.paramAsBoolean(INCLUDE_EXEC_STATS_PARAM, true);
+        // TODO make it default = true when InternalTimeSeries.serialFormatSetting upgrade to 2+
+        boolean includeExecStats = request.paramAsBoolean(INCLUDE_EXEC_STATS_PARAM, false);
         boolean ccsMinimizeRoundTrips = resolveCcsMinimizeRoundTrips(request);
 
         // Extract resolved partitions from request body (implements FederationMetadata)

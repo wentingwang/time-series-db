@@ -2148,7 +2148,7 @@ public class RestM3QLActionTests extends OpenSearchTestCase {
      * Test that when no include_exec_stats param is provided (default), the PromMatrixResponseListener
      * is constructed with includeExecStats=true (the default).
      */
-    public void testIncludeExecStatsDefaultIsTrue() throws Exception {
+    public void testIncludeExecStatsDefaultIsFalse() throws Exception {
         CountDownLatch assertionLatch = new CountDownLatch(1);
         NodeClient captureClient = mock(NodeClient.class);
         doAnswer(invocation -> {
@@ -2162,7 +2162,7 @@ public class RestM3QLActionTests extends OpenSearchTestCase {
                     org.hamcrest.Matchers.instanceOf(PromMatrixResponseListener.class)
                 );
                 PromMatrixResponseListener pmrl = (PromMatrixResponseListener) listener;
-                assertTrue("includeExecStats should default to true", pmrl.isIncludeExecStats());
+                assertFalse("includeExecStats should default to false", pmrl.isIncludeExecStats());
             } finally {
                 assertionLatch.countDown();
             }
