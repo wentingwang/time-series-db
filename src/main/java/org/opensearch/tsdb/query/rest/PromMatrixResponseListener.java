@@ -105,6 +105,21 @@ public class PromMatrixResponseListener extends RestToXContentListener<SearchRes
     // Response type values
     private static final String RESULT_TYPE_MATRIX = "matrix";
 
+    // Exec stats field names
+    private static final String FIELD_EXEC_STATS = "execStats";
+    private static final String FIELD_LATENCY_MS = "latencyMs";
+    private static final String FIELD_SERIES = "series";
+    private static final String FIELD_SAMPLES = "samples";
+    private static final String FIELD_NUM_INPUT = "numInput";
+    private static final String FIELD_NUM_OUTPUT = "numOutput";
+    private static final String FIELD_STORAGE = "storage";
+    private static final String FIELD_CHUNKS = "chunks";
+    private static final String FIELD_DOCUMENTS = "documents";
+    private static final String FIELD_CLOSED = "closed";
+    private static final String FIELD_LIVE = "live";
+    private static final String FIELD_RESOURCE = "resource";
+    private static final String FIELD_MEMORY_BYTES = "memoryBytes";
+
     // Aggregator name for profile extraction
     private static final String TIME_SERIES_UNFOLD_AGGREGATOR_NAME = TimeSeriesUnfoldAggregator.class.getSimpleName();
 
@@ -267,34 +282,30 @@ public class PromMatrixResponseListener extends RestToXContentListener<SearchRes
                 long numSeriesOutput = its.getTimeSeries().size();
                 long numSamplesOutput = its.getTimeSeries().stream().mapToLong(ts -> ts.getSamples().size()).sum();
 
-                builder.startObject("execStats");
-                builder.field("latencyMs", latencyMs);
-                builder.startObject("data");
-                builder.startObject("series");
-                builder.field("numInput", stats.seriesNumInput());
-                builder.field("numOutput", numSeriesOutput);
+                builder.startObject(FIELD_EXEC_STATS);
+                builder.field(FIELD_LATENCY_MS, latencyMs);
+                builder.startObject(FIELD_DATA);
+                builder.startObject(FIELD_SERIES);
+                builder.field(FIELD_NUM_INPUT, stats.seriesNumInput());
+                builder.field(FIELD_NUM_OUTPUT, numSeriesOutput);
                 builder.endObject();
-                builder.startObject("samples");
-                builder.field("numInput", stats.samplesNumInput());
-                builder.field("numOutput", numSamplesOutput);
-                builder.endObject();
-                builder.endObject();
-                builder.startObject("storage");
-                builder.startObject("chunks");
-                builder.field("closed", stats.chunksNumClosed());
-                builder.field("live", stats.chunksNumLive());
-                builder.endObject();
-                builder.startObject("documents");
-                builder.field("closed", stats.docsNumClosed());
-                builder.field("live", stats.docsNumLive());
+                builder.startObject(FIELD_SAMPLES);
+                builder.field(FIELD_NUM_INPUT, stats.samplesNumInput());
+                builder.field(FIELD_NUM_OUTPUT, numSamplesOutput);
                 builder.endObject();
                 builder.endObject();
-                builder.startObject("resource");
-                // memoryBytes is the SUM of per-shard peak circuit-breaker bytes, not a single-node
-                // peak. It is a reasonable proxy for total memory committed across the cluster during
-                // this query, but includes allocations that may have already been released (e.g.,
-                // input TimeSeries cleared after shard-level pipeline stages).
-                builder.field("memoryBytes", stats.memoryBytes());
+                builder.startObject(FIELD_STORAGE);
+                builder.startObject(FIELD_CHUNKS);
+                builder.field(FIELD_CLOSED, stats.chunksNumClosed());
+                builder.field(FIELD_LIVE, stats.chunksNumLive());
+                builder.endObject();
+                builder.startObject(FIELD_DOCUMENTS);
+                builder.field(FIELD_CLOSED, stats.docsNumClosed());
+                builder.field(FIELD_LIVE, stats.docsNumLive());
+                builder.endObject();
+                builder.endObject();
+                builder.startObject(FIELD_RESOURCE);
+                builder.field(FIELD_MEMORY_BYTES, stats.memoryBytes());
                 builder.endObject();
                 builder.endObject(); // execStats
             }
@@ -397,7 +408,6 @@ public class PromMatrixResponseListener extends RestToXContentListener<SearchRes
                     double currentShardReduceTimeMillis = 0.0;
                     double currentShardPostCollectionTimeMillis = 0.0;
                     // TODO: Consolidate it with ProfileInfoMapper.extractPerShardStats()
-
                     if (shardResult.getAggregationProfileResults() != null) {
                         for (ProfileResult profileResult : shardResult.getAggregationProfileResults().getProfileResults()) {
                             // Only extract timing for TimeSeriesUnfoldAggregator

@@ -26,6 +26,7 @@ import org.opensearch.tsdb.query.stage.UnaryPipelineStage;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -245,18 +246,20 @@ public class InternalTimeSeriesSerializationTests extends AbstractWireTestCase<I
     }
 
     /**
-     * Test backward compatibility: V0 write -> V0 read, V1 write -> V1 read, and
-     * verify that V0/V1 data yields EMPTY exec stats.
+     * Test cross-version compatibility: write with each version, read with each version.
+     * The reader auto-detects the wire format from the sentinel byte, so the read-side
+     * serialFormatSetting should not affect correctness.
+     * V0/V1 writes should yield EMPTY exec stats on read; V2 writes should preserve them.
      */
     public void testBackCompatibility() throws IOException {
-        for (int version : new int[] { 0, 1 }) {
+        List<Integer> versions = new ArrayList<>(InternalTimeSeries.SUPPORTED_VERSIONS);
+        Collections.sort(versions);
+        for (int writeVersion : versions) {
             for (int epoch = 0; epoch < 8; epoch++) {
                 InternalTimeSeries original = createTestInstance();
                 try (BytesStreamOutput out = new BytesStreamOutput()) {
-                    int savedVersion = InternalTimeSeries.serialFormatSetting;
-                    InternalTimeSeries.serialFormatSetting = version;
+                    InternalTimeSeries.serialFormatSetting = writeVersion;
                     original.writeTo(out);
-                    InternalTimeSeries.serialFormatSetting = savedVersion;
 
                     try (StreamInput in = out.bytes().streamInput()) {
                         InternalTimeSeries deserialized = new InternalTimeSeries(in);
@@ -268,8 +271,13 @@ public class InternalTimeSeriesSerializationTests extends AbstractWireTestCase<I
                         for (int i = 0; i < deserialized.getTimeSeries().size(); i++) {
                             assertEquals(original.getTimeSeries().get(i), deserialized.getTimeSeries().get(i));
                         }
-                        // V0 and V1 should yield EMPTY exec stats
-                        assertEquals(AggregationExecStats.EMPTY, deserialized.getExecStats());
+                        if (writeVersion >= 2) {
+                            // V2 writes preserve exec stats
+                            assertEquals(original.getExecStats(), deserialized.getExecStats());
+                        } else {
+                            // V0 and V1 writes yield EMPTY exec stats
+                            assertEquals(AggregationExecStats.EMPTY, deserialized.getExecStats());
+                        }
                     }
                 }
             }

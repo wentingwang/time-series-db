@@ -275,7 +275,6 @@ public class RestM3QLAction extends BaseTSDBAction {
                                     METRICS.reducePhaseCpuTimeMs,
                                     METRICS.shardLatencyMax
                                 )
-
                             )
                         );
 

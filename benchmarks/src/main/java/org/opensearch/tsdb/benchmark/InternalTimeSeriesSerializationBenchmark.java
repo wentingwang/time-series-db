@@ -96,7 +96,7 @@ public class InternalTimeSeriesSerializationBenchmark {
                 seriesList.add(ts);
             }
             internalTimeSeries[s] = new InternalTimeSeries("test-" + s, seriesList, Map.of());
-            InternalTimeSeries.serialFormatSetting = InternalTimeSeries.VERSION_0;
+            InternalTimeSeries.serialFormatSetting = InternalTimeSeries.VERSION_1;
             BytesStreamOutput out = new BytesStreamOutput();
             internalTimeSeries[s].writeTo(out);
             serializedTimeSeries[s] = BytesReference.toBytes(out.bytes());
@@ -112,7 +112,7 @@ public class InternalTimeSeriesSerializationBenchmark {
 
     @Benchmark
     public void serialBench(Blackhole bh) throws IOException {
-        InternalTimeSeries.serialFormatSetting = InternalTimeSeries.VERSION_0;
+        InternalTimeSeries.serialFormatSetting = InternalTimeSeries.VERSION_1;
         for (int s = 0; s < numShards; s++) {
             BytesStreamOutput out = new BytesStreamOutput();
             internalTimeSeries[s].writeTo(out);

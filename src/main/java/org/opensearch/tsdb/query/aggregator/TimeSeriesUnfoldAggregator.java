@@ -500,8 +500,7 @@ public class TimeSeriesUnfoldAggregator extends BucketsAggregator {
                 }
 
                 // Capture exec stats snapshot for this shard result.
-                // Stats are always collected (negligible counter overhead). The V0/V1 write methods
-                // will simply not serialize the exec-stats field on the wire.
+                // Stats are always collected (negligible counter overhead).
                 AggregationExecStats execStats = executionStats.toAggregationExecStats();
 
                 // Use the generic InternalPipeline with the reduce stage

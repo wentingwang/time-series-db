@@ -430,7 +430,7 @@ public class InternalTimeSeries extends InternalAggregation implements TimeSerie
      */
     @Override
     public TimeSeriesProvider createReduced(List<TimeSeries> timeSeries) {
-        return new InternalTimeSeries(name, timeSeries, metadata, reduceStage, this.execStats);
+        return new InternalTimeSeries(name, timeSeries, metadata, reduceStage, execStats);
     }
 
     /**

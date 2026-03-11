@@ -1825,13 +1825,45 @@ public class PromMatrixResponseListenerTests extends OpenSearchTestCase {
 
         // Assert
         assertEquals(RestStatus.OK, response.status());
-        String responseContent = response.content().utf8ToString();
-        assertTrue("execStats should be present", responseContent.contains("\"execStats\""));
-        assertTrue("latencyMs should be present", responseContent.contains("\"latencyMs\""));
-        assertTrue("data.series.numInput should be 10", responseContent.contains("\"numInput\":10"));
-        assertTrue("storage.chunks.closed should be 30", responseContent.contains("\"closed\":30"));
-        assertTrue("storage.chunks.live should be 40", responseContent.contains("\"live\":40"));
-        assertTrue("resource.memoryBytes should be 70", responseContent.contains("\"memoryBytes\":70"));
+        Map<String, Object> parsed = parseJsonResponse(response.content().utf8ToString());
+
+        // Verify execStats structure (excluding latencyMs which is non-deterministic)
+        Map<String, Object> actualExecStats = (Map<String, Object>) parsed.get("execStats");
+        assertNotNull("execStats should be present", actualExecStats);
+        assertTrue("latencyMs should be present and positive", ((Number) actualExecStats.get("latencyMs")).doubleValue() >= 0);
+
+        // Remove latencyMs for structural comparison
+        actualExecStats.remove("latencyMs");
+
+        String expectedExecStatsJson = """
+            {
+              "data": {
+                "series": {
+                  "numInput": 10,
+                  "numOutput": 1
+                },
+                "samples": {
+                  "numInput": 20,
+                  "numOutput": 1
+                }
+              },
+              "storage": {
+                "chunks": {
+                  "closed": 30,
+                  "live": 40
+                },
+                "documents": {
+                  "closed": 50,
+                  "live": 60
+                }
+              },
+              "resource": {
+                "memoryBytes": 70
+              }
+            }
+            """;
+        Map<String, Object> expectedExecStats = parseJsonResponse(expectedExecStatsJson);
+        assertEquals("execStats structure should match expected", expectedExecStats, actualExecStats);
     }
 
     public void testResponseExcludesExecStats_byDefault() throws Exception {
