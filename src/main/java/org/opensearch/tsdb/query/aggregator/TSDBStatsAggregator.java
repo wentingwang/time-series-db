@@ -160,6 +160,11 @@ public class TSDBStatsAggregator extends MetricsAggregator {
 
         @Override
         public void collect(int doc, long bucket) throws IOException {
+            // Accumulate per-doc HeadStats for live series segments
+            if (includeHeadStats && tsdbLeafReader instanceof LiveSeriesIndexLeafReader) {
+                headNumSeries++;
+                headNumChunks += ((LiveSeriesIndexLeafReader) tsdbLeafReader).numChunksForDoc(doc, tsdbDocValues);
+            }
             Labels labels = tsdbLeafReader.labelsForDoc(doc, tsdbDocValues);
             // We assume labels hash is the seriesId
             // This need to be changed when we start accepting reference/seriesId from indexing
@@ -170,12 +175,6 @@ public class TSDBStatsAggregator extends MetricsAggregator {
             // Already processed this series - skip entire document
             if (!seenSeriesIds.add(seriesId)) {
                 return;
-            }
-
-            // Accumulate per-doc HeadStats for live series segments
-            if (includeHeadStats && tsdbLeafReader instanceof LiveSeriesIndexLeafReader) {
-                headNumSeries++;
-                headNumChunks += ((LiveSeriesIndexLeafReader) tsdbLeafReader).numChunksForDoc(doc, tsdbDocValues);
             }
 
             // TODO process each label using BytesRef directly (avoid String conversion)

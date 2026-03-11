@@ -95,6 +95,7 @@ import static org.opensearch.tsdb.query.utils.TSDBStatsConstants.AGGREGATION_NAM
  * {
  *   "headStats": {
  *     "numSeries": 508,
+ *     "numChunks": 937,
  *     "minTime": 1591516800000,
  *     "maxTime": 1598896800143
  *   },
