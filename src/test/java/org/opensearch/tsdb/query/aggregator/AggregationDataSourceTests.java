@@ -12,19 +12,22 @@ import org.opensearch.core.common.io.stream.StreamInput;
 import org.opensearch.test.OpenSearchTestCase;
 
 import java.io.IOException;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 
 public class AggregationDataSourceTests extends OpenSearchTestCase {
 
     public void testConstructorAndAccessors() {
-        List<String> origins = List.of("prometheus");
-        List<AggregationDataSource.IndexInfo> indexes = List.of(new AggregationDataSource.IndexInfo("2d", "10s"));
+        Set<String> origins = Set.of("prometheus");
+        Set<AggregationDataSource.IndexInfo> indexes = Set.of(new AggregationDataSource.IndexInfo("2d", "10s"));
         AggregationDataSource ds = new AggregationDataSource(origins, indexes);
 
-        assertEquals(List.of("prometheus"), ds.origins());
+        assertEquals(Set.of("prometheus"), ds.origins());
         assertEquals(1, ds.indexes().size());
-        assertEquals("2d", ds.indexes().get(0).index());
-        assertEquals("10s", ds.indexes().get(0).stepSize());
+        AggregationDataSource.IndexInfo idx = ds.indexes().iterator().next();
+        assertEquals("2d", idx.index());
+        assertEquals("10s", idx.stepSize());
     }
 
     public void testEmpty() {
@@ -36,8 +39,8 @@ public class AggregationDataSourceTests extends OpenSearchTestCase {
 
     public void testWriteToAndReadFrom() throws IOException {
         AggregationDataSource original = new AggregationDataSource(
-            List.of("prometheus", "graphite"),
-            List.of(new AggregationDataSource.IndexInfo("2d", "10s"), new AggregationDataSource.IndexInfo("30d", "1m"))
+            new LinkedHashSet<>(List.of("prometheus", "graphite")),
+            new LinkedHashSet<>(List.of(new AggregationDataSource.IndexInfo("2d", "10s"), new AggregationDataSource.IndexInfo("30d", "1m")))
         );
 
         BytesStreamOutput out = new BytesStreamOutput();
@@ -61,54 +64,52 @@ public class AggregationDataSourceTests extends OpenSearchTestCase {
 
     public void testMerge() {
         AggregationDataSource ds1 = new AggregationDataSource(
-            List.of("prometheus"),
-            List.of(new AggregationDataSource.IndexInfo("2d", "10s"))
+            Set.of("prometheus"),
+            Set.of(new AggregationDataSource.IndexInfo("2d", "10s"))
         );
-        AggregationDataSource ds2 = new AggregationDataSource(
-            List.of("graphite"),
-            List.of(new AggregationDataSource.IndexInfo("30d", "1m"))
-        );
+        AggregationDataSource ds2 = new AggregationDataSource(Set.of("graphite"), Set.of(new AggregationDataSource.IndexInfo("30d", "1m")));
 
         AggregationDataSource merged = ds1.merge(ds2);
 
-        assertEquals(List.of("prometheus", "graphite"), merged.origins());
+        assertEquals(Set.of("prometheus", "graphite"), merged.origins());
         assertEquals(2, merged.indexes().size());
-        assertEquals("2d", merged.indexes().get(0).index());
-        assertEquals("30d", merged.indexes().get(1).index());
+        assertTrue(merged.indexes().contains(new AggregationDataSource.IndexInfo("2d", "10s")));
+        assertTrue(merged.indexes().contains(new AggregationDataSource.IndexInfo("30d", "1m")));
     }
 
     public void testMergeDeduplicatesOrigins() {
         AggregationDataSource ds1 = new AggregationDataSource(
-            List.of("prometheus"),
-            List.of(new AggregationDataSource.IndexInfo("2d", "10s"))
+            Set.of("prometheus"),
+            Set.of(new AggregationDataSource.IndexInfo("2d", "10s"))
         );
         AggregationDataSource ds2 = new AggregationDataSource(
-            List.of("prometheus"),
-            List.of(new AggregationDataSource.IndexInfo("30d", "1m"))
+            Set.of("prometheus"),
+            Set.of(new AggregationDataSource.IndexInfo("30d", "1m"))
         );
 
         AggregationDataSource merged = ds1.merge(ds2);
 
-        assertEquals(List.of("prometheus"), merged.origins());
+        assertEquals(Set.of("prometheus"), merged.origins());
         assertEquals(2, merged.indexes().size());
     }
 
     public void testMergeDeduplicatesIndexes() {
         AggregationDataSource.IndexInfo idx = new AggregationDataSource.IndexInfo("2d", "10s");
-        AggregationDataSource ds1 = new AggregationDataSource(List.of("prometheus"), List.of(idx));
-        AggregationDataSource ds2 = new AggregationDataSource(List.of("prometheus"), List.of(idx));
+        AggregationDataSource ds1 = new AggregationDataSource(Set.of("prometheus"), Set.of(idx));
+        AggregationDataSource ds2 = new AggregationDataSource(Set.of("prometheus"), Set.of(idx));
 
         AggregationDataSource merged = ds1.merge(ds2);
 
         assertEquals(1, merged.indexes().size());
-        assertEquals("2d", merged.indexes().get(0).index());
-        assertEquals("10s", merged.indexes().get(0).stepSize());
+        AggregationDataSource.IndexInfo mergedIdx = merged.indexes().iterator().next();
+        assertEquals("2d", mergedIdx.index());
+        assertEquals("10s", mergedIdx.stepSize());
     }
 
     public void testMergeWithEmpty() {
         AggregationDataSource ds = new AggregationDataSource(
-            List.of("prometheus"),
-            List.of(new AggregationDataSource.IndexInfo("2d", "10s"))
+            Set.of("prometheus"),
+            Set.of(new AggregationDataSource.IndexInfo("2d", "10s"))
         );
 
         AggregationDataSource mergedLeft = AggregationDataSource.EMPTY.merge(ds);
@@ -120,17 +121,14 @@ public class AggregationDataSourceTests extends OpenSearchTestCase {
 
     public void testEqualsAndHashCode() {
         AggregationDataSource ds1 = new AggregationDataSource(
-            List.of("prometheus"),
-            List.of(new AggregationDataSource.IndexInfo("2d", "10s"))
+            Set.of("prometheus"),
+            Set.of(new AggregationDataSource.IndexInfo("2d", "10s"))
         );
         AggregationDataSource ds2 = new AggregationDataSource(
-            List.of("prometheus"),
-            List.of(new AggregationDataSource.IndexInfo("2d", "10s"))
+            Set.of("prometheus"),
+            Set.of(new AggregationDataSource.IndexInfo("2d", "10s"))
         );
-        AggregationDataSource ds3 = new AggregationDataSource(
-            List.of("graphite"),
-            List.of(new AggregationDataSource.IndexInfo("2d", "10s"))
-        );
+        AggregationDataSource ds3 = new AggregationDataSource(Set.of("graphite"), Set.of(new AggregationDataSource.IndexInfo("2d", "10s")));
 
         assertEquals(ds1, ds2);
         assertEquals(ds1.hashCode(), ds2.hashCode());

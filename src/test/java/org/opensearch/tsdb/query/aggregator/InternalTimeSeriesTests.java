@@ -25,6 +25,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import static org.mockito.Mockito.mock;
 
@@ -595,7 +596,14 @@ public class InternalTimeSeriesTests extends OpenSearchTestCase {
 
     public void testGetExecStatsWithNonEmptyStats() {
         AggregationExecStats stats = new AggregationExecStats(5L, 10L, 15L, 20L, 25L, 30L, 35L);
-        InternalTimeSeries internal = new InternalTimeSeries(TEST_NAME, createTestTimeSeries(), TEST_METADATA, null, stats);
+        InternalTimeSeries internal = new InternalTimeSeries(
+            TEST_NAME,
+            createTestTimeSeries(),
+            TEST_METADATA,
+            null,
+            stats,
+            AggregationDataSource.EMPTY
+        );
         assertEquals(stats, internal.getExecStats());
     }
 
@@ -603,8 +611,8 @@ public class InternalTimeSeriesTests extends OpenSearchTestCase {
         AggregationExecStats stats1 = new AggregationExecStats(10L, 20L, 30L, 40L, 50L, 60L, 70L);
         AggregationExecStats stats2 = new AggregationExecStats(1L, 2L, 3L, 4L, 5L, 6L, 7L);
 
-        InternalTimeSeries agg1 = new InternalTimeSeries(TEST_NAME, List.of(), TEST_METADATA, null, stats1);
-        InternalTimeSeries agg2 = new InternalTimeSeries(TEST_NAME, List.of(), TEST_METADATA, null, stats2);
+        InternalTimeSeries agg1 = new InternalTimeSeries(TEST_NAME, List.of(), TEST_METADATA, null, stats1, AggregationDataSource.EMPTY);
+        InternalTimeSeries agg2 = new InternalTimeSeries(TEST_NAME, List.of(), TEST_METADATA, null, stats2, AggregationDataSource.EMPTY);
 
         PipelineAggregator.PipelineTree emptyPipelineTree = new PipelineAggregator.PipelineTree(
             Collections.emptyMap(),
@@ -639,8 +647,8 @@ public class InternalTimeSeriesTests extends OpenSearchTestCase {
 
     public void testGetDataSourceWithNonEmptySource() {
         AggregationDataSource ds = new AggregationDataSource(
-            List.of("prometheus"),
-            List.of(new AggregationDataSource.IndexInfo("2d", "10s"))
+            Set.of("prometheus"),
+            Set.of(new AggregationDataSource.IndexInfo("2d", "10s"))
         );
         InternalTimeSeries internal = new InternalTimeSeries(
             TEST_NAME,
@@ -655,13 +663,10 @@ public class InternalTimeSeriesTests extends OpenSearchTestCase {
 
     public void testReduceMergesDataSource() {
         AggregationDataSource ds1 = new AggregationDataSource(
-            List.of("prometheus"),
-            List.of(new AggregationDataSource.IndexInfo("2d", "10s"))
+            Set.of("prometheus"),
+            Set.of(new AggregationDataSource.IndexInfo("2d", "10s"))
         );
-        AggregationDataSource ds2 = new AggregationDataSource(
-            List.of("graphite"),
-            List.of(new AggregationDataSource.IndexInfo("30d", "1m"))
-        );
+        AggregationDataSource ds2 = new AggregationDataSource(Set.of("graphite"), Set.of(new AggregationDataSource.IndexInfo("30d", "1m")));
 
         InternalTimeSeries agg1 = new InternalTimeSeries(TEST_NAME, List.of(), TEST_METADATA, null, AggregationExecStats.EMPTY, ds1);
         InternalTimeSeries agg2 = new InternalTimeSeries(TEST_NAME, List.of(), TEST_METADATA, null, AggregationExecStats.EMPTY, ds2);
@@ -681,7 +686,7 @@ public class InternalTimeSeriesTests extends OpenSearchTestCase {
 
         assertTrue(result instanceof InternalTimeSeries);
         AggregationDataSource merged = ((InternalTimeSeries) result).getDataSource();
-        assertEquals(List.of("prometheus", "graphite"), merged.origins());
+        assertEquals(Set.of("prometheus", "graphite"), merged.origins());
         assertEquals(2, merged.indexes().size());
     }
 

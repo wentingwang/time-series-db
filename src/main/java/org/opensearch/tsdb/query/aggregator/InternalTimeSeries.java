@@ -101,25 +101,6 @@ public class InternalTimeSeries extends InternalAggregation implements TimeSerie
     }
 
     /**
-     * Creates a new InternalTimeSeries aggregation result with an optional reduce stage and execution stats.
-     *
-     * @param name the name of the aggregation
-     * @param timeSeries the list of time series data
-     * @param metadata the aggregation metadata
-     * @param reduceStage the optional reduce stage for final aggregation operations
-     * @param execStats the execution stats snapshot for this shard result (use {@link AggregationExecStats#EMPTY} when not needed)
-     */
-    public InternalTimeSeries(
-        String name,
-        List<TimeSeries> timeSeries,
-        Map<String, Object> metadata,
-        UnaryPipelineStage reduceStage,
-        AggregationExecStats execStats
-    ) {
-        this(name, timeSeries, metadata, reduceStage, execStats, AggregationDataSource.EMPTY);
-    }
-
-    /**
      * Creates a new InternalTimeSeries aggregation result with an optional reduce stage, execution stats, and data source.
      *
      * @param name the name of the aggregation

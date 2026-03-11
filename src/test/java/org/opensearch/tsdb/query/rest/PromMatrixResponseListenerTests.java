@@ -39,6 +39,7 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.equalTo;
@@ -1832,7 +1833,14 @@ public class PromMatrixResponseListenerTests extends OpenSearchTestCase {
         AggregationExecStats execStats = new AggregationExecStats(10L, 20L, 30L, 40L, 50L, 60L, 70L);
 
         List<TimeSeries> timeSeriesList = createTimeSeriesWithLabels();
-        InternalTimeSeries its = new InternalTimeSeries(TEST_AGG_NAME, timeSeriesList, TEST_METADATA, null, execStats);
+        InternalTimeSeries its = new InternalTimeSeries(
+            TEST_AGG_NAME,
+            timeSeriesList,
+            TEST_METADATA,
+            null,
+            execStats,
+            AggregationDataSource.EMPTY
+        );
         Aggregations aggregations = new Aggregations(List.of(its));
         SearchResponse searchResponse = mock(SearchResponse.class);
         when(searchResponse.getAggregations()).thenReturn(aggregations);
@@ -1910,8 +1918,8 @@ public class PromMatrixResponseListenerTests extends OpenSearchTestCase {
     public void testResponseIncludesDataSource_whenEnabled() throws Exception {
         // Arrange
         AggregationDataSource dataSource = new AggregationDataSource(
-            List.of("prometheus"),
-            List.of(new AggregationDataSource.IndexInfo("2d", "10s"))
+            Set.of("prometheus"),
+            Set.of(new AggregationDataSource.IndexInfo("2d", "10s"))
         );
 
         List<TimeSeries> timeSeriesList = createTimeSeriesWithLabels();
@@ -1941,14 +1949,19 @@ public class PromMatrixResponseListenerTests extends OpenSearchTestCase {
         Map<String, Object> actualDataSource = (Map<String, Object>) parsed.get("dataSource");
         assertNotNull("dataSource should be present", actualDataSource);
 
-        List<String> origins = (List<String>) actualDataSource.get("origin");
-        assertEquals(List.of("prometheus"), origins);
-
-        List<Map<String, Object>> indexes = (List<Map<String, Object>>) actualDataSource.get("indexes");
-        assertNotNull("indexes should be present", indexes);
-        assertEquals(1, indexes.size());
-        assertEquals("2d", indexes.get(0).get("index"));
-        assertEquals("10s", indexes.get(0).get("stepSize"));
+        String expectedDataSourceJson = """
+            {
+              "origin": ["prometheus"],
+              "indexes": [
+                {
+                  "index": "2d",
+                  "stepSize": "10s"
+                }
+              ]
+            }
+            """;
+        Map<String, Object> expectedDataSource = parseJsonResponse(expectedDataSourceJson);
+        assertEquals("dataSource structure should match expected", expectedDataSource, actualDataSource);
     }
 
     public void testResponseExcludesDataSource_byDefault() throws Exception {

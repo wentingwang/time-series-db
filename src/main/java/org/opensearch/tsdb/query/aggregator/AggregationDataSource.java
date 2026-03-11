@@ -12,9 +12,7 @@ import org.opensearch.core.common.io.stream.StreamOutput;
 import org.opensearch.core.common.io.stream.Writeable;
 
 import java.io.IOException;
-import java.util.ArrayList;
 import java.util.LinkedHashSet;
-import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 
@@ -32,7 +30,7 @@ import java.util.Set;
  * @param origins  the origin system names (e.g. "prometheus", "graphite")
  * @param indexes  the index/resolution metadata entries
  */
-public record AggregationDataSource(List<String> origins, List<IndexInfo> indexes) implements Writeable {
+public record AggregationDataSource(Set<String> origins, Set<IndexInfo> indexes) implements Writeable {
 
     /**
      * Describes a single index and its associated step size (resolution).
@@ -60,7 +58,7 @@ public record AggregationDataSource(List<String> origins, List<IndexInfo> indexe
     }
 
     /** Zero-value constant used when data source info is not available. */
-    public static final AggregationDataSource EMPTY = new AggregationDataSource(List.of(), List.of());
+    public static final AggregationDataSource EMPTY = new AggregationDataSource(Set.of(), Set.of());
 
     /**
      * Deserializing constructor.
@@ -69,16 +67,16 @@ public record AggregationDataSource(List<String> origins, List<IndexInfo> indexe
      * @throws IOException if an I/O error occurs during reading
      */
     public AggregationDataSource(StreamInput in) throws IOException {
-        this(in.readStringList(), readIndexInfoList(in));
+        this(new LinkedHashSet<>(in.readStringList()), readIndexInfoSet(in));
     }
 
-    private static List<IndexInfo> readIndexInfoList(StreamInput in) throws IOException {
+    private static Set<IndexInfo> readIndexInfoSet(StreamInput in) throws IOException {
         int size = in.readVInt();
-        List<IndexInfo> list = new ArrayList<>(size);
+        Set<IndexInfo> set = new LinkedHashSet<>(size);
         for (int i = 0; i < size; i++) {
-            list.add(new IndexInfo(in));
+            set.add(new IndexInfo(in));
         }
-        return list;
+        return set;
     }
 
     /**
@@ -108,14 +106,12 @@ public record AggregationDataSource(List<String> origins, List<IndexInfo> indexe
     public AggregationDataSource merge(AggregationDataSource other) {
         Objects.requireNonNull(other, "other must not be null");
 
-        // Union origins, preserving order and deduplicating
         Set<String> mergedOrigins = new LinkedHashSet<>(this.origins);
         mergedOrigins.addAll(other.origins);
 
-        // Union indexes, deduplicating by (index, stepSize) pair
         Set<IndexInfo> mergedIndexes = new LinkedHashSet<>(this.indexes);
         mergedIndexes.addAll(other.indexes);
 
-        return new AggregationDataSource(List.copyOf(mergedOrigins), List.copyOf(mergedIndexes));
+        return new AggregationDataSource(mergedOrigins, mergedIndexes);
     }
 }

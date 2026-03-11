@@ -63,7 +63,23 @@ import static org.opensearch.tsdb.metrics.TSDBMetricsConstants.NANOS_PER_MILLI;
  *         "start": 1000000,
  *         "end": 2000000
  *       }
- *     ]
+ *     ],
+ *     "execStats" : {
+ *        "latencyMs": 350,
+ *         "data" : {
+ *            "series": { "numInput": 9, "numOutput: 5},
+ *            "samples" {"numInput": 240, "numOutput: 180 }
+ *         },
+ *        "storage": {
+ *            "chunks": { "closed" : 120, "live": 12},
+ *            "documents": { "closed" : 12000, "live": 12}
+ *        },
+ *        "resource": { "memoryBytes": 12089 }
+ *     },
+ *     "dataSource" : {
+ *      "origin" : ["prometheus"],
+ *      "indexes": [{ "index": "2d", "stepSize": "10s"}]
+ *     }
  *   }
  * }
  * }</pre>

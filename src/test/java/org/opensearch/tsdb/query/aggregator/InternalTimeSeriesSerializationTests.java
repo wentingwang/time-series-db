@@ -30,6 +30,7 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import static org.opensearch.tsdb.query.aggregator.InternalTimeSeries.VERSION_2;
 
@@ -70,8 +71,8 @@ public class InternalTimeSeriesSerializationTests extends AbstractWireTestCase<I
         AggregationDataSource dataSource = randomBoolean()
             ? AggregationDataSource.EMPTY
             : new AggregationDataSource(
-                List.of(randomAlphaOfLength(5)),
-                List.of(new AggregationDataSource.IndexInfo(randomAlphaOfLength(3), randomAlphaOfLength(3)))
+                Set.of(randomAlphaOfLength(5)),
+                Set.of(new AggregationDataSource.IndexInfo(randomAlphaOfLength(3), randomAlphaOfLength(3)))
             );
 
         return new InternalTimeSeries(name, timeSeries, metadata, reduceStage, execStats, dataSource);
@@ -160,6 +161,17 @@ public class InternalTimeSeriesSerializationTests extends AbstractWireTestCase<I
                     assertEquals(origSeries.getSamples().getSampleType(), deserSeries.getSamples().getSampleType());
                     assertEquals(origSeries.getSamples().getTimestamp(i), deserSeries.getSamples().getTimestamp(i));
                     assertEquals(origSeries.getSamples().getValue(i), deserSeries.getSamples().getValue(i), 0.001);
+
+                    // Now we don't really explicitly support mix type of samples from our interface for simplicity
+                    // Although it is still implicitly supported by using List<Sample> but there's no API to tell whether
+                    // the list is of mixed sample type
+                    // We should revisit if we see such a need of mixing sample types
+
+                    // if (origSample instanceof SumCountSample origSumCount) {
+                    // SumCountSample deserSumCount = (SumCountSample) deserSample;
+                    // assertEquals(origSumCount.sum(), deserSumCount.sum(), 0.001);
+                    // assertEquals(origSumCount.count(), deserSumCount.count());
+                    // }
                 }
             }
         }
@@ -286,7 +298,7 @@ public class InternalTimeSeriesSerializationTests extends AbstractWireTestCase<I
         List<Integer> versions = new ArrayList<>(InternalTimeSeries.SUPPORTED_VERSIONS);
         Collections.sort(versions);
         for (int writeVersion : versions) {
-            for (int epoch = 0; epoch < 8; epoch++) {
+            for (int epoch = 0; epoch < 16; epoch++) {
                 InternalTimeSeries original = createTestInstance();
                 try (BytesStreamOutput out = new BytesStreamOutput()) {
                     InternalTimeSeries.serialFormatSetting = writeVersion;
@@ -335,7 +347,14 @@ public class InternalTimeSeriesSerializationTests extends AbstractWireTestCase<I
             );
             List<TimeSeries> ts = createRandomTimeSeries();
             UnaryPipelineStage reduceStage = randomBoolean() ? null : createRandomReduceStage();
-            InternalTimeSeries original = new InternalTimeSeries("test_v2", ts, Map.of("k", "v"), reduceStage, execStats);
+            InternalTimeSeries original = new InternalTimeSeries(
+                "test_v2",
+                ts,
+                Map.of("k", "v"),
+                reduceStage,
+                execStats,
+                AggregationDataSource.EMPTY
+            );
 
             try (BytesStreamOutput out = new BytesStreamOutput()) {
                 original.writeTo(out);
@@ -362,8 +381,8 @@ public class InternalTimeSeriesSerializationTests extends AbstractWireTestCase<I
         InternalTimeSeries.serialFormatSetting = VERSION_2;
         for (int epoch = 0; epoch < 8; epoch++) {
             AggregationDataSource dataSource = new AggregationDataSource(
-                List.of(randomAlphaOfLength(5)),
-                List.of(new AggregationDataSource.IndexInfo(randomAlphaOfLength(3), randomAlphaOfLength(3)))
+                Set.of(randomAlphaOfLength(5)),
+                Set.of(new AggregationDataSource.IndexInfo(randomAlphaOfLength(3), randomAlphaOfLength(3)))
             );
             List<TimeSeries> ts = createRandomTimeSeries();
             UnaryPipelineStage reduceStage = randomBoolean() ? null : createRandomReduceStage();
