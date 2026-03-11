@@ -88,12 +88,12 @@ public class InternalTimeSeriesSerializationTests extends AbstractWireTestCase<I
 
     @Before
     public void setSerialVersion() {
-        InternalTimeSeries.serialFormatSetting = InternalTimeSeries.CURRENT_SERIAL_VERSION;
+        InternalTimeSeries.serialFormatSetting = InternalTimeSeries.VERSION_1;
     }
 
     @After
     public void resetSerialVersion() {
-        InternalTimeSeries.serialFormatSetting = InternalTimeSeries.LEGACY_SERIAL_VERSION;
+        InternalTimeSeries.serialFormatSetting = InternalTimeSeries.VERSION_0;
     }
 
     /**
@@ -280,6 +280,8 @@ public class InternalTimeSeriesSerializationTests extends AbstractWireTestCase<I
      * Test V2 write -> V2 read preserves exec stats.
      */
     public void testV2RoundTripWithExecStats() throws IOException {
+        // Change to V2
+        InternalTimeSeries.serialFormatSetting = InternalTimeSeries.VERSION_2;
         for (int epoch = 0; epoch < 8; epoch++) {
             AggregationExecStats execStats = new AggregationExecStats(
                 randomLongBetween(1, 1000),
@@ -295,7 +297,6 @@ public class InternalTimeSeriesSerializationTests extends AbstractWireTestCase<I
             InternalTimeSeries original = new InternalTimeSeries("test_v2", ts, Map.of("k", "v"), reduceStage, execStats);
 
             try (BytesStreamOutput out = new BytesStreamOutput()) {
-                // serialFormatSetting is already 2 from @Before
                 original.writeTo(out);
                 try (StreamInput in = out.bytes().streamInput()) {
                     InternalTimeSeries deserialized = new InternalTimeSeries(in);

@@ -539,7 +539,7 @@ public class TSDBPlugin extends Plugin implements SearchPlugin, EnginePlugin, Ac
      */
     public static final Setting<Integer> TSDB_ENGINE_INTERNAL_TIME_SERIES_FORMAT = Setting.intSetting(
         "tsdb_engine.query.internal_time_series_format",
-        0,  // default: false (compression disabled)
+        InternalTimeSeries.VERSION_0,  // default: false (compression disabled)
         Setting.Property.NodeScope,
         Setting.Property.Dynamic
     );

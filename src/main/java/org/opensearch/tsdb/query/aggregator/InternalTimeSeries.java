@@ -38,12 +38,29 @@ import org.opensearch.tsdb.query.breaker.ReduceCircuitBreakerConsumer;
  * It implements the {@link TimeSeriesProvider} interface to provide access to the
  * underlying time series data.</p>
  *
+ * <h2>Key Features:</h2>
+ * <ul>
+ *   <li><strong>Time Series Storage:</strong> Maintains a list of time series with their
+ *       associated samples, labels, and metadata</li>
+ *   <li><strong>Reduce Stage Support:</strong> Supports optional reduce stages for
+ *       final aggregation operations</li>
+ *   <li><strong>Label-based Merging:</strong> Uses {@link SampleMerger} for
+ *       intelligent merging of time series with matching labels</li>
+ *   <li><strong>Serialization:</strong> Supports streaming serialization/deserialization
+ *       for distributed processing</li>
+ * </ul>
+ *
  * <h2>Wire Format Versions:</h2>
  * <ul>
  *   <li><strong>V0 (Legacy):</strong> Per-sample serialization, no sentinel byte</li>
  *   <li><strong>V1:</strong> Delta-encoded SampleList, sentinel -1</li>
- *   <li><strong>V2:</strong> V1 + 7 unconditional longs for exec-stats, sentinel -2</li>
+ *   <li><strong>V2:</strong> V1 + exec-stats longs appended after reduce stage, sentinel -2</li>
  * </ul>
+ *
+ * <h2>Usage Pattern:</h2>
+ * <p>This class is typically created by time series aggregators to represent their results.
+ * The time series data can then be further processed through pipeline stages or returned as
+ * final results.</p>
  */
 public class InternalTimeSeries extends InternalAggregation implements TimeSeriesProvider {
 
@@ -52,18 +69,12 @@ public class InternalTimeSeries extends InternalAggregation implements TimeSerie
     private final AggregationExecStats execStats;
     private static final SampleMerger MERGE_HELPER = new SampleMerger(SampleMerger.DeduplicatePolicy.ANY_WINS);
 
-    public static final int LEGACY_SERIAL_VERSION = 0;
-    public static final int CURRENT_SERIAL_VERSION = 2;
-    public static final Set<Integer> SUPPORTED_VERSIONS = Set.of(0, 1, 2);
+    public static final int VERSION_0 = 0;
+    public static final int VERSION_1 = 1;
+    public static final int VERSION_2 = 2;
+    public static final Set<Integer> SUPPORTED_VERSIONS = Set.of(VERSION_0, VERSION_1, VERSION_2);
 
-    public static volatile int serialFormatSetting = LEGACY_SERIAL_VERSION; // this will be synced with the cluster setting
-
-    /**
-     * Private inner record used to pass deserialized state from static readFromVN methods
-     * back to the StreamInput constructor, allowing final field assignment.
-     */
-    private record DeserializedState(List<TimeSeries> timeSeries, UnaryPipelineStage reduceStage, AggregationExecStats execStats) {
-    }
+    public static volatile int serialFormatSetting = VERSION_0; // this will be synced with the cluster setting
 
     /**
      * Creates a new InternalTimeSeries aggregation result without a reduce stage.
@@ -118,92 +129,54 @@ public class InternalTimeSeries extends InternalAggregation implements TimeSerie
      */
     public InternalTimeSeries(StreamInput in) throws IOException {
         super(in);
-        int firstVInt = in.readVInt();
-        int serialVersion = resolveSerialVersion(firstVInt);
-        DeserializedState state;
-        switch (serialVersion) {
-            case 0:
-                state = readFromV0(in, firstVInt);
-                break;
-            case 1:
-                state = readFromV1(in);
-                break;
-            case 2:
-                state = readFromV2(in);
-                break;
-            default:
-                throw new IllegalStateException("Unsupported serial version: " + serialVersion);
+        // Read time series
+        int timeSeriesCount = in.readVInt();
+        int serialVersion = resolveSerialVersion(timeSeriesCount);
+        // V1+: Read extra int for seriesCount when version >=1
+        if (serialVersion >= VERSION_1) {
+            timeSeriesCount = in.readVInt();
         }
-        this.timeSeries = state.timeSeries();
-        this.reduceStage = state.reduceStage();
-        this.execStats = state.execStats();
+        this.timeSeries = new ArrayList<>(timeSeriesCount);
+        for (int i = 0; i < timeSeriesCount; i++) {
+            this.timeSeries.add(readTimeSeries(in, serialVersion));
+        }
+
+        // Read the reduce stage information
+        boolean hasReduceStage = in.readBoolean();
+        if (hasReduceStage) {
+            String stageName = in.readString();
+            this.reduceStage = (UnaryPipelineStage) PipelineStageFactory.readFrom(in, stageName);
+        } else {
+            this.reduceStage = null;
+        }
+
+        // V2+: read exec stats after reduce stage
+        if (serialVersion >= VERSION_2) {
+            this.execStats = new AggregationExecStats(in);
+        } else {
+            this.execStats = AggregationExecStats.EMPTY;
+        }
     }
 
-    private static int resolveSerialVersion(int firstVInt) {
-        if (firstVInt >= 0) {
-            return LEGACY_SERIAL_VERSION;
+    /**
+     * Resolves the wire format version from the first VInt read off the stream.
+     * A non-negative value is the actual time series count (V0 legacy format),
+     * while a negative value encodes the version as {@code -version} (e.g. -1 for V1, -2 for V2).
+     *
+     * @param timeSeriesCount the first VInt read from the stream
+     * @return the resolved serial version
+     * @throws IllegalStateException if the encoded version is not in {@link #SUPPORTED_VERSIONS}
+     */
+    private static int resolveSerialVersion(int timeSeriesCount) {
+        if (timeSeriesCount >= 0) {
+            return VERSION_0;
         }
-        int version = -firstVInt;
+        int version = -timeSeriesCount;
         if (!SUPPORTED_VERSIONS.contains(version)) {
             throw new IllegalStateException("Unknown serial version: " + version + ". Supported versions: " + SUPPORTED_VERSIONS);
         }
         return version;
     }
-
-    // ==================== Version-dispatched deserialization ====================
-
-    /**
-     * Reads V0 (legacy) format. The firstVInt is the timeSeriesCount (already read by caller).
-     */
-    private static DeserializedState readFromV0(StreamInput in, int timeSeriesCount) throws IOException {
-        List<TimeSeries> series = new ArrayList<>(timeSeriesCount);
-        for (int i = 0; i < timeSeriesCount; i++) {
-            series.add(readTimeSeriesLegacy(in));
-        }
-        UnaryPipelineStage reduceStage = readReduceStage(in);
-        return new DeserializedState(series, reduceStage, AggregationExecStats.EMPTY);
-    }
-
-    /**
-     * Reads V1 format: sentinel already consumed, next VInt is timeSeriesCount.
-     */
-    private static DeserializedState readFromV1(StreamInput in) throws IOException {
-        int timeSeriesCount = in.readVInt();
-        List<TimeSeries> series = new ArrayList<>(timeSeriesCount);
-        for (int i = 0; i < timeSeriesCount; i++) {
-            series.add(readTimeSeriesDelta(in));
-        }
-        UnaryPipelineStage reduceStage = readReduceStage(in);
-        return new DeserializedState(series, reduceStage, AggregationExecStats.EMPTY);
-    }
-
-    /**
-     * Reads V2 format: identical to V1 for time series + reduce stage, then reads exec-stats (7 longs).
-     */
-    private static DeserializedState readFromV2(StreamInput in) throws IOException {
-        int timeSeriesCount = in.readVInt();
-        List<TimeSeries> series = new ArrayList<>(timeSeriesCount);
-        for (int i = 0; i < timeSeriesCount; i++) {
-            series.add(readTimeSeriesDelta(in));
-        }
-        UnaryPipelineStage reduceStage = readReduceStage(in);
-        AggregationExecStats execStats = new AggregationExecStats(in);
-        return new DeserializedState(series, reduceStage, execStats);
-    }
-
-    /**
-     * Reads the reduce stage from the stream (shared across all versions).
-     */
-    private static UnaryPipelineStage readReduceStage(StreamInput in) throws IOException {
-        boolean hasReduceStage = in.readBoolean();
-        if (hasReduceStage) {
-            String stageName = in.readString();
-            return (UnaryPipelineStage) PipelineStageFactory.readFrom(in, stageName);
-        }
-        return null;
-    }
-
-    // ==================== Version-dispatched serialization ====================
 
     /**
      * Writes the InternalTimeSeries data to a stream for serialization.
@@ -213,25 +186,45 @@ public class InternalTimeSeries extends InternalAggregation implements TimeSerie
      */
     @Override
     public void doWriteTo(StreamOutput out) throws IOException {
-        switch (serialFormatSetting) {
-            case 0:
-                doWriteToV0(out);
-                break;
-            case 1:
-                doWriteToV1(out);
-                break;
-            case 2:
-                doWriteToV2(out);
-                break;
-            default:
-                throw new IllegalStateException("Unsupported serial format setting: " + serialFormatSetting);
+        if (serialFormatSetting == VERSION_0) {
+            legacyWriteTo(out);
+            return;
+        }
+        out.writeVInt(-serialFormatSetting);
+        out.writeVInt(timeSeries.size());
+        for (TimeSeries series : timeSeries) {
+            out.writeInt(0); // hash - placeholder for now
+            SampleList.writeTo(series.getSamples(), out);
+
+            // Write labels - convert to map for serialization
+            Map<String, String> labelsMap = series.getLabels() != null ? series.getLabels().toMapView() : new HashMap<>();
+            out.writeMap(labelsMap, StreamOutput::writeString, StreamOutput::writeString);
+
+            // Write alias
+            out.writeOptionalString(series.getAlias());
+
+            // Write TimeSeries metadata
+            out.writeLong(series.getMinTimestamp());
+            out.writeLong(series.getMaxTimestamp());
+            out.writeLong(series.getStep());
+        }
+
+        // Write the reduce stage information
+        if (reduceStage != null) {
+            out.writeBoolean(true);
+            out.writeString(reduceStage.getName());
+            reduceStage.writeTo(out);
+        } else {
+            out.writeBoolean(false);
+        }
+
+        // V2+: write exec stats after reduce stage
+        if (serialFormatSetting >= VERSION_2) {
+            execStats.writeTo(out);
         }
     }
 
-    /**
-     * V0 (legacy) write: no sentinel, per-sample serialization.
-     */
-    private void doWriteToV0(StreamOutput out) throws IOException {
+    private void legacyWriteTo(StreamOutput out) throws IOException {
         out.writeVInt(timeSeries.size());
         for (TimeSeries series : timeSeries) {
             out.writeInt(0); // hash - placeholder for now
@@ -240,58 +233,21 @@ public class InternalTimeSeries extends InternalAggregation implements TimeSerie
             for (Sample sample : samples) {
                 sample.writeTo(out);
             }
-            writeSeriesMetadata(series, out);
+
+            // Write labels - convert to map for serialization
+            Map<String, String> labelsMap = series.getLabels() != null ? series.getLabels().toMapView() : new HashMap<>();
+            out.writeMap(labelsMap, StreamOutput::writeString, StreamOutput::writeString);
+
+            // Write alias
+            out.writeOptionalString(series.getAlias());
+
+            // Write TimeSeries metadata
+            out.writeLong(series.getMinTimestamp());
+            out.writeLong(series.getMaxTimestamp());
+            out.writeLong(series.getStep());
         }
-        writeReduceStage(out);
-    }
 
-    /**
-     * V1 write: sentinel -1, delta-encoded SampleList.
-     */
-    private void doWriteToV1(StreamOutput out) throws IOException {
-        out.writeVInt(-1);
-        out.writeVInt(timeSeries.size());
-        for (TimeSeries series : timeSeries) {
-            out.writeInt(0); // hash - placeholder for now
-            SampleList.writeTo(series.getSamples(), out);
-            writeSeriesMetadata(series, out);
-        }
-        writeReduceStage(out);
-    }
-
-    /**
-     * V2 write: sentinel -2, delta-encoded SampleList, then 7 exec-stats longs.
-     */
-    private void doWriteToV2(StreamOutput out) throws IOException {
-        out.writeVInt(-2);
-        out.writeVInt(timeSeries.size());
-        for (TimeSeries series : timeSeries) {
-            out.writeInt(0); // hash - placeholder for now
-            SampleList.writeTo(series.getSamples(), out);
-            writeSeriesMetadata(series, out);
-        }
-        writeReduceStage(out);
-        execStats.writeTo(out);
-    }
-
-    /**
-     * Writes series metadata (labels, alias, timestamps) shared across V0/V1/V2.
-     * Note: V0 writes labels after per-sample loop; V1/V2 write labels after SampleList.writeTo.
-     * Both write the same metadata fields in the same order after the samples.
-     */
-    private static void writeSeriesMetadata(TimeSeries series, StreamOutput out) throws IOException {
-        Map<String, String> labelsMap = series.getLabels() != null ? series.getLabels().toMapView() : new HashMap<>();
-        out.writeMap(labelsMap, StreamOutput::writeString, StreamOutput::writeString);
-        out.writeOptionalString(series.getAlias());
-        out.writeLong(series.getMinTimestamp());
-        out.writeLong(series.getMaxTimestamp());
-        out.writeLong(series.getStep());
-    }
-
-    /**
-     * Writes the reduce stage information shared across all versions.
-     */
-    private void writeReduceStage(StreamOutput out) throws IOException {
+        // Write the reduce stage information
         if (reduceStage != null) {
             out.writeBoolean(true);
             out.writeString(reduceStage.getName());
@@ -421,6 +377,12 @@ public class InternalTimeSeries extends InternalAggregation implements TimeSerie
     /**
      * Retrieves a property value based on the given path.
      *
+     * <p>Supported properties:</p>
+     * <ul>
+     *   <li><strong>Empty path:</strong> Returns this aggregation instance</li>
+     *   <li><strong>"timeSeries":</strong> Returns the list of time series data</li>
+     * </ul>
+     *
      * @param path the property path to retrieve
      * @return the property value
      * @throws IllegalArgumentException if the property path is unknown
@@ -459,6 +421,10 @@ public class InternalTimeSeries extends InternalAggregation implements TimeSerie
     /**
      * Creates a new TimeSeriesProvider with the given time series data.
      *
+     * <p>This method is used to create a reduced aggregation result with
+     * new time series data while preserving the original name, metadata,
+     * and reduce stage configuration.</p>
+     *
      * @param timeSeries the new time series data
      * @return a new InternalTimeSeries instance with the provided data
      */
@@ -477,6 +443,21 @@ public class InternalTimeSeries extends InternalAggregation implements TimeSerie
         return execStats;
     }
 
+    /**
+     * Serializes the time series data to XContent format.
+     *
+     * <p>The output includes:</p>
+     * <ul>
+     * <li>Time series array with samples, labels, and metadata</li>
+     * <li>Individual sample timestamps and values</li>
+     * <li>Series aliases, min/max timestamps, and step information</li>
+     * </ul>
+     *
+     * @param builder the XContent builder to write to
+     * @param params the serialization parameters
+     * @return the XContent builder for method chaining
+     * @throws IOException if an I/O error occurs during serialization
+     */
     @Override
     public XContentBuilder doXContentBody(XContentBuilder builder, Params params) throws IOException {
         builder.startArray("timeSeries");
@@ -507,17 +488,29 @@ public class InternalTimeSeries extends InternalAggregation implements TimeSerie
         return builder;
     }
 
+    /**
+     * Indicates whether this aggregation must be reduced even when there's only
+     * a single internal aggregation.
+     *
+     * @return false, as InternalTimeSeries does not require reduction for single aggregations
+     */
     @Override
     protected boolean mustReduceOnSingleInternalAgg() {
         return false;
     }
 
-    // ==================== TimeSeries reading helpers ====================
-
     /**
-     * Reads a single TimeSeries using delta-encoded SampleList (V1/V2).
+     * Reads a TimeSeries object from a stream input during deserialization.
+     *
+     * @param in the stream input to read from
+     * @param serialVersion the wire format version
+     * @return the deserialized TimeSeries object
+     * @throws IOException if an I/O error occurs during reading
      */
-    private static TimeSeries readTimeSeriesDelta(StreamInput in) throws IOException {
+    private static TimeSeries readTimeSeries(StreamInput in, int serialVersion) throws IOException {
+        if (serialVersion == VERSION_0) {
+            return readTimeSeriesLegacy(in);
+        }
         int hash = in.readInt();
         SampleList samples = SampleList.readFrom(in);
 
@@ -526,6 +519,7 @@ public class InternalTimeSeries extends InternalAggregation implements TimeSerie
 
         String alias = in.readOptionalString();
 
+        // Read TimeSeries metadata
         long minTimestamp = in.readLong();
         long maxTimestamp = in.readLong();
         long step = in.readLong();
@@ -533,9 +527,6 @@ public class InternalTimeSeries extends InternalAggregation implements TimeSerie
         return new TimeSeries(samples, labels, minTimestamp, maxTimestamp, step, alias);
     }
 
-    /**
-     * Reads a single TimeSeries using per-sample serialization (V0 legacy).
-     */
     private static TimeSeries readTimeSeriesLegacy(StreamInput in) throws IOException {
         int hash = in.readInt();
         int sampleCount = in.readVInt();
@@ -550,14 +541,13 @@ public class InternalTimeSeries extends InternalAggregation implements TimeSerie
 
         String alias = in.readOptionalString();
 
+        // Read TimeSeries metadata
         long minTimestamp = in.readLong();
         long maxTimestamp = in.readLong();
         long step = in.readLong();
 
         return new TimeSeries(samples, labels, minTimestamp, maxTimestamp, step, alias);
     }
-
-    // ==================== equals / hashCode ====================
 
     @Override
     public boolean equals(Object o) {

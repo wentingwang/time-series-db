@@ -156,7 +156,7 @@ public class PromMatrixResponseListener extends RestToXContentListener<SearchRes
         boolean includeMetadata,
         boolean includeAlias
     ) {
-        this(channel, finalAggregationName, profile, includeMetadata, includeAlias, null, false);
+        this(channel, finalAggregationName, profile, includeMetadata, false, includeAlias, null);
     }
 
     /**
@@ -175,32 +175,9 @@ public class PromMatrixResponseListener extends RestToXContentListener<SearchRes
         String finalAggregationName,
         boolean profile,
         boolean includeMetadata,
+        boolean includeExecStats,
         boolean includeAlias,
         QueryMetrics queryMetrics
-    ) {
-        this(channel, finalAggregationName, profile, includeMetadata, includeAlias, queryMetrics, false);
-    }
-
-    /**
-     * Creates a new matrix response listener with metrics recording capability and exec stats control.
-     *
-     * @param channel the REST channel to send the response to
-     * @param finalAggregationName the name of the final aggregation to extract (must not be null)
-     * @param profile whether to include profiling information in the response
-     * @param includeMetadata whether to include metadata fields (step, start, end) in each time series
-     * @param includeAlias whether to include the alias field in each time series
-     * @param queryMetrics container for query execution metrics (can be null)
-     * @param includeExecStats whether to include execution stats in the response
-     * @throws NullPointerException if finalAggregationName is null
-     */
-    public PromMatrixResponseListener(
-        RestChannel channel,
-        String finalAggregationName,
-        boolean profile,
-        boolean includeMetadata,
-        boolean includeAlias,
-        QueryMetrics queryMetrics,
-        boolean includeExecStats
     ) {
         super(channel);
         this.finalAggregationName = Objects.requireNonNull(finalAggregationName, "finalAggregationName cannot be null");
@@ -286,7 +263,7 @@ public class PromMatrixResponseListener extends RestToXContentListener<SearchRes
             InternalTimeSeries its = findInternalTimeSeries(response.getAggregations(), finalAggregationName);
             if (its != null && !AggregationExecStats.EMPTY.equals(its.getExecStats())) {
                 AggregationExecStats stats = its.getExecStats();
-                long latencyMs = (System.nanoTime() - startTimeNanos) / 1_000_000L;
+                double latencyMs = (System.nanoTime() - startTimeNanos) / NANOS_PER_MILLI;
                 long numSeriesOutput = its.getTimeSeries().size();
                 long numSamplesOutput = its.getTimeSeries().stream().mapToLong(ts -> ts.getSamples().size()).sum();
 

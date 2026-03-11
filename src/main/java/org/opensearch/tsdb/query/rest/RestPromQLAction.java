@@ -231,6 +231,7 @@ public class RestPromQLAction extends BaseTSDBAction {
                         finalAggName,
                         params.profile,
                         params.includeMetadata,
+                        params.includeExecStats,
                         false,
                         new PromMatrixResponseListener.QueryMetrics(
                             METRICS.executionLatency,
@@ -347,6 +348,7 @@ public class RestPromQLAction extends BaseTSDBAction {
         boolean pushdown = resolvePushdownParam(request, true);
         boolean profile = request.paramAsBoolean(PROFILE_PARAM, false);
         boolean includeMetadata = request.paramAsBoolean(INCLUDE_METADATA_PARAM, false);
+        boolean includeExecStats = request.paramAsBoolean(INCLUDE_EXEC_STATS_PARAM, false);
 
         return new RequestParams(
             query,
@@ -359,6 +361,7 @@ public class RestPromQLAction extends BaseTSDBAction {
             pushdown,
             profile,
             includeMetadata,
+            includeExecStats,
             isInstantQuery
         );
     }
@@ -451,7 +454,7 @@ public class RestPromQLAction extends BaseTSDBAction {
      * Internal record holding parsed request parameters.
      */
     protected record RequestParams(String query, long startMs, long endMs, long stepMs, String[] indices, long lookbackDeltaMs,
-        boolean explain, boolean pushdown, boolean profile, boolean includeMetadata, boolean isInstantQuery) {
+        boolean explain, boolean pushdown, boolean profile, boolean includeMetadata, boolean includeExecStats, boolean isInstantQuery) {
     }
 
     /**

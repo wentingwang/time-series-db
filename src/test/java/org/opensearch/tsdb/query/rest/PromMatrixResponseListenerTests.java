@@ -629,7 +629,15 @@ public class PromMatrixResponseListenerTests extends OpenSearchTestCase {
 
         // Create listener
         FakeRestChannel channel = new FakeRestChannel(new FakeRestRequest(), true, 1);
-        PromMatrixResponseListener listener = new PromMatrixResponseListener(channel, TEST_AGG_NAME, false, false, true, queryMetrics);
+        PromMatrixResponseListener listener = new PromMatrixResponseListener(
+            channel,
+            TEST_AGG_NAME,
+            false,
+            false,
+            true,
+            true,
+            queryMetrics
+        );
 
         // Create search response without profile results
         List<TimeSeries> timeSeriesList = createTimeSeriesWithLabels();
@@ -676,7 +684,7 @@ public class PromMatrixResponseListenerTests extends OpenSearchTestCase {
 
         // Create listener with profile enabled
         FakeRestChannel channel = new FakeRestChannel(new FakeRestRequest(), true, 1);
-        PromMatrixResponseListener listener = new PromMatrixResponseListener(channel, TEST_AGG_NAME, true, false, true, queryMetrics);
+        PromMatrixResponseListener listener = new PromMatrixResponseListener(channel, TEST_AGG_NAME, true, false, true, true, queryMetrics);
 
         // Create search response with profile results
         SearchResponse searchResponse = createSearchResponseWithProfile(
@@ -744,7 +752,15 @@ public class PromMatrixResponseListenerTests extends OpenSearchTestCase {
 
         // Create listener
         FakeRestChannel channel = new FakeRestChannel(new FakeRestRequest(), true, 1);
-        PromMatrixResponseListener listener = new PromMatrixResponseListener(channel, TEST_AGG_NAME, false, false, true, queryMetrics);
+        PromMatrixResponseListener listener = new PromMatrixResponseListener(
+            channel,
+            TEST_AGG_NAME,
+            false,
+            false,
+            true,
+            true,
+            queryMetrics
+        );
 
         // Create search response
         List<TimeSeries> timeSeriesList = createTimeSeriesWithLabels();
@@ -791,7 +807,7 @@ public class PromMatrixResponseListenerTests extends OpenSearchTestCase {
 
         // Create listener with profile enabled
         FakeRestChannel channel = new FakeRestChannel(new FakeRestRequest(), true, 1);
-        PromMatrixResponseListener listener = new PromMatrixResponseListener(channel, TEST_AGG_NAME, true, false, true, queryMetrics);
+        PromMatrixResponseListener listener = new PromMatrixResponseListener(channel, TEST_AGG_NAME, true, false, true, true, queryMetrics);
 
         // Create search response with 3 shards with varying times
         // Shard 1: collect=100ms, reduce=50ms
@@ -1801,7 +1817,7 @@ public class PromMatrixResponseListenerTests extends OpenSearchTestCase {
         when(searchResponse.getAggregations()).thenReturn(aggregations);
 
         FakeRestChannel channel = new FakeRestChannel(new FakeRestRequest(), true, 1);
-        PromMatrixResponseListener listener = new PromMatrixResponseListener(channel, TEST_AGG_NAME, false, false, true, null, true);
+        PromMatrixResponseListener listener = new PromMatrixResponseListener(channel, TEST_AGG_NAME, false, false, true, true, null);
         XContentBuilder builder = JsonXContent.contentBuilder();
 
         // Act
