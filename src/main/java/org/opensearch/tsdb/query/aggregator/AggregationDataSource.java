@@ -24,9 +24,6 @@ import java.util.Set;
  * {@link #merge(AggregationDataSource)} which unions origins and deduplicates indexes by
  * {@code (index, stepSize)} pair.</p>
  *
- * <p>Wire format: written/read inside the V2 block of {@link InternalTimeSeries}, after
- * {@link AggregationExecStats}. Coordinated cluster restart is required when upgrading the plugin.</p>
- *
  * @param origins  the origin system names (e.g. "prometheus", "graphite")
  * @param indexes  the index/resolution metadata entries
  */
