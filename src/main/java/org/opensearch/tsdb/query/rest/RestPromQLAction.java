@@ -232,6 +232,7 @@ public class RestPromQLAction extends BaseTSDBAction {
                         params.profile,
                         params.includeMetadata,
                         params.includeExecStats,
+                        params.includeDataSource,
                         false,
                         new PromMatrixResponseListener.QueryMetrics(
                             METRICS.executionLatency,
@@ -350,6 +351,7 @@ public class RestPromQLAction extends BaseTSDBAction {
         boolean includeMetadata = request.paramAsBoolean(INCLUDE_METADATA_PARAM, false);
         // TODO make it default = true when InternalTimeSeries.serialFormatSetting upgrade to 2+
         boolean includeExecStats = request.paramAsBoolean(INCLUDE_EXEC_STATS_PARAM, false);
+        boolean includeDataSource = request.paramAsBoolean(INCLUDE_DATA_SOURCE_PARAM, false);
 
         return new RequestParams(
             query,
@@ -363,7 +365,8 @@ public class RestPromQLAction extends BaseTSDBAction {
             profile,
             includeMetadata,
             includeExecStats,
-            isInstantQuery
+            isInstantQuery,
+            includeDataSource
         );
     }
 
@@ -455,7 +458,8 @@ public class RestPromQLAction extends BaseTSDBAction {
      * Internal record holding parsed request parameters.
      */
     protected record RequestParams(String query, long startMs, long endMs, long stepMs, String[] indices, long lookbackDeltaMs,
-        boolean explain, boolean pushdown, boolean profile, boolean includeMetadata, boolean includeExecStats, boolean isInstantQuery) {
+        boolean explain, boolean pushdown, boolean profile, boolean includeMetadata, boolean includeExecStats, boolean isInstantQuery,
+        boolean includeDataSource) {
     }
 
     /**

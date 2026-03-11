@@ -630,6 +630,61 @@ public class InternalTimeSeriesTests extends OpenSearchTestCase {
         assertEquals(77L, merged.memoryBytes());
     }
 
+    // ========== DataSource Tests ==========
+
+    public void testGetDataSourceDefaultsToEmpty() {
+        InternalTimeSeries internal = new InternalTimeSeries(TEST_NAME, createTestTimeSeries(), TEST_METADATA);
+        assertEquals(AggregationDataSource.EMPTY, internal.getDataSource());
+    }
+
+    public void testGetDataSourceWithNonEmptySource() {
+        AggregationDataSource ds = new AggregationDataSource(
+            List.of("prometheus"),
+            List.of(new AggregationDataSource.IndexInfo("2d", "10s"))
+        );
+        InternalTimeSeries internal = new InternalTimeSeries(
+            TEST_NAME,
+            createTestTimeSeries(),
+            TEST_METADATA,
+            null,
+            AggregationExecStats.EMPTY,
+            ds
+        );
+        assertEquals(ds, internal.getDataSource());
+    }
+
+    public void testReduceMergesDataSource() {
+        AggregationDataSource ds1 = new AggregationDataSource(
+            List.of("prometheus"),
+            List.of(new AggregationDataSource.IndexInfo("2d", "10s"))
+        );
+        AggregationDataSource ds2 = new AggregationDataSource(
+            List.of("graphite"),
+            List.of(new AggregationDataSource.IndexInfo("30d", "1m"))
+        );
+
+        InternalTimeSeries agg1 = new InternalTimeSeries(TEST_NAME, List.of(), TEST_METADATA, null, AggregationExecStats.EMPTY, ds1);
+        InternalTimeSeries agg2 = new InternalTimeSeries(TEST_NAME, List.of(), TEST_METADATA, null, AggregationExecStats.EMPTY, ds2);
+
+        PipelineAggregator.PipelineTree emptyPipelineTree = new PipelineAggregator.PipelineTree(
+            Collections.emptyMap(),
+            Collections.emptyList()
+        );
+        InternalAggregation.ReduceContext finalReduceContext = InternalAggregation.ReduceContext.forFinalReduction(
+            null,
+            null,
+            (s) -> {},
+            emptyPipelineTree
+        );
+
+        InternalAggregation result = agg1.reduce(List.of(agg1, agg2), finalReduceContext);
+
+        assertTrue(result instanceof InternalTimeSeries);
+        AggregationDataSource merged = ((InternalTimeSeries) result).getDataSource();
+        assertEquals(List.of("prometheus", "graphite"), merged.origins());
+        assertEquals(2, merged.indexes().size());
+    }
+
     // ========== Helper Methods ==========
 
     private List<TimeSeries> createTestTimeSeries() {

@@ -12,6 +12,7 @@ import org.opensearch.core.common.io.stream.StreamOutput;
 import org.opensearch.core.common.io.stream.Writeable;
 
 import java.io.IOException;
+import java.util.Objects;
 
 /**
  * Immutable value record carrying summed execution stats for one {@link InternalTimeSeries} aggregation result.
@@ -73,6 +74,7 @@ public record AggregationExecStats(long seriesNumInput,   // data.series.numInpu
      * @return a new merged instance
      */
     public AggregationExecStats merge(AggregationExecStats other) {
+        Objects.requireNonNull(other, "other must not be null");
         return new AggregationExecStats(
             this.seriesNumInput + other.seriesNumInput,
             this.samplesNumInput + other.samplesNumInput,

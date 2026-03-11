@@ -21,6 +21,7 @@ import org.opensearch.search.profile.ProfileShardResult;
 import org.opensearch.telemetry.metrics.Histogram;
 import org.opensearch.tsdb.metrics.TSDBMetrics;
 import org.opensearch.tsdb.query.aggregator.AggregationExecStats;
+import org.opensearch.tsdb.query.aggregator.AggregationDataSource;
 import org.opensearch.tsdb.query.aggregator.InternalTimeSeries;
 import org.opensearch.tsdb.query.aggregator.TimeSeries;
 import org.opensearch.tsdb.query.aggregator.TimeSeriesUnfoldAggregator;
@@ -120,6 +121,13 @@ public class PromMatrixResponseListener extends RestToXContentListener<SearchRes
     private static final String FIELD_RESOURCE = "resource";
     private static final String FIELD_MEMORY_BYTES = "memoryBytes";
 
+    // Data source field names
+    private static final String FIELD_DATA_SOURCE = "dataSource";
+    private static final String FIELD_ORIGIN = "origin";
+    private static final String FIELD_INDEXES = "indexes";
+    private static final String FIELD_INDEX = "index";
+    private static final String FIELD_STEP_SIZE = "stepSize";
+
     // Aggregator name for profile extraction
     private static final String TIME_SERIES_UNFOLD_AGGREGATOR_NAME = TimeSeriesUnfoldAggregator.class.getSimpleName();
 
@@ -136,6 +144,8 @@ public class PromMatrixResponseListener extends RestToXContentListener<SearchRes
     private final QueryMetrics queryMetrics;
 
     private final boolean includeExecStats;
+
+    private final boolean includeDataSource;
 
     /**
      * Container for query execution metrics.
@@ -171,7 +181,7 @@ public class PromMatrixResponseListener extends RestToXContentListener<SearchRes
         boolean includeMetadata,
         boolean includeAlias
     ) {
-        this(channel, finalAggregationName, profile, includeMetadata, false, includeAlias, null);
+        this(channel, finalAggregationName, profile, includeMetadata, false, false, includeAlias, null);
     }
 
     /**
@@ -181,6 +191,8 @@ public class PromMatrixResponseListener extends RestToXContentListener<SearchRes
      * @param finalAggregationName the name of the final aggregation to extract (must not be null)
      * @param profile whether to include profiling information in the response
      * @param includeMetadata whether to include metadata fields (step, start, end) in each time series
+     * @param includeExecStats whether to include execution stats in the response
+     * @param includeDataSource whether to include data source metadata in the response
      * @param includeAlias whether to include the alias field in each time series
      * @param queryMetrics container for query execution metrics (can be null)
      * @throws NullPointerException if finalAggregationName is null
@@ -191,6 +203,7 @@ public class PromMatrixResponseListener extends RestToXContentListener<SearchRes
         boolean profile,
         boolean includeMetadata,
         boolean includeExecStats,
+        boolean includeDataSource,
         boolean includeAlias,
         QueryMetrics queryMetrics
     ) {
@@ -202,6 +215,7 @@ public class PromMatrixResponseListener extends RestToXContentListener<SearchRes
         this.startTimeNanos = System.nanoTime();
         this.queryMetrics = queryMetrics;
         this.includeExecStats = includeExecStats;
+        this.includeDataSource = includeDataSource;
     }
 
     /**
@@ -211,6 +225,15 @@ public class PromMatrixResponseListener extends RestToXContentListener<SearchRes
      */
     boolean isIncludeExecStats() {
         return includeExecStats;
+    }
+
+    /**
+     * Returns whether data source metadata is included in the response.
+     *
+     * @return true if data source metadata is included, false otherwise
+     */
+    boolean isIncludeDataSource() {
+        return includeDataSource;
     }
 
     /**
@@ -274,9 +297,10 @@ public class PromMatrixResponseListener extends RestToXContentListener<SearchRes
         }
 
         // Add execution stats if requested and available (stats are EMPTY when serialFormatSetting < 2)
-        if (includeExecStats) {
+        if (includeExecStats || includeDataSource) {
             InternalTimeSeries its = findInternalTimeSeries(response.getAggregations(), finalAggregationName);
-            if (its != null && !AggregationExecStats.EMPTY.equals(its.getExecStats())) {
+
+            if (includeExecStats && its != null && !AggregationExecStats.EMPTY.equals(its.getExecStats())) {
                 AggregationExecStats stats = its.getExecStats();
                 double latencyMs = (System.nanoTime() - startTimeNanos) / NANOS_PER_MILLI;
                 long numSeriesOutput = its.getTimeSeries().size();
@@ -308,6 +332,21 @@ public class PromMatrixResponseListener extends RestToXContentListener<SearchRes
                 builder.field(FIELD_MEMORY_BYTES, stats.memoryBytes());
                 builder.endObject();
                 builder.endObject(); // execStats
+            }
+
+            if (includeDataSource && its != null && !AggregationDataSource.EMPTY.equals(its.getDataSource())) {
+                AggregationDataSource ds = its.getDataSource();
+                builder.startObject(FIELD_DATA_SOURCE);
+                builder.array(FIELD_ORIGIN, ds.origins().toArray(new String[0]));
+                builder.startArray(FIELD_INDEXES);
+                for (AggregationDataSource.IndexInfo idx : ds.indexes()) {
+                    builder.startObject();
+                    builder.field(FIELD_INDEX, idx.index());
+                    builder.field(FIELD_STEP_SIZE, idx.stepSize());
+                    builder.endObject();
+                }
+                builder.endArray();
+                builder.endObject();
             }
         }
 

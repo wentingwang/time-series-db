@@ -67,6 +67,7 @@ public class InternalTimeSeries extends InternalAggregation implements TimeSerie
     private final List<TimeSeries> timeSeries;
     private final UnaryPipelineStage reduceStage;
     private final AggregationExecStats execStats;
+    private final AggregationDataSource dataSource;
     private static final SampleMerger MERGE_HELPER = new SampleMerger(SampleMerger.DeduplicatePolicy.ANY_WINS);
 
     public static final int VERSION_0 = 0;
@@ -84,7 +85,7 @@ public class InternalTimeSeries extends InternalAggregation implements TimeSerie
      * @param metadata the aggregation metadata
      */
     public InternalTimeSeries(String name, List<TimeSeries> timeSeries, Map<String, Object> metadata) {
-        this(name, timeSeries, metadata, null, AggregationExecStats.EMPTY);
+        this(name, timeSeries, metadata, null, AggregationExecStats.EMPTY, AggregationDataSource.EMPTY);
     }
 
     /**
@@ -96,7 +97,7 @@ public class InternalTimeSeries extends InternalAggregation implements TimeSerie
      * @param reduceStage the optional reduce stage for final aggregation operations
      */
     public InternalTimeSeries(String name, List<TimeSeries> timeSeries, Map<String, Object> metadata, UnaryPipelineStage reduceStage) {
-        this(name, timeSeries, metadata, reduceStage, AggregationExecStats.EMPTY);
+        this(name, timeSeries, metadata, reduceStage, AggregationExecStats.EMPTY, AggregationDataSource.EMPTY);
     }
 
     /**
@@ -115,10 +116,32 @@ public class InternalTimeSeries extends InternalAggregation implements TimeSerie
         UnaryPipelineStage reduceStage,
         AggregationExecStats execStats
     ) {
+        this(name, timeSeries, metadata, reduceStage, execStats, AggregationDataSource.EMPTY);
+    }
+
+    /**
+     * Creates a new InternalTimeSeries aggregation result with an optional reduce stage, execution stats, and data source.
+     *
+     * @param name the name of the aggregation
+     * @param timeSeries the list of time series data
+     * @param metadata the aggregation metadata
+     * @param reduceStage the optional reduce stage for final aggregation operations
+     * @param execStats the execution stats snapshot for this shard result (use {@link AggregationExecStats#EMPTY} when not needed)
+     * @param dataSource the data source metadata (use {@link AggregationDataSource#EMPTY} when not needed)
+     */
+    public InternalTimeSeries(
+        String name,
+        List<TimeSeries> timeSeries,
+        Map<String, Object> metadata,
+        UnaryPipelineStage reduceStage,
+        AggregationExecStats execStats,
+        AggregationDataSource dataSource
+    ) {
         super(name, metadata);
         this.timeSeries = timeSeries;
         this.reduceStage = reduceStage;
         this.execStats = execStats != null ? execStats : AggregationExecStats.EMPTY;
+        this.dataSource = dataSource != null ? dataSource : AggregationDataSource.EMPTY;
     }
 
     /**
@@ -150,11 +173,13 @@ public class InternalTimeSeries extends InternalAggregation implements TimeSerie
             this.reduceStage = null;
         }
 
-        // V2+: read exec stats after reduce stage
+        // V2+: read exec stats and data source after reduce stage
         if (serialVersion >= VERSION_2) {
             this.execStats = new AggregationExecStats(in);
+            this.dataSource = new AggregationDataSource(in);
         } else {
             this.execStats = AggregationExecStats.EMPTY;
+            this.dataSource = AggregationDataSource.EMPTY;
         }
     }
 
@@ -218,9 +243,10 @@ public class InternalTimeSeries extends InternalAggregation implements TimeSerie
             out.writeBoolean(false);
         }
 
-        // V2+: write exec stats after reduce stage
+        // V2+: write exec stats and data source after reduce stage
         if (serialFormatSetting >= VERSION_2) {
             execStats.writeTo(out);
+            dataSource.writeTo(out);
         }
     }
 
@@ -293,6 +319,12 @@ public class InternalTimeSeries extends InternalAggregation implements TimeSerie
                 .map(a -> ((InternalTimeSeries) a).getExecStats())
                 .reduce(AggregationExecStats.EMPTY, AggregationExecStats::merge);
 
+            // Merge data source metadata from all input InternalTimeSeries across both code paths
+            AggregationDataSource mergedDataSource = aggregations.stream()
+                .filter(a -> a instanceof InternalTimeSeries)
+                .map(a -> ((InternalTimeSeries) a).getDataSource())
+                .reduce(AggregationDataSource.EMPTY, AggregationDataSource::merge);
+
             // If we have a reduce stage, delegate directly to it (skip merging)
             if (reduceStage != null) {
                 // Track ArrayList allocation for providers list
@@ -311,7 +343,7 @@ public class InternalTimeSeries extends InternalAggregation implements TimeSerie
                 InternalAggregation result = reduceStage.reduce(timeSeriesProviders, reduceContext.isFinalReduce(), cbConsumer);
                 // Propagate merged exec stats to the result
                 if (result instanceof InternalTimeSeries its) {
-                    return new InternalTimeSeries(its.name, its.timeSeries, its.metadata, its.reduceStage, mergedStats);
+                    return new InternalTimeSeries(its.name, its.timeSeries, its.metadata, its.reduceStage, mergedStats, mergedDataSource);
                 }
                 return result;
             }
@@ -370,7 +402,7 @@ public class InternalTimeSeries extends InternalAggregation implements TimeSerie
             List<TimeSeries> combinedTimeSeries = new ArrayList<>(mergedSeriesByLabels.values());
 
             // Return combined time series (no reduce stage), with merged exec stats
-            return new InternalTimeSeries(name, combinedTimeSeries, metadata, null, mergedStats);
+            return new InternalTimeSeries(name, combinedTimeSeries, metadata, null, mergedStats, mergedDataSource);
         }
     }
 
@@ -430,7 +462,7 @@ public class InternalTimeSeries extends InternalAggregation implements TimeSerie
      */
     @Override
     public TimeSeriesProvider createReduced(List<TimeSeries> timeSeries) {
-        return new InternalTimeSeries(name, timeSeries, metadata, reduceStage, execStats);
+        return new InternalTimeSeries(name, timeSeries, metadata, reduceStage, execStats, dataSource);
     }
 
     /**
@@ -441,6 +473,16 @@ public class InternalTimeSeries extends InternalAggregation implements TimeSerie
      */
     public AggregationExecStats getExecStats() {
         return execStats;
+    }
+
+    /**
+     * Returns the data source metadata carried by this result.
+     * On the coordinator, this contains the merged metadata from all contributing shards.
+     *
+     * @return the data source metadata; never null (falls back to {@link AggregationDataSource#EMPTY})
+     */
+    public AggregationDataSource getDataSource() {
+        return dataSource;
     }
 
     /**
@@ -554,7 +596,7 @@ public class InternalTimeSeries extends InternalAggregation implements TimeSerie
         if (this == o) return true;
         if (o == null || getClass() != o.getClass()) return false;
         InternalTimeSeries that = (InternalTimeSeries) o;
-        // execStats is intentionally excluded: it is a side-channel diagnostic, not part of result
+        // execStats and dataSource are intentionally excluded: they are side-channel diagnostics, not part of result
         // identity. Two InternalTimeSeries with identical time-series data but different exec stats
         // (e.g. collected from different cluster topologies) represent the same query result and
         // must compare equal.

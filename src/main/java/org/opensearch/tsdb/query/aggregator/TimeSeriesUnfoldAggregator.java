@@ -465,7 +465,14 @@ public class TimeSeriesUnfoldAggregator extends BucketsAggregator {
     @Override
     public InternalAggregation buildEmptyAggregation() {
         Map<String, Object> emptyMetadata = metadata();
-        return new InternalTimeSeries(name, List.of(), emptyMetadata != null ? emptyMetadata : Map.of(), null, AggregationExecStats.EMPTY);
+        return new InternalTimeSeries(
+            name,
+            List.of(),
+            emptyMetadata != null ? emptyMetadata : Map.of(),
+            null,
+            AggregationExecStats.EMPTY,
+            AggregationDataSource.EMPTY
+        );
     }
 
     @Override
@@ -503,6 +510,9 @@ public class TimeSeriesUnfoldAggregator extends BucketsAggregator {
                 // Stats are always collected (negligible counter overhead).
                 AggregationExecStats execStats = executionStats.toAggregationExecStats();
 
+                // TODO: populate from actual index metadata
+                AggregationDataSource dataSource = AggregationDataSource.EMPTY;
+
                 // Use the generic InternalPipeline with the reduce stage
                 Map<String, Object> baseMetadata = metadata();
                 results[i] = new InternalTimeSeries(
@@ -510,7 +520,8 @@ public class TimeSeriesUnfoldAggregator extends BucketsAggregator {
                     timeSeriesList,
                     baseMetadata != null ? baseMetadata : Map.of(),
                     reduceStage,  // Pass the reduce stage (null for transformation stages)
-                    execStats
+                    execStats,
+                    dataSource
                 );
             }
             return results;

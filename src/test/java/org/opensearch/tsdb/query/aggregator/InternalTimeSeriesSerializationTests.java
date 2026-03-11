@@ -66,7 +66,15 @@ public class InternalTimeSeriesSerializationTests extends AbstractWireTestCase<I
                 randomLongBetween(0, 1000)
             );
 
-        return new InternalTimeSeries(name, timeSeries, metadata, reduceStage, execStats);
+        // Optionally include data source (for V2 testing)
+        AggregationDataSource dataSource = randomBoolean()
+            ? AggregationDataSource.EMPTY
+            : new AggregationDataSource(
+                List.of(randomAlphaOfLength(5)),
+                List.of(new AggregationDataSource.IndexInfo(randomAlphaOfLength(3), randomAlphaOfLength(3)))
+            );
+
+        return new InternalTimeSeries(name, timeSeries, metadata, reduceStage, execStats, dataSource);
     }
 
     @Override
@@ -222,6 +230,26 @@ public class InternalTimeSeriesSerializationTests extends AbstractWireTestCase<I
                 InternalTimeSeries deserialized = new InternalTimeSeries(in);
                 // Assert - EMPTY should round-trip back to EMPTY
                 assertEquals(AggregationExecStats.EMPTY, deserialized.getExecStats());
+                assertEquals(AggregationDataSource.EMPTY, deserialized.getDataSource());
+            }
+        }
+    }
+
+    /**
+     * Test that EMPTY data source round-trips correctly in V2.
+     */
+    public void testSerializationWithEmptyDataSource() throws IOException {
+        // Arrange
+        InternalTimeSeries.serialFormatSetting = VERSION_2;
+        InternalTimeSeries original = new InternalTimeSeries("test_empty_ds", new ArrayList<>(), Map.of());
+
+        // Act
+        try (BytesStreamOutput out = new BytesStreamOutput()) {
+            original.writeTo(out);
+            try (StreamInput in = out.bytes().streamInput()) {
+                InternalTimeSeries deserialized = new InternalTimeSeries(in);
+                // Assert - EMPTY should round-trip back to EMPTY
+                assertEquals(AggregationDataSource.EMPTY, deserialized.getDataSource());
             }
         }
     }
@@ -275,11 +303,13 @@ public class InternalTimeSeriesSerializationTests extends AbstractWireTestCase<I
                             assertEquals(original.getTimeSeries().get(i), deserialized.getTimeSeries().get(i));
                         }
                         if (writeVersion >= 2) {
-                            // V2 writes preserve exec stats
+                            // V2 writes preserve exec stats and data source
                             assertEquals(original.getExecStats(), deserialized.getExecStats());
+                            assertEquals(original.getDataSource(), deserialized.getDataSource());
                         } else {
-                            // V0 and V1 writes yield EMPTY exec stats
+                            // V0 and V1 writes yield EMPTY exec stats and data source
                             assertEquals(AggregationExecStats.EMPTY, deserialized.getExecStats());
+                            assertEquals(AggregationDataSource.EMPTY, deserialized.getDataSource());
                         }
                     }
                 }
@@ -319,6 +349,39 @@ public class InternalTimeSeriesSerializationTests extends AbstractWireTestCase<I
                     } else {
                         assertNull(deserialized.getReduceStage());
                     }
+                }
+            }
+        }
+    }
+
+    /**
+     * Test V2 write -> V2 read preserves data source.
+     */
+    public void testV2RoundTripWithDataSource() throws IOException {
+        // Change to V2
+        InternalTimeSeries.serialFormatSetting = VERSION_2;
+        for (int epoch = 0; epoch < 8; epoch++) {
+            AggregationDataSource dataSource = new AggregationDataSource(
+                List.of(randomAlphaOfLength(5)),
+                List.of(new AggregationDataSource.IndexInfo(randomAlphaOfLength(3), randomAlphaOfLength(3)))
+            );
+            List<TimeSeries> ts = createRandomTimeSeries();
+            UnaryPipelineStage reduceStage = randomBoolean() ? null : createRandomReduceStage();
+            InternalTimeSeries original = new InternalTimeSeries(
+                "test_v2_ds",
+                ts,
+                Map.of("k", "v"),
+                reduceStage,
+                AggregationExecStats.EMPTY,
+                dataSource
+            );
+
+            try (BytesStreamOutput out = new BytesStreamOutput()) {
+                original.writeTo(out);
+                try (StreamInput in = out.bytes().streamInput()) {
+                    InternalTimeSeries deserialized = new InternalTimeSeries(in);
+                    assertEquals(dataSource, deserialized.getDataSource());
+                    assertEquals(original.getTimeSeries().size(), deserialized.getTimeSeries().size());
                 }
             }
         }
