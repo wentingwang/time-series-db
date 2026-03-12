@@ -23,6 +23,7 @@ import org.opensearch.search.aggregations.pipeline.PipelineAggregator;
 import org.opensearch.search.internal.SearchContext;
 import org.opensearch.test.OpenSearchTestCase;
 import org.opensearch.tsdb.query.aggregator.AggregatorTestUtils.TSDBLeafReaderWithContext;
+import org.opensearch.tsdb.query.utils.TSDBStatsConstants;
 
 import java.io.IOException;
 import java.util.Collections;
@@ -449,6 +450,35 @@ public class TSDBStatsAggregatorTests extends OpenSearchTestCase {
         }
     }
 
+    // ========== Indexed Dedup Mode Tests ==========
+
+    public void testIndexedDedupModeWithUnsupportedReaderThrows() throws IOException {
+        // When dedupMode=indexed but the reader is not LiveSeriesIndexLeafReader or ClosedChunkIndexLeafReader,
+        // TSDBStatsLeafBucketCollector constructor should throw IOException.
+        long minTimestamp = 1000L;
+        long maxTimestamp = 5000L;
+        TSDBStatsAggregator aggregator = createAggregatorWithDedupMode(
+            "test",
+            minTimestamp,
+            maxTimestamp,
+            true,
+            TSDBStatsConstants.DEDUP_MODE_INDEXED
+        );
+
+        // The mock reader from AggregatorTestUtils is an anonymous TSDBLeafReader subclass,
+        // which is neither LiveSeriesIndexLeafReader nor ClosedChunkIndexLeafReader.
+        TSDBLeafReaderWithContext readerCtx = AggregatorTestUtils.createMockTSDBLeafReaderWithLabels(minTimestamp, maxTimestamp, null);
+        LeafBucketCollector mockSubCollector = mock(LeafBucketCollector.class);
+
+        try {
+            IOException ex = expectThrows(IOException.class, () -> aggregator.getLeafCollector(readerCtx.context, mockSubCollector));
+            assertTrue("Exception should mention unsupported reader type", ex.getMessage().contains("Unsupported TSDBLeafReader type"));
+        } finally {
+            readerCtx.close();
+            aggregator.close();
+        }
+    }
+
     // ========== Helper Methods ==========
 
     /**
@@ -473,6 +503,22 @@ public class TSDBStatsAggregatorTests extends OpenSearchTestCase {
         return createAggregatorWithMetadata(name, minTimestamp, maxTimestamp, includeValueStats, Map.of());
     }
 
+    private TSDBStatsAggregator createAggregatorWithDedupMode(
+        String name,
+        long minTimestamp,
+        long maxTimestamp,
+        boolean includeValueStats,
+        String dedupMode
+    ) throws IOException {
+        CircuitBreakerService circuitBreakerService = new NoneCircuitBreakerService();
+        BigArrays bigArrays = new BigArrays(null, circuitBreakerService, "test");
+
+        SearchContext searchContext = mock(SearchContext.class);
+        when(searchContext.bigArrays()).thenReturn(bigArrays);
+
+        return new TSDBStatsAggregator(name, searchContext, null, minTimestamp, maxTimestamp, includeValueStats, dedupMode, Map.of());
+    }
+
     private TSDBStatsAggregator createAggregatorWithMetadata(
         String name,
         long minTimestamp,
@@ -486,6 +532,15 @@ public class TSDBStatsAggregatorTests extends OpenSearchTestCase {
         SearchContext searchContext = mock(SearchContext.class);
         when(searchContext.bigArrays()).thenReturn(bigArrays);
 
-        return new TSDBStatsAggregator(name, searchContext, null, minTimestamp, maxTimestamp, includeValueStats, metadata);
+        return new TSDBStatsAggregator(
+            name,
+            searchContext,
+            null,
+            minTimestamp,
+            maxTimestamp,
+            includeValueStats,
+            TSDBStatsConstants.DEDUP_MODE_RECOMPUTED,
+            metadata
+        );
     }
 }
