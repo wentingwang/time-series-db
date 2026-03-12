@@ -205,6 +205,8 @@ public class RestM3QLAction extends BaseTSDBAction {
         boolean ccsMinimizeRoundTrips = resolveCcsMinimizeRoundTrips(request);
         final boolean profileParam = request.paramAsBoolean(PROFILE_PARAM, false);
         final boolean includeMetadataParam = request.paramAsBoolean(INCLUDE_METADATA_PARAM, false);
+        final boolean includeExecStatsParam = request.paramAsBoolean(INCLUDE_EXEC_STATS_PARAM, false);
+        final boolean includeDataSourceParam = request.paramAsBoolean(INCLUDE_DATA_SOURCE_PARAM, false);
 
         // Parse request parameters (may be async for remote index settings fetch)
         return channel -> {
@@ -263,6 +265,8 @@ public class RestM3QLAction extends BaseTSDBAction {
                                 finalAggName,
                                 params.profile,
                                 params.includeMetadata,
+                                params.includeExecStats,
+                                params.includeDataSource,
                                 true,
                                 new PromMatrixResponseListener.QueryMetrics(
                                     METRICS.executionLatency,
@@ -465,6 +469,9 @@ public class RestM3QLAction extends BaseTSDBAction {
         boolean pushdown = resolvePushdownParam(request, true);
         boolean profile = request.paramAsBoolean(PROFILE_PARAM, false);
         boolean includeMetadata = request.paramAsBoolean(INCLUDE_METADATA_PARAM, false);
+        // TODO make it default = true when InternalTimeSeries.serialFormatSetting upgrade to 2+
+        boolean includeExecStats = request.paramAsBoolean(INCLUDE_EXEC_STATS_PARAM, false);
+        boolean includeDataSource = request.paramAsBoolean(INCLUDE_DATA_SOURCE_PARAM, false);
         boolean ccsMinimizeRoundTrips = resolveCcsMinimizeRoundTrips(request);
 
         // Extract resolved partitions from request body (implements FederationMetadata)
@@ -485,7 +492,9 @@ public class RestM3QLAction extends BaseTSDBAction {
                 profile,
                 includeMetadata,
                 federationMetadata,
-                ccsMinimizeRoundTrips
+                ccsMinimizeRoundTrips,
+                includeExecStats,
+                includeDataSource
             );
             listener.onResponse(params);
         } else {
@@ -504,7 +513,9 @@ public class RestM3QLAction extends BaseTSDBAction {
                         profile,
                         includeMetadata,
                         federationMetadata,
-                        ccsMinimizeRoundTrips
+                        ccsMinimizeRoundTrips,
+                        includeExecStats,
+                        includeDataSource
                     );
                     listener.onResponse(params);
                 }
@@ -804,7 +815,8 @@ public class RestM3QLAction extends BaseTSDBAction {
      * Internal record holding parsed request parameters.
      */
     protected record RequestParams(String query, long startMs, long endMs, long stepMs, String[] indices, boolean explain, boolean pushdown,
-        boolean profile, boolean includeMetadata, FederationMetadata federationMetadata, boolean ccsMinimizeRoundTrips) {
+        boolean profile, boolean includeMetadata, FederationMetadata federationMetadata, boolean ccsMinimizeRoundTrips,
+        boolean includeExecStats, boolean includeDataSource) {
 
     }
 
