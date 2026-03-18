@@ -62,6 +62,10 @@ public class TSDBStatsAggregationBuilder extends AbstractAggregationBuilder<TSDB
      * @param maxTimestamp The maximum timestamp for filtering
      * @param includeValueStats Whether to include per-value statistics
      * @param dedupMode The dedup mode ("indexed" or "recomputed")
+     *                  "indexed": Reads pre-indexed numeric value from NumericDocValues (reference for LSI,
+     *                             labels_hash for CCI), avoiding binary label decoding for duplicate series.
+     *                  "recomputed": Decodes labels and calls stableHash() (existing behavior), useful during
+     *                                hash algorithm migrations.
      * @throws IllegalArgumentException if maxTimestamp is not greater than minTimestamp
      */
     public TSDBStatsAggregationBuilder(String name, long minTimestamp, long maxTimestamp, boolean includeValueStats, String dedupMode) {
