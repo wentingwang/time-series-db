@@ -1281,6 +1281,23 @@ public class TSDBEngine extends Engine {
     }
 
     /**
+     * Loads a historical TSDB block into the engine.
+     * <p>
+     * This method allows adding pre-existing TSDB blocks (e.g., from historical data recovery)
+     * to the engine after it has been started. The block files are copied from the source
+     * location and registered in the closed chunk index manager.
+     * </p>
+     *
+     * @param sourceBlockPath Path to the block directory on disk (must follow naming convention: block_minTs_maxTs_uuid)
+     * @return true if the block was successfully loaded, false if a block with the same time range already exists
+     * @throws IOException if there is an error reading or copying the block
+     * @throws IllegalArgumentException if the block directory name is invalid
+     */
+    public boolean loadHistoricalBlock(java.nio.file.Path sourceBlockPath) throws IOException {
+        return closedChunkIndexManager.addHistoricalBlock(sourceBlockPath);
+    }
+
+    /**
      * Prepares an index operation from the source document.
      *
      * <p>TSDBEngine handles its own parsing of the indexing request source,
